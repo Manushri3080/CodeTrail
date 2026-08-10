@@ -1,0 +1,22 @@
+# Dependency directories
+node_modules/
+jspdf/
+
+# Environment variables (contains secrets)
+.env
+backend/.env
+frontend/.env
+*.env
+
+# Production build outputs
+dist/
+build/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

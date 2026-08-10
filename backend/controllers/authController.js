@@ -2,6 +2,8 @@ const { OAuth2Client } = require('google-auth-library');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+const { sendResetPasswordEmail } = require('../utils/email');
 
 // Fallback to a default key if MONGODB_URI/JWT_SECRET is unset
 const JWT_SECRET = process.env.JWT_SECRET || 'codetrail_secret_default_key_99';
@@ -169,6 +171,94 @@ exports.loginUser = async (req, res) => {
 
   } catch (err) {
     console.error('Login Error:', err);
+    res.status(500).json({ message: 'Internal Server Error', error: err.message });
+  }
+};
+
+// 4. Forgot Password
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: 'No user registered with this email address' });
+    }
+
+    if (user.authProvider === 'google' && !user.password) {
+      return res.status(400).json({ message: 'This account was created with Google Sign-In. Please sign in via Google.' });
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(20).toString('hex');
+    
+    // Set token hash and expiry (1 hour)
+    user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    user.resetPasswordExpires = Date.now() + 3600000; // 1 hour
+
+    await user.save();
+
+    // Create reset URL (pointing to frontend reset page)
+    const resetUrl = `http://localhost:5173/reset-password?token=${resetToken}`;
+
+    // Send email
+    try {
+      await sendResetPasswordEmail(user.email, user.name, resetUrl);
+      res.json({ message: 'Password reset link sent to your email' });
+    } catch (mailErr) {
+      // Rollback changes on failure
+      user.resetPasswordToken = undefined;
+      user.resetPasswordExpires = undefined;
+      await user.save();
+      console.error('Mail sending error:', mailErr);
+      return res.status(500).json({ message: 'Failed to send password reset email. Please try again later.', error: mailErr.message });
+    }
+
+  } catch (err) {
+    console.error('Forgot Password Error:', err);
+    res.status(500).json({ message: 'Internal Server Error', error: err.message });
+  }
+};
+
+// 5. Reset Password
+exports.resetPassword = async (req, res) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return res.status(400).json({ message: 'Token and password are required' });
+  }
+
+  try {
+    // Hash the token received to compare with database
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpires: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Password reset token is invalid or has expired' });
+    }
+
+    // Hash the new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(password, salt);
+
+    // Clear reset token and expiration fields
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+
+    await user.save();
+
+    res.json({ message: 'Password has been successfully updated' });
+
+  } catch (err) {
+    console.error('Reset Password Error:', err);
     res.status(500).json({ message: 'Internal Server Error', error: err.message });
   }
 };

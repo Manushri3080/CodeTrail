@@ -5,6 +5,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './index.css'
 import App from './App.jsx'
 import LoginPage from './components/LoginPage.jsx'
+import ForgotPassword from './components/ForgotPassword.jsx'
+import ResetPassword from './components/ResetPassword.jsx'
 
 function LoginRouteWrapper({ onLoginSuccess }) {
   const token = localStorage.getItem('ct-auth-token');
@@ -29,6 +31,8 @@ function MainRouter() {
           path="/login" 
           element={<LoginRouteWrapper onLoginSuccess={handleLoginSuccess} />} 
         />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
