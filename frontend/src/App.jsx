@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import HeroSection from './modules/landing/HeroSection';
@@ -11,9 +12,10 @@ import TerminalModal from './modules/terminal/TerminalModal';
 import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
 
 function App() {
-  // Set default initial view to Home Dashboard
-  const [isLoggedIn, setIsLoggedIn] = useState(true);
-  const [activeTab, setActiveTab] = useState('home');
+  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState('modules-grid');
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
+  const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
@@ -33,24 +35,19 @@ function App() {
   };
 
   const handleLogin = () => {
-    setIsLoggedIn(true);
-    setActiveTab('home');
+    navigate('/login', { state: { signUp: false } });
   };
 
   const handleSignUp = () => {
-    setIsLoggedIn(true);
-    setActiveTab('home');
+    navigate('/login', { state: { signUp: true } });
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('ct-auth-token');
+    localStorage.removeItem('ct-auth-user');
     setIsLoggedIn(false);
-    setActiveTab('modules-grid');
-  };
-
-  const handleJumpToWorkspace = () => {
-    setActiveTab('modular-workspace');
-    const el = document.getElementById('modular-workspace');
-    if (el) el.scrollIntoView({ behavior: 'smooth' });
+    setCurrentUser(null);
+    alert('Logged out successfully.');
   };
 
   return (
@@ -58,6 +55,7 @@ function App() {
       {/* 1. TOP NAVIGATION */}
       <Navbar 
         isLoggedIn={isLoggedIn}
+        currentUser={currentUser}
         activeTab={activeTab} 
         setActiveTab={setActiveTab}
         onLogin={handleLogin}
