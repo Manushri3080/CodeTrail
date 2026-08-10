@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Terminal, Layers, FileCode, Cpu, ShieldCheck, BookOpen, Menu, X, LogIn, Sparkles, ArrowRight, LogOut } from 'lucide-react';
 
-export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, setActiveTab }) => {
+export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -77,8 +77,12 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
           {isLoggedIn ? (
             <div className="ct-user-logged-wrap">
               <div className="ct-nav-user-badge">
-                <span className="ct-nav-avatar">A</span>
-                <span className="ct-nav-username">Alex Rivers</span>
+                <span className="ct-nav-avatar">
+                  {currentUser?.name ? currentUser.name[0].toUpperCase() : 'U'}
+                </span>
+                <span className="ct-nav-username">
+                  {currentUser?.name || 'User'}
+                </span>
               </div>
               <button 
                 className="ct-btn-logout"
