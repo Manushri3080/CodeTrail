@@ -1,0 +1,450 @@
+import React, { useState } from 'react';
+import { 
+  Play, 
+  GitPullRequest, 
+  CheckSquare, 
+  Code2, 
+  MessageSquare, 
+  Activity, 
+  Plus, 
+  Folder, 
+  Cpu, 
+  Clock, 
+  GitMerge, 
+  GitCommit, 
+  Settings, 
+  User, 
+  BarChart3, 
+  GitBranch, 
+  FolderGit2,
+  Rocket,
+  Database,
+  Palette,
+  Star,
+  Users,
+  Archive,
+  Flag,
+  LayoutGrid,
+  MoreVertical,
+  Check
+} from 'lucide-react';
+
+export const HomePage = ({ onJumpToWorkspace }) => {
+  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [workspaceFilter, setWorkspaceFilter] = useState('all');
+  const [sidebarHovered, setSidebarHovered] = useState(false);
+
+  // Personal Goals checklist state
+  const [goals, setGoals] = useState([
+    { id: 1, text: 'Review Auth PR', completed: true },
+    { id: 2, text: 'Merge DB migration', completed: false },
+    { id: 3, text: 'Update API docs', completed: false },
+    { id: 4, text: 'Fix flaky test', completed: false },
+  ]);
+
+  const toggleGoal = (id) => {
+    setGoals(prev => prev.map(g => g.id === id ? { ...g, completed: !g.completed } : g));
+  };
+
+  const addGoal = () => {
+    const text = prompt('Enter new goal:');
+    if (text && text.trim()) {
+      setGoals(prev => [...prev, { id: Date.now(), text: text.trim(), completed: false }]);
+    }
+  };
+
+  const timelineEvents = [
+    {
+      id: 1,
+      time: 'Today, 5:00 PM',
+      type: 'task',
+      tag: 'Urgent',
+      tagColor: 'amber',
+      title: 'Finalize API Documentation',
+      desc: 'Review and merge the latest swagger specs for the microservices beta.',
+      icon: CheckSquare
+    },
+    {
+      id: 2,
+      time: 'Today, 2:30 PM',
+      type: 'workspace',
+      tag: 'PR Merged',
+      tagColor: 'purple',
+      title: 'PR #142 Merged',
+      desc: '@sarah merged your pull request in Project Alpha.',
+      icon: GitMerge
+    },
+    {
+      id: 3,
+      time: 'Yesterday, 4:15 PM',
+      type: 'workspace',
+      tag: 'Commit',
+      tagColor: 'cyan',
+      title: 'Pushed to feature/auth-flow',
+      desc: '[update] integrated oauth providers and JWT session management',
+      icon: GitCommit
+    }
+  ];
+
+  const workspaces = [
+    {
+      id: 'ws-1',
+      title: 'Project Alpha',
+      desc: 'Next.js core application with React server components.',
+      brandColor: 'purple',
+      icon: Rocket,
+      role: 'Lead',
+      timeSpent: '14h 30m',
+      status: 'active',
+      collaborators: ['A', 'S', '+3']
+    },
+    {
+      id: 'ws-2',
+      title: 'Microservices Beta',
+      desc: 'Go based gRPC services with Docker containerization.',
+      brandColor: 'cyan',
+      icon: Cpu,
+      role: 'Collaborator',
+      timeSpent: '8h 15m',
+      status: 'active',
+      collaborators: ['M', 'E']
+    },
+    {
+      id: 'ws-3',
+      title: 'Data Pipeline V2',
+      desc: 'Apache Airflow DAGs for customer analytics processing.',
+      brandColor: 'emerald',
+      icon: Database,
+      role: 'Maintainer',
+      timeSpent: '2h 45m',
+      status: 'inactive',
+      collaborators: ['A', '+1']
+    },
+    {
+      id: 'ws-4',
+      title: 'Component Lib',
+      desc: 'Shared UI components for all internal dashboards.',
+      brandColor: 'rose',
+      icon: Palette,
+      role: 'Contributor',
+      timeSpent: '0h 0m',
+      status: 'inactive',
+      collaborators: ['S']
+    }
+  ];
+
+  const filteredTimeline = timelineEvents.filter(ev => {
+    if (timelineFilter === 'all') return true;
+    if (timelineFilter === 'workspace') return ev.type === 'workspace';
+    if (timelineFilter === 'tasks') return ev.type === 'task';
+    return true;
+  });
+
+  const filteredWorkspaces = workspaces.filter(ws => {
+    if (workspaceFilter === 'all') return true;
+    if (workspaceFilter === 'active') return ws.status === 'active';
+    if (workspaceFilter === 'archived') return ws.status === 'inactive';
+    return true;
+  });
+
+  return (
+    <div className="ct-home-container">
+      
+      {/* Fixed Left Sidebar with Personal Goals Widget & Hover Expand */}
+      <aside 
+        className={`ct-home-sidebar ${sidebarHovered ? 'expanded' : ''}`}
+        onMouseEnter={() => setSidebarHovered(true)}
+        onMouseLeave={() => setSidebarHovered(false)}
+      >
+        <div className="ct-sidebar-group top">
+          <button className="ct-sidebar-btn active" title="Dashboard">
+            <LayoutGrid size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Dashboard</span>
+          </button>
+          <button className="ct-sidebar-btn" title="All Workspaces">
+            <FolderGit2 size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Workspaces</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Starred">
+            <Star size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Starred</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Shared with me">
+            <Users size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Shared with me</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Archived">
+            <Archive size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Archived</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Code Editor" onClick={onJumpToWorkspace}>
+            <Code2 size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Code Editor</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Pull Requests">
+            <GitBranch size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Pull Requests</span>
+            <span className="ct-sidebar-badge">3</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Telemetry">
+            <BarChart3 size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Telemetry</span>
+          </button>
+        </div>
+
+        {/* Sidebar Personal Goals Widget */}
+        <div className="ct-sidebar-goals-widget">
+          <div className="ct-goals-header">
+            <Flag size={14} className="text-secondary text-purple-400" />
+            <span className="ct-sidebar-label font-semibold">Personal Goals</span>
+          </div>
+          <div className="ct-goals-list">
+            {goals.map(g => (
+              <div 
+                key={g.id} 
+                className={`ct-goal-item ${g.completed ? 'completed' : ''}`}
+                onClick={() => toggleGoal(g.id)}
+              >
+                <div className={`ct-goal-checkbox ${g.completed ? 'checked' : ''}`}>
+                  {g.completed && <Check size={10} />}
+                </div>
+                <span className="ct-goal-text">{g.text}</span>
+              </div>
+            ))}
+          </div>
+          <button className="ct-btn-add-goal" onClick={addGoal}>
+            + Add Goal
+          </button>
+        </div>
+
+        <div className="ct-sidebar-group bottom">
+          <button className="ct-sidebar-btn" title="Profile">
+            <User size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Developer Profile</span>
+          </button>
+          <button className="ct-sidebar-btn" title="Settings">
+            <Settings size={18} className="ct-sidebar-icon" />
+            <span className="ct-sidebar-label">Settings</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Home Dashboard Body */}
+      <main className={`ct-home-main ${sidebarHovered ? 'sidebar-expanded' : ''}`}>
+        
+        {/* Top Active Session Banner */}
+        <div className="ct-recent-banner">
+          <div className="ct-banner-content">
+            <div className="ct-banner-time">
+              <Clock size={13} className="text-purple-400" />
+              <span>Last edited 2 hours ago</span>
+            </div>
+            <h2 className="ct-banner-title">Project Alpha - <span>feature/auth-flow</span></h2>
+            <p className="ct-banner-desc">You were working on integrating OAuth providers and session tokens.</p>
+          </div>
+
+          <button className="ct-btn-banner-action" onClick={onJumpToWorkspace}>
+            <Play size={14} className="fill-current" />
+            <span>Jump Back In</span>
+          </button>
+        </div>
+
+        {/* 4 Metric Stats Cards */}
+        <div className="ct-home-metrics">
+          <div className="ct-metric-card">
+            <div className="ct-metric-info">
+              <span className="ct-metric-label">Active PRs</span>
+              <span className="ct-metric-value">3</span>
+            </div>
+            <div className="ct-metric-icon purple">
+              <GitPullRequest size={18} />
+            </div>
+          </div>
+
+          <div className="ct-metric-card">
+            <div className="ct-metric-info">
+              <span className="ct-metric-label">Pending Tasks</span>
+              <span className="ct-metric-value">5</span>
+            </div>
+            <div className="ct-metric-icon cyan">
+              <CheckSquare size={18} />
+            </div>
+          </div>
+
+          <div className="ct-metric-card">
+            <div className="ct-metric-info">
+              <span className="ct-metric-label">Lines Today</span>
+              <span className="ct-metric-value">+1.2k</span>
+            </div>
+            <div className="ct-metric-icon emerald">
+              <Code2 size={18} />
+            </div>
+          </div>
+
+          <div className="ct-metric-card">
+            <div className="ct-metric-info">
+              <span className="ct-metric-label">Code Reviews</span>
+              <span className="ct-metric-value">2</span>
+            </div>
+            <div className="ct-metric-icon amber">
+              <MessageSquare size={18} />
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN CONTENT SIDE-BY-SIDE SPLIT: PERSONAL TIMELINE (LEFT) vs WORKSPACE EXPLORER (RIGHT) */}
+        <div className="ct-home-split">
+          
+          {/* Left Panel: Personal Timeline */}
+          <div className="ct-home-panel ct-timeline-panel">
+            <div className="ct-panel-header">
+              <div className="ct-panel-title">
+                <Activity size={16} className="text-purple-400" />
+                <span>Personal Timeline</span>
+              </div>
+              
+              <div className="ct-timeline-filters">
+                <button 
+                  className={`ct-filter-pill ${timelineFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setTimelineFilter('all')}
+                >
+                  All
+                </button>
+                <button 
+                  className={`ct-filter-pill ${timelineFilter === 'workspace' ? 'active' : ''}`}
+                  onClick={() => setTimelineFilter('workspace')}
+                >
+                  Workspace
+                </button>
+                <button 
+                  className={`ct-filter-pill ${timelineFilter === 'tasks' ? 'active' : ''}`}
+                  onClick={() => setTimelineFilter('tasks')}
+                >
+                  Tasks
+                </button>
+              </div>
+            </div>
+
+            <div className="ct-timeline-events alternating">
+              {filteredTimeline.map((event, idx) => {
+                const EventIcon = event.icon;
+                const sideClass = idx % 2 === 0 ? 'right' : 'left';
+                return (
+                  <div key={event.id} className={`ct-timeline-item ${sideClass}`}>
+                    <div className="ct-timeline-node">
+                      <EventIcon size={14} />
+                    </div>
+                    <div className="ct-timeline-card">
+                      <div className="ct-timeline-card-header">
+                        <span className="ct-timeline-time">{event.time}</span>
+                        <span className={`ct-event-tag ${event.tagColor}`}>{event.tag}</span>
+                      </div>
+                      <h4 className="ct-timeline-card-title">{event.title}</h4>
+                      <p className="ct-timeline-card-desc">{event.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Right Panel: Your Workspaces Explorer (Side-by-Side) */}
+          <div className="ct-home-panel ct-workspace-panel">
+            <div className="ct-panel-header">
+              <div className="ct-panel-title">
+                <FolderGit2 size={16} className="text-purple-400" />
+                <span>Your Workspaces</span>
+              </div>
+              
+              <button className="ct-btn-primary-sm" onClick={onJumpToWorkspace}>
+                <Plus size={14} />
+                <span>New Workspace</span>
+              </button>
+            </div>
+
+            {/* Filter Pills Row */}
+            <div className="ct-workspace-filter-bar">
+              <div className="ct-filter-pills-row">
+                <button 
+                  className={`ct-filter-pill ${workspaceFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setWorkspaceFilter('all')}
+                >
+                  All
+                </button>
+                <button 
+                  className={`ct-filter-pill ${workspaceFilter === 'active' ? 'active' : ''}`}
+                  onClick={() => setWorkspaceFilter('active')}
+                >
+                  Active
+                </button>
+                <button 
+                  className={`ct-filter-pill ${workspaceFilter === 'archived' ? 'active' : ''}`}
+                  onClick={() => setWorkspaceFilter('archived')}
+                >
+                  Archived
+                </button>
+              </div>
+            </div>
+
+            {/* 4 Brand Accent Workspace Cards in 2-Column Split Grid */}
+            <div className="ct-brand-cards-split-grid">
+              {filteredWorkspaces.map(ws => {
+                const WsIcon = ws.icon;
+                return (
+                  <div 
+                    key={ws.id} 
+                    className={`ct-brand-card ${ws.brandColor}`}
+                    onClick={onJumpToWorkspace}
+                  >
+                    <div className="ct-brand-card-top">
+                      <div className={`ct-brand-icon-box ${ws.brandColor}`}>
+                        <WsIcon size={18} />
+                      </div>
+                      <button className="ct-btn-more">
+                        <MoreVertical size={14} />
+                      </button>
+                    </div>
+
+                    <div className="ct-brand-card-body">
+                      <h4 className="ct-brand-card-title">{ws.title}</h4>
+                      <p className="ct-brand-card-desc">{ws.desc}</p>
+                    </div>
+
+                    <div className="ct-brand-card-footer">
+                      <div className="ct-card-meta-row">
+                        <span className="ct-meta-label">Role</span>
+                        <span className="ct-role-badge">{ws.role}</span>
+                      </div>
+
+                      <div className="ct-card-meta-row">
+                        <span className="ct-meta-label">This Week</span>
+                        <span className={`ct-time-val ${ws.brandColor}`}>{ws.timeSpent}</span>
+                      </div>
+
+                      <div className="ct-card-collab-row">
+                        <div className="ct-collab-avatars">
+                          {ws.collaborators.map((c, i) => (
+                            <span key={i} className="ct-mini-avatar">{c}</span>
+                          ))}
+                        </div>
+                        <span className="ct-card-status">
+                          <span className={`ct-pulse-dot ${ws.status === 'active' ? 'green' : 'gray'}`} />
+                          <span>{ws.status === 'active' ? 'Active' : 'Inactive'}</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+  );
+};
+
+export default HomePage;
