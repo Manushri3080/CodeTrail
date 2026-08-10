@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal as TerminalIcon, Copy, Check, Volume2, VolumeX, RotateCcw } from 'lucide-react';
+import { unlockAudioContext, playKeypressSound } from '../../utils/audio.utils';
 
 export function Terminal({
   commands = [
@@ -8,11 +9,11 @@ export function Terminal({
   ],
   outputs = {
     0: [
-      "✔ Cloned repository (42 objects, done)"
+      "Cloned repository (42 objects, done)"
     ],
     1: [
-      "✔ Socket.IO server running at ws://localhost:5000",
-      "✔ Client dev server ready at http://localhost:5173"
+      "Workspace server connected",
+      "Client environment ready at http://localhost:5173"
     ]
   },
   typingSpeed = 40,
@@ -25,68 +26,21 @@ export function Terminal({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [audioActivated, setAudioActivated] = useState(false);
   
-  const audioCtxRef = useRef(null);
+  const bodyRef = useRef(null);
 
-  // Initialize and unlock Web Audio API on user interaction
-  const initAudio = () => {
-    try {
-      if (!audioCtxRef.current) {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (AudioContext) {
-          audioCtxRef.current = new AudioContext();
-        }
-      }
-      if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume();
-      }
+  const handleInitAudio = () => {
+    const success = unlockAudioContext();
+    if (success) {
       setAudioActivated(true);
-    } catch (e) {
-      console.warn("Audio unlock failed:", e);
     }
   };
 
-  // Synthesize audible mechanical key press sound
-  const playClickSound = (isReturn = false) => {
-    if (!soundEnabled) return;
-    try {
-      if (!audioCtxRef.current) {
-        initAudio();
-      }
-      const ctx = audioCtxRef.current;
-      if (!ctx) return;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      if (isReturn) {
-        // Return key sound (Clear 440Hz tone)
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(440, ctx.currentTime);
-        gain.gain.setValueAtTime(0.12, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.08);
-      } else {
-        // Crisp keypress click sound (800Hz - 1000Hz triangle burst)
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(800 + Math.random() * 200, ctx.currentTime);
-        gain.gain.setValueAtTime(0.08, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.03);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.03);
-      }
-
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-    } catch (e) {
-      // Gracefully handle browser restrictions
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  };
+  }, [currentText, displayedLogs]);
 
-  // Typing animation loop
   useEffect(() => {
     if (currentCmdIndex >= commands.length) return;
 
@@ -99,12 +53,12 @@ export function Terminal({
         const nextSub = fullCommand.slice(0, charIndex);
         setCurrentText(nextSub);
         if (charIndex > 0) {
-          playClickSound(false);
+          playKeypressSound(false, soundEnabled);
         }
         charIndex++;
       } else {
         clearInterval(typingInterval);
-        playClickSound(true);
+        playKeypressSound(true, soundEnabled);
 
         setTimeout(() => {
           setDisplayedLogs((prev) => [
@@ -130,23 +84,21 @@ export function Terminal({
   };
 
   const handleReplay = () => {
-    initAudio();
+    handleInitAudio();
     setDisplayedLogs([]);
     setCurrentText("");
     setCurrentCmdIndex(0);
   };
 
   return (
-    <div className="ct-terminal-component" onClick={initAudio}>
-      {/* Sound Autoplay Overlay / Banner if audio needs user click */}
+    <div className="ct-terminal-component" onClick={handleInitAudio}>
       {!audioActivated && soundEnabled && (
-        <div className="ct-audio-banner" onClick={initAudio}>
+        <div className="ct-audio-banner" onClick={handleInitAudio}>
           <Volume2 size={14} />
           <span>Click terminal to enable typing sound</span>
         </div>
       )}
 
-      {/* Header Bar */}
       <div className="ct-terminal-comp-header">
         <div className="ct-terminal-comp-dots">
           <span className="ct-dot red"></span>
@@ -160,12 +112,11 @@ export function Terminal({
         </div>
 
         <div className="ct-terminal-actions-group">
-          {/* Sound Toggle Button */}
           <button 
             className={`ct-terminal-action-btn ${soundEnabled ? 'active' : ''}`}
             onClick={(e) => {
               e.stopPropagation();
-              initAudio();
+              handleInitAudio();
               setSoundEnabled(!soundEnabled);
             }}
             title={soundEnabled ? "Sound On (Click to Mute)" : "Sound Off (Click to Enable)"}
@@ -173,7 +124,6 @@ export function Terminal({
             {soundEnabled ? <Volume2 size={14} className="text-emerald-400" /> : <VolumeX size={14} />}
           </button>
 
-          {/* Replay Sequence Button */}
           <button 
             className="ct-terminal-action-btn"
             onClick={(e) => {
@@ -185,7 +135,6 @@ export function Terminal({
             <RotateCcw size={13} />
           </button>
 
-          {/* Copy Script Button */}
           <button 
             className="ct-terminal-action-btn" 
             onClick={(e) => {
@@ -199,8 +148,7 @@ export function Terminal({
         </div>
       </div>
 
-      {/* Terminal Screen Body */}
-      <div className="ct-terminal-comp-body">
+      <div className="ct-terminal-comp-body" ref={bodyRef}>
         {displayedLogs.map((log, i) => (
           <div key={i} className={`ct-comp-line ${log.type}`}>
             {log.type === 'command' && <span className="ct-comp-prompt">$ </span>}
@@ -208,7 +156,6 @@ export function Terminal({
           </div>
         ))}
 
-        {/* Active Typing Line */}
         {currentCmdIndex < commands.length ? (
           <div className="ct-comp-line command active">
             <span className="ct-comp-prompt">$ </span>
@@ -225,3 +172,5 @@ export function Terminal({
     </div>
   );
 }
+
+export default Terminal;

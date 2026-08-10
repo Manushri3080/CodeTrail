@@ -1,198 +1,91 @@
 import React, { useState } from 'react';
-import Navbar from './components/Navbar';
-import TerminalDemo from './components/TerminalDemo';
-import ModularWorkspace from './components/ModularWorkspace';
-import ExecutionEngine from './components/ExecutionEngine';
-import ContributionDossier from './components/ContributionDossier';
-import ModulesGrid from './components/ModulesGrid';
-import Footer from './components/Footer';
-import { 
-  Terminal, 
-  ShieldCheck, 
-  Layers, 
-  Users, 
-  Sparkles,
-  ArrowRight,
-  Code2
-} from 'lucide-react';
+import Navbar from './components/layout/Navbar';
+import Footer from './components/layout/Footer';
+import HeroSection from './modules/landing/HeroSection';
+import ModulesGrid from './modules/landing/ModulesGrid';
+import ModularWorkspace from './modules/workspace/ModularWorkspace';
+import ExecutionEngine from './modules/execution/ExecutionEngine';
+import ContributionDossier from './modules/telemetry/ContributionDossier';
+import TerminalModal from './modules/terminal/TerminalModal';
+import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('command-center');
+  const [activeTab, setActiveTab] = useState('modules-grid');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
-  const [terminalLogs, setTerminalLogs] = useState([
-    'CodeTrail Kernel v1.0.4 initialized.',
-    'Socket.IO transport: WebSocket connected.',
-    'Proof-of-work SHA-256 verification active.',
-    'Ready for user command. Type "help" or "connect".'
-  ]);
+  const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
 
   const handleTerminalSubmit = (e) => {
     e.preventDefault();
     if (!terminalInput.trim()) return;
 
-    const cmd = terminalInput.trim().toLowerCase();
-    let response = `Command executed: ${cmd}`;
+    const result = processKernelCommand(terminalInput);
 
-    if (cmd === 'help') {
-      response = 'Available commands: help, status, connect, modules, clear';
-    } else if (cmd === 'status') {
-      response = 'System: ALL SERVICES OPERATIONAL | Latency: 14ms | Peer Sync: Active';
-    } else if (cmd === 'connect') {
-      response = 'Connecting to workspace [ws-alpha-9]... Connected!';
-    } else if (cmd === 'modules') {
-      response = 'Loaded 8/8 Modules: Auth, Workspace, RealTimeEditor, ExecutionEngine, ActivityLogger, Analytics, Dashboard, Settings';
-    } else if (cmd === 'clear') {
+    if (result.action === 'clear') {
       setTerminalLogs([]);
-      setTerminalInput('');
-      return;
+    } else if (result.output) {
+      setTerminalLogs(prev => [...prev, `> ${terminalInput}`, result.output]);
     }
-
-    setTerminalLogs(prev => [...prev, `> ${terminalInput}`, response]);
     setTerminalInput('');
+  };
+
+  const handleLogin = () => {
+    setIsLoggedIn(true);
+    alert('Logged in as Alex Rivers! Active session created.');
+  };
+
+  const handleSignUp = () => {
+    setIsLoggedIn(true);
+    alert('Account created! Welcome to CodeTrail.');
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    alert('Logged out successfully.');
   };
 
   return (
     <div className="ct-app">
-      {/* 1. TOP NAVBAR */}
+      {/* 1. TOP NAVIGATION */}
       <Navbar 
+        isLoggedIn={isLoggedIn}
         activeTab={activeTab} 
         setActiveTab={setActiveTab}
-        onOpenTerminal={() => setTerminalOpen(true)}
+        onLogin={handleLogin}
+        onSignUp={handleSignUp}
+        onLogout={handleLogout}
       />
 
-      {/* 2. HERO SECTION */}
-      <main className="ct-hero-section">
-        <div className="ct-hero-container">
-          
-          {/* Badge */}
-          <div className="ct-hero-badge">
-            <Sparkles size={14} className="ct-sparkle-glow" />
-            <span>REAL-TIME COLLABORATIVE ENVIRONMENT & TELEMETRY</span>
-          </div>
+      {/* 2. HERO LANDING BANNER WITH EMBEDDED TERMINAL */}
+      <HeroSection 
+        onOpenTerminal={() => setTerminalOpen(true)} 
+      />
 
-          {/* Main Title */}
-          <h1 className="ct-hero-title">
-            CODE WITHOUT <br />
-            <span className="ct-title-highlight">COMPROMISE.</span>
-          </h1>
-
-          {/* Subtitle */}
-          <p className="ct-hero-subtitle">
-            CodeTrail brings together real-time collaborative editing, browser-based code execution, 
-            and automated SHA-256 proof-of-work tracking — proving every developer's contribution.
-          </p>
-
-          {/* Action CTAs */}
-          <div className="ct-hero-actions">
-            <button 
-              className="ct-btn-primary"
-              onClick={() => setTerminalOpen(true)}
-            >
-              <Terminal size={18} />
-              <span>ENTER TERMINAL</span>
-              <ArrowRight size={16} />
-            </button>
-
-            <button 
-              className="ct-btn-secondary"
-              onClick={() => {
-                const el = document.getElementById('modular-workspace');
-                if (el) el.scrollIntoView({ behavior: 'smooth' });
-              }}
-            >
-              <Layers size={18} />
-              <span>EXPLORE WORKSPACE</span>
-            </button>
-          </div>
-
-          {/* Live Telemetry Stats Grid */}
-          <div className="ct-stats-grid">
-            <div className="ct-stat-card">
-              <div className="ct-stat-header">
-                <Users size={16} className="ct-stat-icon" />
-                <span className="ct-stat-label">ACTIVE WORKSPACES</span>
-              </div>
-              <div className="ct-stat-value">1,024+</div>
-              <span className="ct-stat-trend">Live Peer Sync</span>
-            </div>
-
-            <div className="ct-stat-card">
-              <div className="ct-stat-header">
-                <Code2 size={16} className="ct-stat-icon" />
-                <span className="ct-stat-label">CODE EXECUTION</span>
-              </div>
-              <div className="ct-stat-value">6.4M</div>
-              <span className="ct-stat-trend">Piston Sandbox Engine</span>
-            </div>
-
-            <div className="ct-stat-card">
-              <div className="ct-stat-header">
-                <ShieldCheck size={16} className="ct-stat-icon" />
-                <span className="ct-stat-label">PROOF VERIFICATION</span>
-              </div>
-              <div className="ct-stat-value">99.9%</div>
-              <span className="ct-stat-trend">SHA-256 Tamper Evident</span>
-            </div>
-          </div>
-
-        </div>
-      </main>
-
-      {/* 3. INTERACTIVE TYPING TERMINAL DEMO */}
-      <TerminalDemo />
-
-      {/* 4. MODULAR COLLABORATIVE WORKSPACE FEATURE */}
+      {/* 3. COLLABORATIVE WORKSPACE DOMAIN MODULE */}
       <ModularWorkspace />
 
-      {/* 5. PISTON CODE EXECUTION ENGINE SANDBOX */}
+      {/* 4. CODE EXECUTION SANDBOX DOMAIN MODULE */}
       <ExecutionEngine />
 
-      {/* 6. CONTRIBUTION DOSSIER & PROOF-OF-WORK TELEMETRY */}
+      {/* 5. CONTRIBUTION TELEMETRY DOMAIN MODULE */}
       <ContributionDossier />
 
-      {/* 7. 8 CORE PLATFORM MODULES BREAKDOWN */}
+      {/* 6. CORE PLATFORM MODULES BREAKDOWN */}
       <ModulesGrid />
 
-      {/* 8. FOOTER */}
+      {/* 7. FOOTER */}
       <Footer />
 
-      {/* INTERACTIVE TERMINAL ACCESS MODAL */}
-      {terminalOpen && (
-        <div className="ct-terminal-modal-backdrop" onClick={() => setTerminalOpen(false)}>
-          <div className="ct-terminal-window" onClick={e => e.stopPropagation()}>
-            <div className="ct-terminal-header">
-              <div className="ct-terminal-controls">
-                <span className="ct-dot red" onClick={() => setTerminalOpen(false)}></span>
-                <span className="ct-dot yellow"></span>
-                <span className="ct-dot green"></span>
-              </div>
-              <div className="ct-terminal-title">CodeTrail :: Terminal Access</div>
-              <div className="ct-terminal-close-btn" onClick={() => setTerminalOpen(false)}>✕</div>
-            </div>
-            
-            <div className="ct-terminal-body">
-              {terminalLogs.map((log, idx) => (
-                <div key={idx} className={`ct-log-line ${log.startsWith('>') ? 'input' : ''}`}>
-                  {log}
-                </div>
-              ))}
-            </div>
-
-            <form onSubmit={handleTerminalSubmit} className="ct-terminal-input-bar">
-              <span className="ct-prompt-symbol">$</span>
-              <input 
-                type="text"
-                className="ct-terminal-input"
-                placeholder="Type command (e.g. status, connect, help)..."
-                value={terminalInput}
-                onChange={e => setTerminalInput(e.target.value)}
-                autoFocus
-              />
-            </form>
-          </div>
-        </div>
-      )}
+      {/* INTERACTIVE TERMINAL MODAL */}
+      <TerminalModal
+        isOpen={terminalOpen}
+        onClose={() => setTerminalOpen(false)}
+        terminalLogs={terminalLogs}
+        terminalInput={terminalInput}
+        setTerminalInput={setTerminalInput}
+        handleTerminalSubmit={handleTerminalSubmit}
+      />
     </div>
   );
 }

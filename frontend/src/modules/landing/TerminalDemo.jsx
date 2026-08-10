@@ -1,14 +1,14 @@
 import React from 'react';
-import { Terminal } from './ui/Terminal';
+import { Terminal } from '../../components/ui/Terminal';
 
-export function TerminalDemo() {
+export const TerminalDemo = () => {
   return (
     <section className="ct-terminal-demo-section">
       <div className="ct-terminal-demo-container">
-        <div className="ct-demo-badge">REAL-TIME TELEMETRY</div>
+        <div className="ct-demo-badge">WORKSPACE INITIALIZATION</div>
         <h2 className="ct-demo-title">Real-Time Workspace Startup</h2>
         <p className="ct-demo-description">
-          Watch CodeTrail initialize collaborative sockets and boot up dev servers in seconds.
+          Watch CodeTrail initialize collaborative environments and boot development servers in seconds.
         </p>
 
         <div className="ct-demo-window-wrapper">
@@ -19,11 +19,11 @@ export function TerminalDemo() {
             ]}
             outputs={{
               0: [
-                "✔ Cloned repository (42 objects, done)"
+                "Cloned repository (42 objects, done)"
               ],
               1: [
-                "✔ Socket.IO server running at ws://localhost:5000",
-                "✔ Client dev server ready at http://localhost:5173"
+                "Workspace server connected",
+                "Client environment ready at http://localhost:5173"
               ]
             }}
             typingSpeed={40}
@@ -33,6 +33,6 @@ export function TerminalDemo() {
       </div>
     </section>
   );
-}
+};
 
 export default TerminalDemo;
