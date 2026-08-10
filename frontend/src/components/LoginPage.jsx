@@ -225,6 +225,19 @@ export function LoginPage({ onLoginSuccess }) {
               </button>
             </div>
 
+            {/* Forgot Password Link (Sign In Only) */}
+            {!isSignUp && (
+              <div className="flex justify-end text-xs" style={{ marginTop: '-8px' }}>
+                <button 
+                  type="button"
+                  onClick={() => navigate('/forgot-password')}
+                  className="text-purple-400 hover:text-purple-300 transition-colors bg-transparent border-0 outline-none cursor-pointer"
+                >
+                  Forgot Password?
+                </button>
+              </div>
+            )}
+
             {/* Submit Button (Gradient Glowing) */}
             <button 
               type="submit" 

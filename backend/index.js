@@ -2,7 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
-const { verifyGoogleToken, registerUser, loginUser } = require('./controllers/authController');
+const { verifyGoogleToken, registerUser, loginUser, forgotPassword, resetPassword } = require('./controllers/authController');
 
 const app = express();
 
@@ -16,6 +16,8 @@ app.use(express.json());
 app.post('/api/auth/google', verifyGoogleToken);
 app.post('/api/auth/register', registerUser);
 app.post('/api/auth/login', loginUser);
+app.post('/api/auth/forgot-password', forgotPassword);
+app.post('/api/auth/reset-password', resetPassword);
 
 // Connect to MongoDB & Start Server
 const PORT = process.env.PORT || 5000;
