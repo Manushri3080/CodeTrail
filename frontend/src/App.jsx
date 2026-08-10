@@ -7,6 +7,7 @@ import ModulesGrid from './modules/landing/ModulesGrid';
 import ModularWorkspace from './modules/workspace/ModularWorkspace';
 import ExecutionEngine from './modules/execution/ExecutionEngine';
 import ContributionDossier from './modules/telemetry/ContributionDossier';
+import HomePage from './modules/home/HomePage';
 import TerminalModal from './modules/terminal/TerminalModal';
 import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
 
@@ -60,27 +61,33 @@ function App() {
         onLogin={handleLogin}
         onSignUp={handleSignUp}
         onLogout={handleLogout}
+        onNavigate={(tab) => setActiveTab(tab)}
       />
 
-      {/* 2. HERO LANDING BANNER WITH EMBEDDED TERMINAL */}
-      <HeroSection 
-        onOpenTerminal={() => setTerminalOpen(true)} 
-      />
+      {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs LANDING PAGE */}
+      {isLoggedIn && activeTab === 'home' ? (
+        <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
+      ) : (
+        <>
+          {/* LANDING PAGE HERO */}
+          <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
 
-      {/* 3. COLLABORATIVE WORKSPACE DOMAIN MODULE */}
-      <ModularWorkspace />
+          {/* COLLABORATIVE WORKSPACE MODULE */}
+          <ModularWorkspace />
 
-      {/* 4. CODE EXECUTION SANDBOX DOMAIN MODULE */}
-      <ExecutionEngine />
+          {/* CODE EXECUTION SANDBOX MODULE */}
+          <ExecutionEngine />
 
-      {/* 5. CONTRIBUTION TELEMETRY DOMAIN MODULE */}
-      <ContributionDossier />
+          {/* CONTRIBUTION TELEMETRY MODULE */}
+          <ContributionDossier />
 
-      {/* 6. CORE PLATFORM MODULES BREAKDOWN */}
-      <ModulesGrid />
+          {/* CORE PLATFORM MODULES BREAKDOWN */}
+          <ModulesGrid />
 
-      {/* 7. FOOTER */}
-      <Footer />
+          {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
+          <Footer />
+        </>
+      )}
 
       {/* INTERACTIVE TERMINAL MODAL */}
       <TerminalModal

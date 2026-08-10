@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Terminal, Layers, FileCode, Cpu, ShieldCheck, BookOpen, Menu, X, LogIn, Sparkles, ArrowRight, LogOut } from 'lucide-react';
+import { 
+  Terminal, 
+  Layers, 
+  FileCode, 
+  Cpu, 
+  ShieldCheck, 
+  BookOpen, 
+  Menu, 
+  X, 
+  LogIn, 
+  Sparkles, 
+  ArrowRight, 
+  LogOut, 
+  LayoutDashboard, 
+  Bell
+} from 'lucide-react';
 
 export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab }) => {
   const [scrolled, setScrolled] = useState(false);
@@ -13,7 +28,13 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const navLinks = [
+  const navLinks = isLoggedIn ? [
+    { id: 'home', label: 'Home', icon: LayoutDashboard },
+    { id: 'modular-workspace', label: 'Workspace', icon: FileCode },
+    { id: 'execution-engine', label: 'Code Runner', icon: Cpu },
+    { id: 'contribution-dossier', label: 'Telemetry', icon: ShieldCheck },
+    { id: 'docs', label: 'Docs', icon: BookOpen },
+  ] : [
     { id: 'modules-grid', label: 'Features', icon: Layers },
     { id: 'modular-workspace', label: 'Workspace', icon: FileCode },
     { id: 'execution-engine', label: 'Code Runner', icon: Cpu },
@@ -23,6 +44,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
 
   const handleNavClick = (id) => {
     if (setActiveTab) setActiveTab(id);
+    if (onNavigate) onNavigate(id);
     if (id === 'docs') {
       const footer = document.querySelector('footer');
       if (footer) footer.scrollIntoView({ behavior: 'smooth' });
@@ -35,7 +57,8 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
   };
 
   const handleBrandClick = () => {
-    if (setActiveTab) setActiveTab('features');
+    if (setActiveTab) setActiveTab(isLoggedIn ? 'home' : 'modules-grid');
+    if (onNavigate) onNavigate(isLoggedIn ? 'home' : 'landing');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -54,7 +77,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
           </div>
         </div>
 
-        {/* Landing Page Navigation Links */}
+        {/* Center Navigation Links Menu */}
         <nav className="ct-nav-menu">
           {navLinks.map((link) => {
             const Icon = link.icon;
@@ -72,7 +95,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
           })}
         </nav>
 
-        {/* Right Section: Conditional Action Buttons */}
+        {/* Right Section: Action Controls */}
         <div className="ct-nav-actions">
           {isLoggedIn ? (
             <div className="ct-user-logged-wrap">
