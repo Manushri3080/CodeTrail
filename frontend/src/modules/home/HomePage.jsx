@@ -150,7 +150,7 @@ export const HomePage = ({ onJumpToWorkspace }) => {
   return (
     <div className="ct-home-container">
       
-      {/* Fixed Left Sidebar with Personal Goals Widget & Hover Expand */}
+      {/* Desktop Left Sidebar with Personal Goals Widget & Hover Expand */}
       <aside 
         className={`ct-home-sidebar ${sidebarHovered ? 'expanded' : ''}`}
         onMouseEnter={() => setSidebarHovered(true)}
@@ -442,6 +442,46 @@ export const HomePage = ({ onJumpToWorkspace }) => {
         </div>
 
       </main>
+
+      {/* Mobile Fixed Bottom Dock Navigation Bar (Minimal Essential Buttons) */}
+      <nav className="ct-mobile-bottom-dock">
+        <button 
+          className="ct-bottom-dock-btn active" 
+          title="Dashboard"
+        >
+          <LayoutGrid size={20} />
+          <span>Dashboard</span>
+        </button>
+
+        <button 
+          className="ct-bottom-dock-btn" 
+          title="Workspaces"
+          onClick={onJumpToWorkspace}
+        >
+          <FolderGit2 size={20} />
+          <span>Workspaces</span>
+        </button>
+
+        <button 
+          className="ct-bottom-dock-btn" 
+          title="Code Editor"
+          onClick={onJumpToWorkspace}
+        >
+          <Code2 size={20} />
+          <span>Editor</span>
+        </button>
+
+        <button 
+          className="ct-bottom-dock-btn" 
+          title="Pull Requests"
+        >
+          <div className="ct-dock-icon-wrap">
+            <GitBranch size={20} />
+            <span className="ct-dock-badge">3</span>
+          </div>
+          <span>PRs</span>
+        </button>
+      </nav>
 
     </div>
   );

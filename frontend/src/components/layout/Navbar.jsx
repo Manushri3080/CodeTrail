@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Terminal, 
-  Layers, 
-  FileCode, 
-  Cpu, 
-  ShieldCheck, 
-  BookOpen, 
-  Menu, 
-  X, 
-  LogIn, 
-  Sparkles, 
-  ArrowRight, 
-  LogOut, 
-  LayoutDashboard, 
+import {
+  Terminal,
+  Layers,
+  FileCode,
+  Cpu,
+  ShieldCheck,
+  BookOpen,
+  Menu,
+  X,
+  LogIn,
+  Sparkles,
+  ArrowRight,
+  LogOut,
+  LayoutDashboard,
   Bell
 } from 'lucide-react';
 
@@ -63,9 +63,9 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
   };
 
   return (
-    <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''}`}>
+    <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''} ${mobileMenuOpen ? 'ct-mobile-nav-open' : ''}`}>
       <div className="ct-nav-container">
-        
+
         {/* Brand / Logo */}
         <div className="ct-brand" onClick={handleBrandClick}>
           <div className="ct-logo-icon">
@@ -107,7 +107,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                   {currentUser?.name || 'User'}
                 </span>
               </div>
-              <button 
+              <button
                 className="ct-btn-logout"
                 onClick={onLogout}
                 title="Logout"
@@ -117,8 +117,8 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
               </button>
             </div>
           ) : (
-            <>
-              <button 
+            <div className="ct-desktop-actions">
+              <button
                 className="ct-btn-login"
                 onClick={onLogin}
               >
@@ -126,7 +126,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                 <span>Login</span>
               </button>
 
-              <button 
+              <button
                 className="ct-btn-signup"
                 onClick={onSignUp}
               >
@@ -134,10 +134,10 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                 <span>Get Started</span>
                 <ArrowRight size={13} className="ct-arrow-icon" />
               </button>
-            </>
+            </div>
           )}
 
-          <button 
+          <button
             className="ct-mobile-toggle"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle Navigation"
@@ -171,19 +171,32 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
 
           <div className="ct-mobile-actions">
             {isLoggedIn ? (
-              <button 
-                className="ct-btn-logout"
-                onClick={() => {
-                  if (onLogout) onLogout();
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <LogOut size={14} />
-                <span>Logout</span>
-              </button>
+              <div className="ct-mobile-user-row">
+                <div className="ct-mobile-profile-card">
+                  <div className="ct-avatar-wrap">
+                    <span className="ct-nav-avatar font-mono">AR</span>
+                    <span className="ct-avatar-status-dot" />
+                  </div>
+                  <div className="ct-user-details">
+                    <span className="ct-user-name font-semibold text-white">Alex Rivers</span>
+                    <span className="ct-user-role font-mono text-xs text-muted block">Lead Architect</span>
+                  </div>
+                </div>
+
+                <button
+                  className="ct-btn-logout"
+                  onClick={() => {
+                    if (onLogout) onLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <LogOut size={14} />
+                  <span>Logout</span>
+                </button>
+              </div>
             ) : (
-              <>
-                <button 
+              <div className="ct-mobile-auth-grid">
+                <button
                   className="ct-btn-login"
                   onClick={() => {
                     if (onLogin) onLogin();
@@ -193,7 +206,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                   <LogIn size={14} />
                   <span>Login</span>
                 </button>
-                <button 
+                <button
                   className="ct-btn-signup"
                   onClick={() => {
                     if (onSignUp) onSignUp();
@@ -204,7 +217,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                   <span>Get Started</span>
                   <ArrowRight size={14} />
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
