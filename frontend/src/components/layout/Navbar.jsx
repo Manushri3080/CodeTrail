@@ -1,22 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Terminal, 
-  Layers, 
-  FileCode, 
-  Cpu, 
-  ShieldCheck, 
-  BookOpen, 
-  Menu, 
-  X, 
-  LogIn, 
-  Sparkles, 
-  ArrowRight, 
-  LogOut, 
-  LayoutDashboard, 
+import {
+  Terminal,
+  Layers,
+  FileCode,
+  Cpu,
+  ShieldCheck,
+  BookOpen,
+  Menu,
+  X,
+  LogIn,
+  Sparkles,
+  ArrowRight,
+  LogOut,
+  LayoutDashboard,
   Bell
 } from 'lucide-react';
 
-export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, setActiveTab, onNavigate }) => {
+export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -65,7 +65,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
   return (
     <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''} ${mobileMenuOpen ? 'ct-mobile-nav-open' : ''}`}>
       <div className="ct-nav-container">
-        
+
         {/* Brand / Logo */}
         <div className="ct-brand" onClick={handleBrandClick}>
           <div className="ct-logo-icon">
@@ -98,32 +98,27 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
         {/* Right Section: Action Controls */}
         <div className="ct-nav-actions">
           {isLoggedIn ? (
-            <div className="ct-desktop-actions">
-              <button className="ct-nav-icon-btn" title="Notifications">
-                <Bell size={15} />
-              </button>
-
-              <div className="ct-user-logged-wrap">
-                <div className="ct-nav-user-badge">
-                  <div className="ct-avatar-wrap">
-                    <span className="ct-nav-avatar font-mono">AR</span>
-                    <span className="ct-avatar-status-dot" />
-                  </div>
-                  <span className="ct-nav-username">Alex Rivers</span>
-                </div>
-                <button 
-                  className="ct-btn-logout"
-                  onClick={onLogout}
-                  title="Logout"
-                >
-                  <LogOut size={13} className="ct-logout-icon" />
-                  <span>Logout</span>
-                </button>
+            <div className="ct-user-logged-wrap">
+              <div className="ct-nav-user-badge">
+                <span className="ct-nav-avatar">
+                  {currentUser?.name ? currentUser.name[0].toUpperCase() : 'U'}
+                </span>
+                <span className="ct-nav-username">
+                  {currentUser?.name || 'User'}
+                </span>
               </div>
+              <button
+                className="ct-btn-logout"
+                onClick={onLogout}
+                title="Logout"
+              >
+                <LogOut size={13} className="ct-logout-icon" />
+                <span>Logout</span>
+              </button>
             </div>
           ) : (
             <div className="ct-desktop-actions">
-              <button 
+              <button
                 className="ct-btn-login"
                 onClick={onLogin}
               >
@@ -131,7 +126,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                 <span>Login</span>
               </button>
 
-              <button 
+              <button
                 className="ct-btn-signup"
                 onClick={onSignUp}
               >
@@ -142,7 +137,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
             </div>
           )}
 
-          <button 
+          <button
             className="ct-mobile-toggle"
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             aria-label="Toggle Navigation"
@@ -188,7 +183,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                   </div>
                 </div>
 
-                <button 
+                <button
                   className="ct-btn-logout"
                   onClick={() => {
                     if (onLogout) onLogout();
@@ -201,7 +196,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
               </div>
             ) : (
               <div className="ct-mobile-auth-grid">
-                <button 
+                <button
                   className="ct-btn-login"
                   onClick={() => {
                     if (onLogin) onLogin();
@@ -211,7 +206,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                   <LogIn size={14} />
                   <span>Login</span>
                 </button>
-                <button 
+                <button
                   className="ct-btn-signup"
                   onClick={() => {
                     if (onSignUp) onSignUp();
