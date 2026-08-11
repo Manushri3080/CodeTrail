@@ -147,10 +147,10 @@ export function LoginPage({ onLoginSuccess }) {
         </button>
 
         {/* Center Elevating Glass Card Container */}
-        <div className="w-full max-w-[450px] bg-[#0E1017]/40 backdrop-blur-xl border border-white/[0.05] rounded-3xl p-6 sm:p-10 lg:p-12 my-16 lg:my-0 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-8">
+        <div className="w-full max-w-[450px] bg-[#0E1017]/40 backdrop-blur-xl border border-white/[0.05] rounded-3xl p-10 sm:p-12 lg:p-14 my-16 lg:my-0 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-8">
           
           {/* Form Header */}
-          <div className="text-center flex flex-col gap-4 pt-8 pb-2">
+          <div className="text-center flex flex-col gap-4 pt-10 pb-2">
             <div>
               <h2 className="text-2xl font-extrabold text-white tracking-tight">
                 {isSignUp ? 'Create Account' : 'Access CodeTrail'}
@@ -263,7 +263,7 @@ export function LoginPage({ onLoginSuccess }) {
               onError={() => setError('Google Sign-In Failed')}
               theme="filled_dark"
               shape="pill"
-              width="350"
+              width="320"
               size="large"
             />
           </div>

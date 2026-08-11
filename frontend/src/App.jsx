@@ -13,9 +13,14 @@ import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/
 
 function App() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('modules-grid');
+  const [activeTab, setActiveTab] = useState(!!localStorage.getItem('ct-auth-token') ? 'home' : 'modules-grid');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
   const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
+
+  const handleJumpToWorkspace = () => {
+    setActiveTab('modular-workspace');
+  };
+
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
@@ -47,6 +52,7 @@ function App() {
     localStorage.removeItem('ct-auth-user');
     setIsLoggedIn(false);
     setCurrentUser(null);
+    setActiveTab('modules-grid');
     alert('Logged out successfully.');
   };
 
@@ -65,7 +71,7 @@ function App() {
       />
 
       {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs LANDING PAGE */}
-      {isLoggedIn && activeTab === 'home' ? (
+      {isLoggedIn ? (
         <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
       ) : (
         <>

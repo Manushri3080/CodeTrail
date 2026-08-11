@@ -149,7 +149,7 @@ exports.loginUser = async (req, res) => {
     }
 
     if (user.authProvider === 'google' && !user.password) {
-      return res.status(400).json({ message: 'This email is registered using Google OAuth. Please sign in with Google.' });
+      return res.status(400).json({ message: 'Please sign in with Google or reset your password.' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -187,10 +187,6 @@ exports.forgotPassword = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: 'No user registered with this email address' });
-    }
-
-    if (user.authProvider === 'google' && !user.password) {
-      return res.status(400).json({ message: 'This account was created with Google Sign-In. Please sign in via Google.' });
     }
 
     // Generate reset token
