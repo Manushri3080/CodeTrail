@@ -63,7 +63,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
   };
 
   return (
-    <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''}`}>
+    <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''} ${mobileMenuOpen ? 'ct-mobile-nav-open' : ''}`}>
       <div className="ct-nav-container">
         
         {/* Brand / Logo */}
@@ -98,7 +98,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
         {/* Right Section: Action Controls */}
         <div className="ct-nav-actions">
           {isLoggedIn ? (
-            <>
+            <div className="ct-desktop-actions">
               <button className="ct-nav-icon-btn" title="Notifications">
                 <Bell size={15} />
               </button>
@@ -120,9 +120,9 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                   <span>Logout</span>
                 </button>
               </div>
-            </>
+            </div>
           ) : (
-            <>
+            <div className="ct-desktop-actions">
               <button 
                 className="ct-btn-login"
                 onClick={onLogin}
@@ -139,7 +139,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                 <span>Get Started</span>
                 <ArrowRight size={13} className="ct-arrow-icon" />
               </button>
-            </>
+            </div>
           )}
 
           <button 
@@ -176,18 +176,31 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
 
           <div className="ct-mobile-actions">
             {isLoggedIn ? (
-              <button 
-                className="ct-btn-logout"
-                onClick={() => {
-                  if (onLogout) onLogout();
-                  setMobileMenuOpen(false);
-                }}
-              >
-                <LogOut size={14} />
-                <span>Logout</span>
-              </button>
+              <div className="ct-mobile-user-row">
+                <div className="ct-mobile-profile-card">
+                  <div className="ct-avatar-wrap">
+                    <span className="ct-nav-avatar font-mono">AR</span>
+                    <span className="ct-avatar-status-dot" />
+                  </div>
+                  <div className="ct-user-details">
+                    <span className="ct-user-name font-semibold text-white">Alex Rivers</span>
+                    <span className="ct-user-role font-mono text-xs text-muted block">Lead Architect</span>
+                  </div>
+                </div>
+
+                <button 
+                  className="ct-btn-logout"
+                  onClick={() => {
+                    if (onLogout) onLogout();
+                    setMobileMenuOpen(false);
+                  }}
+                >
+                  <LogOut size={14} />
+                  <span>Logout</span>
+                </button>
+              </div>
             ) : (
-              <>
+              <div className="ct-mobile-auth-grid">
                 <button 
                   className="ct-btn-login"
                   onClick={() => {
@@ -209,7 +222,7 @@ export const Navbar = ({ isLoggedIn, onLogin, onSignUp, onLogout, activeTab, set
                   <span>Get Started</span>
                   <ArrowRight size={14} />
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
