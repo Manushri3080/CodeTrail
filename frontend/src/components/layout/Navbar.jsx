@@ -15,7 +15,7 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 
-export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab }) => {
+export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab, onNavigate }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);

@@ -15,9 +15,20 @@ import ProfilePage from './modules/profile/ProfilePage';
 
 function App({ defaultTab }) {
   const navigate = useNavigate();
+<<<<<<< HEAD
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
   const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
   const [activeTab, setActiveTab] = useState(defaultTab || (isLoggedIn ? 'home' : 'modules-grid'));
+=======
+  const [activeTab, setActiveTab] = useState(!!localStorage.getItem('ct-auth-token') ? 'home' : 'modules-grid');
+  const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
+  const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
+
+  const handleJumpToWorkspace = () => {
+    setActiveTab('modular-workspace');
+  };
+
+>>>>>>> origin/main
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
@@ -59,15 +70,19 @@ function App({ defaultTab }) {
     setIsLoggedIn(false);
     setCurrentUser(null);
     setActiveTab('modules-grid');
+<<<<<<< HEAD
+=======
+    alert('Logged out successfully.');
+>>>>>>> origin/main
   };
 
   return (
     <div className="ct-app">
       {/* 1. TOP NAVIGATION */}
-      <Navbar 
+      <Navbar
         isLoggedIn={isLoggedIn}
         currentUser={currentUser}
-        activeTab={activeTab} 
+        activeTab={activeTab}
         setActiveTab={setActiveTab}
         onLogin={handleLogin}
         onSignUp={handleSignUp}
@@ -75,52 +90,60 @@ function App({ defaultTab }) {
         onNavigate={(tab) => setActiveTab(tab)}
       />
 
-      {/* 2. DYNAMIC MAIN VIEW MODE: PROFILE vs HOME DASHBOARD vs LANDING PAGE */}
-      {activeTab === 'profile' ? (
-        <ProfilePage
-          currentUser={currentUser}
-          setCurrentUser={setCurrentUser}
-          onLogout={handleLogout}
-          onBackToHome={() => setActiveTab(isLoggedIn ? 'home' : 'modules-grid')}
-        />
-      ) : isLoggedIn && activeTab === 'home' ? (
-        <HomePage 
-          onJumpToWorkspace={handleJumpToWorkspace} 
-          onOpenProfile={() => setActiveTab('profile')}
-        />
-      ) : (
-        <>
-          {/* LANDING PAGE HERO */}
-          <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
-
-          {/* COLLABORATIVE WORKSPACE MODULE */}
-          <ModularWorkspace />
-
-          {/* CODE EXECUTION SANDBOX MODULE */}
-          <ExecutionEngine />
-
-          {/* CONTRIBUTION TELEMETRY MODULE */}
-          <ContributionDossier />
-
-          {/* CORE PLATFORM MODULES BREAKDOWN */}
-          <ModulesGrid />
-
-          {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
-          <Footer />
-        </>
-      )}
-
-
-      {/* INTERACTIVE TERMINAL MODAL */}
-      <TerminalModal
-        isOpen={terminalOpen}
-        onClose={() => setTerminalOpen(false)}
-        terminalLogs={terminalLogs}
-        terminalInput={terminalInput}
-        setTerminalInput={setTerminalInput}
-        handleTerminalSubmit={handleTerminalSubmit}
+<<<<<<< HEAD
+  {/* 2. DYNAMIC MAIN VIEW MODE: PROFILE vs HOME DASHBOARD vs LANDING PAGE */ }
+  {
+    activeTab === 'profile' ? (
+      <ProfilePage
+        currentUser={currentUser}
+        setCurrentUser={setCurrentUser}
+        onLogout={handleLogout}
+        onBackToHome={() => setActiveTab(isLoggedIn ? 'home' : 'modules-grid')}
       />
-    </div>
+    ) : isLoggedIn && activeTab === 'home' ? (
+      <HomePage
+        onJumpToWorkspace={handleJumpToWorkspace}
+        onOpenProfile={() => setActiveTab('profile')}
+      />
+=======
+      {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs LANDING PAGE */}
+      {isLoggedIn ? (
+        <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
+>>>>>>> origin/main
+    ) : (
+    <>
+      {/* LANDING PAGE HERO */}
+      <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
+
+      {/* COLLABORATIVE WORKSPACE MODULE */}
+      <ModularWorkspace />
+
+      {/* CODE EXECUTION SANDBOX MODULE */}
+      <ExecutionEngine />
+
+      {/* CONTRIBUTION TELEMETRY MODULE */}
+      <ContributionDossier />
+
+      {/* CORE PLATFORM MODULES BREAKDOWN */}
+      <ModulesGrid />
+
+      {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
+      <Footer />
+    </>
+  )
+  }
+
+
+  {/* INTERACTIVE TERMINAL MODAL */ }
+  <TerminalModal
+    isOpen={terminalOpen}
+    onClose={() => setTerminalOpen(false)}
+    terminalLogs={terminalLogs}
+    terminalInput={terminalInput}
+    setTerminalInput={setTerminalInput}
+    handleTerminalSubmit={handleTerminalSubmit}
+  />
+    </div >
   );
 }
 
