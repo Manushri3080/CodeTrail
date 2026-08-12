@@ -262,3 +262,126 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ message: 'Internal Server Error', error: err.message });
   }
 };
+
+// 6. Get Authenticated User Profile
+exports.getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password -resetPasswordToken -resetPasswordExpires');
+    if (!user) {
+      return res.status(404).json({ message: 'User profile not found' });
+    }
+
+    // Return user with stats and activity structured for API integration
+    const username = user.username || user.email.split('@')[0];
+    const role = user.role || 'CodeTrail Learner';
+    const avatar = user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.email}`;
+
+    const updatedAt = user.updatedAt || user.createdAt;
+
+    res.json({
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        username,
+        role,
+        bio: user.bio || '',
+        avatar,
+        authProvider: user.authProvider,
+        createdAt: user.createdAt,
+        updatedAt: updatedAt
+      },
+      stats: {
+        problemsSolved: 42,
+        codingStreak: 7,
+        modulesCompleted: 8,
+        totalPracticeTime: '34.5 hrs'
+      },
+      recentActivity: [
+        { id: 1, title: 'Solved "Binary Tree Maximum Path Sum"', category: 'Problem Solving', time: '2 hours ago', tagColor: 'emerald' },
+        { id: 2, title: 'Completed "Async JavaScript & Event Loop" Module', category: 'Learning', time: 'Yesterday', tagColor: 'purple' },
+        { id: 3, title: 'Started Practice Session in Code Runner', category: 'Sandbox', time: '3 days ago', tagColor: 'cyan' },
+        { id: 4, title: 'Updated Profile & Account Details', category: 'Account', updatedAt: updatedAt, time: 'dynamic', tagColor: 'amber' }
+      ]
+    });
+  } catch (err) {
+    console.error('Get Profile Error:', err);
+    res.status(500).json({ message: 'Failed to fetch user profile', error: err.message });
+  }
+};
+
+// 7. Update Authenticated User Profile
+exports.updateProfile = async (req, res) => {
+  const { name, username, role, bio, avatar } = req.body;
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (name) user.name = name.trim();
+    if (username) user.username = username.trim().toLowerCase();
+    if (role) user.role = role.trim();
+    if (bio !== undefined) user.bio = bio.trim();
+    if (avatar) user.avatar = avatar.trim();
+
+    user.updatedAt = new Date();
+    await user.save();
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        username: user.username || user.email.split('@')[0],
+        role: user.role || 'CodeTrail Learner',
+        bio: user.bio || '',
+        avatar: user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.email}`,
+        authProvider: user.authProvider,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      }
+    });
+
+  } catch (err) {
+    console.error('Update Profile Error:', err);
+    res.status(500).json({ message: 'Failed to update profile', error: err.message });
+  }
+};
+
+// 8. Change Password (Authenticated User)
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ message: 'Current password and new password are required' });
+  }
+
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (user.authProvider === 'google' && !user.password) {
+      return res.status(400).json({ message: 'Password change is not available for Google OAuth accounts' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password does not match' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    console.error('Change Password Error:', err);
+    res.status(500).json({ message: 'Failed to change password', error: err.message });
+  }
+};
+

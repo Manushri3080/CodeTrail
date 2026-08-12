@@ -10,15 +10,26 @@ import ContributionDossier from './modules/telemetry/ContributionDossier';
 import HomePage from './modules/home/HomePage';
 import TerminalModal from './modules/terminal/TerminalModal';
 import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
+import ProfilePage from './modules/profile/ProfilePage';
 
-function App() {
+
+function App({ defaultTab }) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('modules-grid');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
   const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
+  const [activeTab, setActiveTab] = useState(defaultTab || (isLoggedIn ? 'home' : 'modules-grid'));
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
+
+  const handleJumpToWorkspace = () => {
+    const el = document.getElementById('modular-workspace');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      setActiveTab('modular-workspace');
+    }
+  };
 
   const handleTerminalSubmit = (e) => {
     e.preventDefault();
@@ -47,7 +58,7 @@ function App() {
     localStorage.removeItem('ct-auth-user');
     setIsLoggedIn(false);
     setCurrentUser(null);
-    alert('Logged out successfully.');
+    setActiveTab('modules-grid');
   };
 
   return (
@@ -64,9 +75,19 @@ function App() {
         onNavigate={(tab) => setActiveTab(tab)}
       />
 
-      {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs LANDING PAGE */}
-      {isLoggedIn && activeTab === 'home' ? (
-        <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
+      {/* 2. DYNAMIC MAIN VIEW MODE: PROFILE vs HOME DASHBOARD vs LANDING PAGE */}
+      {activeTab === 'profile' ? (
+        <ProfilePage
+          currentUser={currentUser}
+          setCurrentUser={setCurrentUser}
+          onLogout={handleLogout}
+          onBackToHome={() => setActiveTab(isLoggedIn ? 'home' : 'modules-grid')}
+        />
+      ) : isLoggedIn && activeTab === 'home' ? (
+        <HomePage 
+          onJumpToWorkspace={handleJumpToWorkspace} 
+          onOpenProfile={() => setActiveTab('profile')}
+        />
       ) : (
         <>
           {/* LANDING PAGE HERO */}
@@ -88,6 +109,7 @@ function App() {
           <Footer />
         </>
       )}
+
 
       {/* INTERACTIVE TERMINAL MODAL */}
       <TerminalModal
