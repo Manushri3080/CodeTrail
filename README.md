@@ -293,8 +293,14 @@ chore:    Maintenance tasks
 
 | Name | Role | Branch |
 |------|------|--------|
-| Manushri | Project Lead / Backend | `main` |
-| Anistina | Frontend Developer | `features/anistina` |
+| Manushri | | `features/manushri` |
+| Maryam |  | `feat/maryam` |
+| Anistina | | `features/anistina` |
+| Ruchita | | `features/Ruchita` |
+| Rishika | | `features/Rishika` |
+| Mahi | | `features/Mahi` |
+| Monar | | `features/Monar` |
+| Meet | | `features/meet` |
 | *(Add team members here)* | *(Role)* | *(Branch)* |
 
 ---
