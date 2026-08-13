@@ -29,8 +29,9 @@ import {
   Check
 } from 'lucide-react';
 
-export const HomePage = ({ onJumpToWorkspace }) => {
+export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
   const [timelineFilter, setTimelineFilter] = useState('all');
+
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [sidebarHovered, setSidebarHovered] = useState(false);
 
@@ -218,15 +219,16 @@ export const HomePage = ({ onJumpToWorkspace }) => {
         </div>
 
         <div className="ct-sidebar-group bottom">
-          <button className="ct-sidebar-btn" title="Profile">
+          <button className="ct-sidebar-btn" title="Profile" onClick={onOpenProfile}>
             <User size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Developer Profile</span>
           </button>
-          <button className="ct-sidebar-btn" title="Settings">
+          <button className="ct-sidebar-btn" title="Settings" onClick={onOpenProfile}>
             <Settings size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Settings</span>
           </button>
         </div>
+
       </aside>
 
       {/* Main Home Dashboard Body */}
