@@ -90,38 +90,38 @@ function App({ defaultTab }) {
           onOpenProfile={() => setActiveTab('profile')}
         />
       ) : (
-      <>
-        {/* LANDING PAGE HERO */}
-        <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
+        <>
+          {/* LANDING PAGE HERO */}
+          <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
 
-        {/* COLLABORATIVE WORKSPACE MODULE */}
-        <ModularWorkspace />
+          {/* COLLABORATIVE WORKSPACE MODULE */}
+          <ModularWorkspace />
 
-        {/* CODE EXECUTION SANDBOX MODULE */}
-        <ExecutionEngine />
+          {/* CODE EXECUTION SANDBOX MODULE */}
+          <ExecutionEngine />
 
-        {/* CONTRIBUTION TELEMETRY MODULE */}
-        <ContributionDossier />
+          {/* CONTRIBUTION TELEMETRY MODULE */}
+          <ContributionDossier />
 
-        {/* CORE PLATFORM MODULES BREAKDOWN */}
-        <ModulesGrid />
+          {/* CORE PLATFORM MODULES BREAKDOWN */}
+          <ModulesGrid />
 
-        {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
-        <Footer />
-      </>
-    )
-  }
+          {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
+          <Footer />
+        </>
+      )
+      }
 
 
-  {/* INTERACTIVE TERMINAL MODAL */ }
-  <TerminalModal
-    isOpen={terminalOpen}
-    onClose={() => setTerminalOpen(false)}
-    terminalLogs={terminalLogs}
-    terminalInput={terminalInput}
-    setTerminalInput={setTerminalInput}
-    handleTerminalSubmit={handleTerminalSubmit}
-  />
+      {/* INTERACTIVE TERMINAL MODAL */}
+      <TerminalModal
+        isOpen={terminalOpen}
+        onClose={() => setTerminalOpen(false)}
+        terminalLogs={terminalLogs}
+        terminalInput={terminalInput}
+        setTerminalInput={setTerminalInput}
+        handleTerminalSubmit={handleTerminalSubmit}
+      />
     </div >
   );
 }
