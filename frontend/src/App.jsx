@@ -12,22 +12,28 @@ import TerminalModal from './modules/terminal/TerminalModal';
 import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
 import ProfilePage from './modules/profile/ProfilePage';
 
-
 function App({ defaultTab }) {
   const navigate = useNavigate();
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
   const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
   const [activeTab, setActiveTab] = useState(defaultTab || (isLoggedIn ? 'home' : 'modules-grid'));
+  const [activeWorkspace, setActiveWorkspace] = useState(null);
+
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
 
-  const handleJumpToWorkspace = () => {
-    const el = document.getElementById('modular-workspace');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
-    } else {
+  const handleJumpToWorkspace = (workspace = null) => {
+    if (workspace) {
+      setActiveWorkspace(workspace);
       setActiveTab('modular-workspace');
+    } else {
+      const el = document.getElementById('modular-workspace');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        setActiveTab('modular-workspace');
+      }
     }
   };
 
@@ -58,6 +64,7 @@ function App({ defaultTab }) {
     localStorage.removeItem('ct-auth-user');
     setIsLoggedIn(false);
     setCurrentUser(null);
+    setActiveWorkspace(null);
     setActiveTab('modules-grid');
     alert('Logged out successfully.');
   };
@@ -76,7 +83,7 @@ function App({ defaultTab }) {
         onNavigate={(tab) => setActiveTab(tab)}
       />
 
-      {/* 2. DYNAMIC MAIN VIEW MODE: PROFILE vs HOME DASHBOARD vs LANDING PAGE */}
+      {/* 2. DYNAMIC MAIN VIEW MODE: PROFILE vs ACTIVE WORKSPACE vs HOME DASHBOARD vs LANDING PAGE */}
       {activeTab === 'profile' ? (
         <ProfilePage
           currentUser={currentUser}
@@ -84,6 +91,13 @@ function App({ defaultTab }) {
           onLogout={handleLogout}
           onBackToHome={() => setActiveTab(isLoggedIn ? 'home' : 'modules-grid')}
         />
+      ) : isLoggedIn && activeTab === 'modular-workspace' ? (
+        <div className="ct-logged-workspace-wrap">
+          <ModularWorkspace 
+            activeWorkspace={activeWorkspace} 
+            onBackToHome={() => setActiveTab('home')} 
+          />
+        </div>
       ) : isLoggedIn && activeTab === 'home' ? (
         <HomePage
           onJumpToWorkspace={handleJumpToWorkspace}
@@ -109,9 +123,7 @@ function App({ defaultTab }) {
           {/* FOOTER (ONLY RENDERED ON LANDING PAGE) */}
           <Footer />
         </>
-      )
-      }
-
+      )}
 
       {/* INTERACTIVE TERMINAL MODAL */}
       <TerminalModal
@@ -122,7 +134,7 @@ function App({ defaultTab }) {
         setTerminalInput={setTerminalInput}
         handleTerminalSubmit={handleTerminalSubmit}
       />
-    </div >
+    </div>
   );
 }
 
