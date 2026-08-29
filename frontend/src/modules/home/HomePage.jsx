@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import { 
   Play, 
   GitPullRequest, 
@@ -26,13 +27,138 @@ import {
   Flag,
   LayoutGrid,
   MoreVertical,
-  Check
+  Check,
+  KeyRound,
+  Loader2,
+  Sparkles
 } from 'lucide-react';
+import WorkspaceModal from '../../components/workspace/WorkspaceModal';
+
+const API_BASE = 'http://localhost:5000/api';
+
+const ICON_MAP = {
+  Rocket,
+  Cpu,
+  Database,
+  Palette,
+  Code2
+};
+
+const resolveIcon = (icon) => {
+  if (typeof icon === 'function') return icon;
+  return ICON_MAP[icon] || Rocket;
+};
+
+const INITIAL_FALLBACK_WORKSPACES = [
+  {
+    id: 'ws-1',
+    title: 'Project Alpha',
+    desc: 'Next.js core application with React server components.',
+    brandColor: 'purple',
+    icon: 'Rocket',
+    role: 'Lead',
+    timeSpent: '14h 30m',
+    status: 'active',
+    collaborators: ['A', 'S', '+3']
+  },
+  {
+    id: 'ws-2',
+    title: 'Microservices Beta',
+    desc: 'Go based gRPC services with Docker containerization.',
+    brandColor: 'cyan',
+    icon: 'Cpu',
+    role: 'Collaborator',
+    timeSpent: '8h 15m',
+    status: 'active',
+    collaborators: ['M', 'E']
+  },
+  {
+    id: 'ws-3',
+    title: 'Data Pipeline V2',
+    desc: 'Apache Airflow DAGs for customer analytics processing.',
+    brandColor: 'emerald',
+    icon: 'Database',
+    role: 'Maintainer',
+    timeSpent: '2h 45m',
+    status: 'archived',
+    collaborators: ['A', '+1']
+  },
+  {
+    id: 'ws-4',
+    title: 'Component Lib',
+    desc: 'Shared UI components for all internal dashboards.',
+    brandColor: 'rose',
+    icon: 'Palette',
+    role: 'Contributor',
+    timeSpent: '0h 0m',
+    status: 'archived',
+    collaborators: ['S']
+  }
+];
 
 export const HomePage = ({ onJumpToWorkspace }) => {
   const [timelineFilter, setTimelineFilter] = useState('all');
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [sidebarHovered, setSidebarHovered] = useState(false);
+  const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [workspaces, setWorkspaces] = useState(INITIAL_FALLBACK_WORKSPACES);
+  const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
+
+  // Fetch workspaces on mount
+  useEffect(() => {
+    const fetchWorkspaces = async () => {
+      const token = localStorage.getItem('ct-auth-token');
+      if (!token) return;
+
+      try {
+        setLoadingWorkspaces(true);
+        const res = await axios.get(`${API_BASE}/workspaces`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (res.data && Array.isArray(res.data.workspaces) && res.data.workspaces.length > 0) {
+          setWorkspaces(res.data.workspaces);
+        }
+      } catch (err) {
+        console.warn('Backend offline or workspace fetch failed, using fallback:', err.message);
+      } finally {
+        setLoadingWorkspaces(false);
+      }
+    };
+
+    fetchWorkspaces();
+  }, []);
+
+  const handleWorkspaceCreated = (newWs) => {
+    const formatted = {
+      id: newWs._id,
+      title: newWs.title,
+      desc: newWs.description,
+      brandColor: newWs.brandColor || 'purple',
+      icon: newWs.icon || 'Rocket',
+      role: 'Owner',
+      timeSpent: '0h 0m',
+      status: newWs.status || 'active',
+      language: newWs.language,
+      inviteCode: newWs.inviteCode,
+      collaborators: ['You']
+    };
+    setWorkspaces(prev => [formatted, ...prev]);
+  };
+
+  const handleWorkspaceJoined = (workspaceId) => {
+    // Refresh workspaces list
+    const token = localStorage.getItem('ct-auth-token');
+    if (token) {
+      axios.get(`${API_BASE}/workspaces`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then(res => {
+        if (res.data && res.data.workspaces) {
+          setWorkspaces(res.data.workspaces);
+        }
+      }).catch(err => console.error(err));
+    }
+  };
 
   // Personal Goals checklist state
   const [goals, setGoals] = useState([
@@ -86,53 +212,6 @@ export const HomePage = ({ onJumpToWorkspace }) => {
     }
   ];
 
-  const workspaces = [
-    {
-      id: 'ws-1',
-      title: 'Project Alpha',
-      desc: 'Next.js core application with React server components.',
-      brandColor: 'purple',
-      icon: Rocket,
-      role: 'Lead',
-      timeSpent: '14h 30m',
-      status: 'active',
-      collaborators: ['A', 'S', '+3']
-    },
-    {
-      id: 'ws-2',
-      title: 'Microservices Beta',
-      desc: 'Go based gRPC services with Docker containerization.',
-      brandColor: 'cyan',
-      icon: Cpu,
-      role: 'Collaborator',
-      timeSpent: '8h 15m',
-      status: 'active',
-      collaborators: ['M', 'E']
-    },
-    {
-      id: 'ws-3',
-      title: 'Data Pipeline V2',
-      desc: 'Apache Airflow DAGs for customer analytics processing.',
-      brandColor: 'emerald',
-      icon: Database,
-      role: 'Maintainer',
-      timeSpent: '2h 45m',
-      status: 'inactive',
-      collaborators: ['A', '+1']
-    },
-    {
-      id: 'ws-4',
-      title: 'Component Lib',
-      desc: 'Shared UI components for all internal dashboards.',
-      brandColor: 'rose',
-      icon: Palette,
-      role: 'Contributor',
-      timeSpent: '0h 0m',
-      status: 'inactive',
-      collaborators: ['S']
-    }
-  ];
-
   const filteredTimeline = timelineEvents.filter(ev => {
     if (timelineFilter === 'all') return true;
     if (timelineFilter === 'workspace') return ev.type === 'workspace';
@@ -143,7 +222,7 @@ export const HomePage = ({ onJumpToWorkspace }) => {
   const filteredWorkspaces = workspaces.filter(ws => {
     if (workspaceFilter === 'all') return true;
     if (workspaceFilter === 'active') return ws.status === 'active';
-    if (workspaceFilter === 'archived') return ws.status === 'inactive';
+    if (workspaceFilter === 'archived') return ws.status === 'archived' || ws.status === 'inactive';
     return true;
   });
 
@@ -354,9 +433,13 @@ export const HomePage = ({ onJumpToWorkspace }) => {
               <div className="ct-panel-title">
                 <FolderGit2 size={16} className="text-purple-400" />
                 <span>Your Workspaces</span>
+                {loadingWorkspaces && <Loader2 size={14} className="animate-spin text-purple-400" />}
               </div>
               
-              <button className="ct-btn-primary-sm" onClick={onJumpToWorkspace}>
+              <button 
+                className="ct-btn-primary-sm" 
+                onClick={() => setIsWorkspaceModalOpen(true)}
+              >
                 <Plus size={14} />
                 <span>New Workspace</span>
               </button>
@@ -386,62 +469,86 @@ export const HomePage = ({ onJumpToWorkspace }) => {
               </div>
             </div>
 
-            {/* 4 Brand Accent Workspace Cards in 2-Column Split Grid */}
+            {/* Dynamic Brand Accent Workspace Cards Grid */}
             <div className="ct-brand-cards-split-grid">
-              {filteredWorkspaces.map(ws => {
-                const WsIcon = ws.icon;
-                return (
-                  <div 
-                    key={ws.id} 
-                    className={`ct-brand-card ${ws.brandColor}`}
-                    onClick={onJumpToWorkspace}
+              {filteredWorkspaces.length === 0 ? (
+                <div className="ct-empty-workspace-state">
+                  <Sparkles size={24} className="text-purple-400 mb-2" />
+                  <p>No workspaces found in this filter.</p>
+                  <button 
+                    className="ct-btn-primary-sm mt-3"
+                    onClick={() => setIsWorkspaceModalOpen(true)}
                   >
-                    <div className="ct-brand-card-top">
-                      <div className={`ct-brand-icon-box ${ws.brandColor}`}>
-                        <WsIcon size={18} />
-                      </div>
-                      <button className="ct-btn-more">
-                        <MoreVertical size={14} />
-                      </button>
-                    </div>
-
-                    <div className="ct-brand-card-body">
-                      <h4 className="ct-brand-card-title">{ws.title}</h4>
-                      <p className="ct-brand-card-desc">{ws.desc}</p>
-                    </div>
-
-                    <div className="ct-brand-card-footer">
-                      <div className="ct-card-meta-row">
-                        <span className="ct-meta-label">Role</span>
-                        <span className="ct-role-badge">{ws.role}</span>
-                      </div>
-
-                      <div className="ct-card-meta-row">
-                        <span className="ct-meta-label">This Week</span>
-                        <span className={`ct-time-val ${ws.brandColor}`}>{ws.timeSpent}</span>
-                      </div>
-
-                      <div className="ct-card-collab-row">
-                        <div className="ct-collab-avatars">
-                          {ws.collaborators.map((c, i) => (
-                            <span key={i} className="ct-mini-avatar">{c}</span>
-                          ))}
+                    <Plus size={14} />
+                    <span>Create Your First Workspace</span>
+                  </button>
+                </div>
+              ) : (
+                filteredWorkspaces.map(ws => {
+                  const WsIcon = resolveIcon(ws.icon);
+                  return (
+                    <div 
+                      key={ws.id} 
+                      className={`ct-brand-card ${ws.brandColor || 'purple'}`}
+                      onClick={() => onJumpToWorkspace(ws)}
+                    >
+                      <div className="ct-brand-card-top">
+                        <div className={`ct-brand-icon-box ${ws.brandColor || 'purple'}`}>
+                          <WsIcon size={18} />
                         </div>
-                        <span className="ct-card-status">
-                          <span className={`ct-pulse-dot ${ws.status === 'active' ? 'green' : 'gray'}`} />
-                          <span>{ws.status === 'active' ? 'Active' : 'Inactive'}</span>
+                        <span className="ct-lang-badge">
+                          {ws.language || 'JS'}
                         </span>
                       </div>
+
+                      <div className="ct-brand-card-body">
+                        <h4 className="ct-brand-card-title">{ws.title}</h4>
+                        <p className="ct-brand-card-desc">{ws.desc}</p>
+                      </div>
+
+                      <div className="ct-brand-card-footer">
+                        <div className="ct-card-meta-row">
+                          <span className="ct-meta-label">Role</span>
+                          <span className="ct-role-badge">{ws.role}</span>
+                        </div>
+
+                        <div className="ct-card-meta-row">
+                          <span className="ct-meta-label">Room Code</span>
+                          <span className={`ct-time-val font-mono ${ws.brandColor || 'purple'}`}>
+                            {ws.inviteCode || 'CT-DEMO'}
+                          </span>
+                        </div>
+
+                        <div className="ct-card-collab-row">
+                          <div className="ct-collab-avatars">
+                            {(ws.collaborators || ['U']).map((c, i) => (
+                              <span key={i} className="ct-mini-avatar">{c}</span>
+                            ))}
+                          </div>
+                          <span className="ct-card-status">
+                            <span className={`ct-pulse-dot ${ws.status === 'active' ? 'green' : 'gray'}`} />
+                            <span>{ws.status === 'active' ? 'Active' : 'Archived'}</span>
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
           </div>
 
         </div>
 
       </main>
+
+      {/* CREATE / JOIN WORKSPACE MODAL */}
+      <WorkspaceModal
+        isOpen={isWorkspaceModalOpen}
+        onClose={() => setIsWorkspaceModalOpen(false)}
+        onWorkspaceCreated={handleWorkspaceCreated}
+        onWorkspaceJoined={handleWorkspaceJoined}
+      />
 
       {/* Mobile Fixed Bottom Dock Navigation Bar (Minimal Essential Buttons) */}
       <nav className="ct-mobile-bottom-dock">

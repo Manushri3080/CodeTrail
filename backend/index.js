@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const { verifyGoogleToken, registerUser, loginUser, forgotPassword, resetPassword } = require('./controllers/authController');
+const workspaceRoutes = require('./routes/workspaceRoutes');
 
 const app = express();
 
@@ -18,6 +19,9 @@ app.post('/api/auth/register', registerUser);
 app.post('/api/auth/login', loginUser);
 app.post('/api/auth/forgot-password', forgotPassword);
 app.post('/api/auth/reset-password', resetPassword);
+
+// Workspace & Collaboration Routes (Module 2)
+app.use('/api/workspaces', workspaceRoutes);
 
 // Connect to MongoDB & Start Server
 const PORT = process.env.PORT || 5000;

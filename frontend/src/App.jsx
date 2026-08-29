@@ -16,8 +16,10 @@ function App() {
   const [activeTab, setActiveTab] = useState(!!localStorage.getItem('ct-auth-token') ? 'home' : 'modules-grid');
   const [isLoggedIn, setIsLoggedIn] = useState(!!localStorage.getItem('ct-auth-token'));
   const [currentUser, setCurrentUser] = useState(JSON.parse(localStorage.getItem('ct-auth-user')) || null);
+  const [activeWorkspace, setActiveWorkspace] = useState(null);
 
-  const handleJumpToWorkspace = () => {
+  const handleJumpToWorkspace = (workspace = null) => {
+    setActiveWorkspace(workspace);
     setActiveTab('modular-workspace');
   };
 
@@ -52,6 +54,7 @@ function App() {
     localStorage.removeItem('ct-auth-user');
     setIsLoggedIn(false);
     setCurrentUser(null);
+    setActiveWorkspace(null);
     setActiveTab('modules-grid');
     alert('Logged out successfully.');
   };
@@ -70,9 +73,18 @@ function App() {
         onNavigate={(tab) => setActiveTab(tab)}
       />
 
-      {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs LANDING PAGE */}
+      {/* 2. DYNAMIC MAIN VIEW MODE: HOME DASHBOARD (When Logged In) vs ACTIVE WORKSPACE vs LANDING PAGE */}
       {isLoggedIn ? (
-        <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
+        activeTab === 'modular-workspace' ? (
+          <div className="ct-logged-workspace-wrap">
+            <ModularWorkspace 
+              activeWorkspace={activeWorkspace} 
+              onBackToHome={() => setActiveTab('home')} 
+            />
+          </div>
+        ) : (
+          <HomePage onJumpToWorkspace={handleJumpToWorkspace} />
+        )
       ) : (
         <>
           {/* LANDING PAGE HERO */}
