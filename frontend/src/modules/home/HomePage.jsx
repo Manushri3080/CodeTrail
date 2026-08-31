@@ -44,6 +44,19 @@ const ICON_MAP = {
   Code2
 };
 
+const formatLanguageName = (lang) => {
+  if (!lang) return 'JavaScript';
+  const map = {
+    javascript: 'JavaScript',
+    python: 'Python',
+    cpp: 'C++',
+    java: 'Java',
+    rust: 'Rust',
+    go: 'Go'
+  };
+  return map[lang.toLowerCase()] || (lang.charAt(0).toUpperCase() + lang.slice(1));
+};
+
 const resolveIcon = (icon) => {
   if (typeof icon === 'function') return icon;
   return ICON_MAP[icon] || Rocket;
@@ -102,6 +115,7 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [sidebarHovered, setSidebarHovered] = useState(false);
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
+  const [modalInitialTab, setModalInitialTab] = useState('create'); // 'create' | 'join'
   const [workspaces, setWorkspaces] = useState(INITIAL_FALLBACK_WORKSPACES);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(false);
 
@@ -148,7 +162,7 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
   };
 
   const handleWorkspaceJoined = (workspaceId) => {
-    // Refresh workspaces list
+    // Refresh workspaces list and navigate to joined workspace
     const token = localStorage.getItem('ct-auth-token');
     if (token) {
       axios.get(`${API_BASE}/workspaces`, {
@@ -156,8 +170,12 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
       }).then(res => {
         if (res.data && res.data.workspaces) {
           setWorkspaces(res.data.workspaces);
+          const joined = res.data.workspaces.find(w => w.id === workspaceId || w._id === workspaceId);
+          if (joined && onJumpToWorkspace) {
+            onJumpToWorkspace(joined);
+          }
         }
-      }).catch(err => console.error(err));
+      }).catch(err => console.error('Failed to refresh workspaces after join:', err));
     }
   };
 
@@ -438,13 +456,30 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
                 {loadingWorkspaces && <Loader2 size={14} className="animate-spin text-purple-400" />}
               </div>
               
-              <button 
-                className="ct-btn-primary-sm" 
-                onClick={() => setIsWorkspaceModalOpen(true)}
-              >
-                <Plus size={14} />
-                <span>New Workspace</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  className="ct-btn-secondary-sm" 
+                  onClick={() => {
+                    setModalInitialTab('join');
+                    setIsWorkspaceModalOpen(true);
+                  }}
+                  title="Join workspace with invite code"
+                >
+                  <KeyRound size={14} />
+                  <span>Join via Code</span>
+                </button>
+                
+                <button 
+                  className="ct-btn-primary-sm" 
+                  onClick={() => {
+                    setModalInitialTab('create');
+                    setIsWorkspaceModalOpen(true);
+                  }}
+                >
+                  <Plus size={14} />
+                  <span>New Workspace</span>
+                </button>
+              </div>
             </div>
 
             {/* Filter Pills Row */}
@@ -479,7 +514,10 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
                   <p>No workspaces found in this filter.</p>
                   <button 
                     className="ct-btn-primary-sm mt-3"
-                    onClick={() => setIsWorkspaceModalOpen(true)}
+                    onClick={() => {
+                      setModalInitialTab('create');
+                      setIsWorkspaceModalOpen(true);
+                    }}
                   >
                     <Plus size={14} />
                     <span>Create Your First Workspace</span>
@@ -499,7 +537,7 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
                           <WsIcon size={18} />
                         </div>
                         <span className="ct-lang-badge">
-                          {ws.language || 'JS'}
+                          {formatLanguageName(ws.language)}
                         </span>
                       </div>
 
@@ -547,6 +585,7 @@ export const HomePage = ({ onJumpToWorkspace, onOpenProfile }) => {
       {/* CREATE / JOIN WORKSPACE MODAL */}
       <WorkspaceModal
         isOpen={isWorkspaceModalOpen}
+        initialTab={modalInitialTab}
         onClose={() => setIsWorkspaceModalOpen(false)}
         onWorkspaceCreated={handleWorkspaceCreated}
         onWorkspaceJoined={handleWorkspaceJoined}
