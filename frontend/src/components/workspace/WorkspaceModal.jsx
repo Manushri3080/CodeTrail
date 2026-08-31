@@ -44,8 +44,8 @@ const AVAILABLE_ICONS = [
   { id: 'Code2', label: 'Code', icon: Code2 }
 ];
 
-export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspaceJoined }) => {
-  const [activeTab, setActiveTab] = useState('create'); // 'create' | 'join'
+export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspaceJoined, initialTab = 'create' }) => {
+  const [activeTab, setActiveTab] = useState(initialTab); // 'create' | 'join'
   
   // Create form state
   const [title, setTitle] = useState('');
@@ -63,10 +63,45 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const joinInputRef = React.useRef(null);
+
+  // Sync activeTab when modal opens or initialTab changes
+  React.useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab || 'create');
+      setError('');
+      setSuccess('');
+    }
+  }, [isOpen, initialTab]);
+
+  // Close modal on Escape key
+  React.useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  // Focus join input when active tab changes to join
+  React.useEffect(() => {
+    if (isOpen && activeTab === 'join') {
+      const timer = setTimeout(() => {
+        if (joinInputRef.current) {
+          joinInputRef.current.focus();
+        }
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, activeTab]);
+
   if (!isOpen) return null;
 
   const handleCreate = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setSuccess('');
 
@@ -109,11 +144,10 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
 
     } catch (err) {
       console.error('Workspace creation failed:', err);
-      // Fallback for offline mode or demo
       if (!token) {
         setError('Please log in first to create cloud workspaces.');
       } else {
-        const msg = err.response?.data?.message || 'Failed to create workspace on server. Saved locally for demo.';
+        const msg = err.response?.data?.message || 'Failed to create workspace on server.';
         setError(msg);
       }
     } finally {
@@ -123,21 +157,30 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
 
   const handleJoin = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError('');
     setSuccess('');
 
-    if (!inviteCode.trim()) {
-      setError('Please enter a valid 8-character invite code (e.g. CT-89AF2).');
+    const trimmedCode = inviteCode.trim().toUpperCase();
+
+    if (!trimmedCode) {
+      setError('Please enter a valid workspace invite code.');
       return;
     }
 
     setLoading(true);
     const token = localStorage.getItem('ct-auth-token');
 
+    if (!token) {
+      setError('Please log in to join a workspace.');
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await axios.post(
         `${API_BASE}/workspaces/join`,
-        { inviteCode: inviteCode.trim() },
+        { inviteCode: trimmedCode },
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -145,26 +188,41 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
         }
       );
 
-      setSuccess(response.data.message || 'Successfully joined workspace!');
+      const msg = response.data?.message || 'Successfully joined workspace!';
+      setSuccess(msg);
+
       setTimeout(() => {
         if (onWorkspaceJoined) {
-          onWorkspaceJoined(response.data.workspaceId);
+          onWorkspaceJoined(response.data?.workspaceId);
         }
         onClose();
         setInviteCode('');
         setSuccess('');
-      }, 700);
+      }, 800);
 
     } catch (err) {
       console.error('Join workspace failed:', err);
-      setError(err.response?.data?.message || 'Invalid or expired invite code.');
+      if (err.response) {
+        const status = err.response.status;
+        const backendMsg = err.response.data?.message;
+
+        if (status === 404) {
+          setError('Workspace not found. Please check the code and try again.');
+        } else if (status === 401) {
+          setError('Please log in again to join a workspace.');
+        } else {
+          setError(backendMsg || 'Failed to join workspace. Please try again.');
+        }
+      } else {
+        setError('Unable to connect to the server. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="ct-modal-overlay" onClick={onClose}>
+    <div className="ct-modal-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="ct-workspace-modal-title">
       <div className="ct-modal-card" onClick={(e) => e.stopPropagation()}>
         
         {/* Modal Top Header */}
@@ -174,7 +232,7 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
               <Sparkles size={18} className="text-purple-400" />
             </div>
             <div>
-              <h3 className="ct-modal-title">
+              <h3 id="ct-workspace-modal-title" className="ct-modal-title">
                 {activeTab === 'create' ? 'Create Collaborative Workspace' : 'Join Existing Workspace'}
               </h3>
               <p className="ct-modal-subtitle">
@@ -356,29 +414,42 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
           /* Tab 2: Join Workspace Form */
           <form onSubmit={handleJoin} className="ct-modal-form">
             <div className="ct-form-group">
-              <label className="ct-form-label">
+              <label htmlFor="ct-invite-code-input" className="ct-form-label">
                 Workspace Invite Code <span className="text-red-400">*</span>
               </label>
               <div className="ct-input-code-wrap">
                 <KeyRound size={16} className="ct-input-code-icon" />
                 <input
+                  id="ct-invite-code-input"
+                  ref={joinInputRef}
                   type="text"
                   placeholder="CT-XXXXXX"
                   className="ct-form-input ct-code-input"
                   value={inviteCode}
                   onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                  maxLength={12}
+                  maxLength={16}
                   required
-                  autoFocus
+                  autoComplete="off"
+                  disabled={loading}
+                  aria-label="Workspace Invite Code"
                 />
               </div>
               <p className="ct-form-hint">
-                Ask your team lead or peer for their 8-character CodeTrail room code.
+                Ask your team lead or peer for their CodeTrail workspace room code (e.g. CT-A8F2K).
               </p>
             </div>
 
             <div className="ct-modal-footer">
-              <button type="button" className="ct-btn-secondary" onClick={onClose}>
+              <button 
+                type="button" 
+                className="ct-btn-secondary" 
+                onClick={() => {
+                  setError('');
+                  setSuccess('');
+                  onClose();
+                }}
+                disabled={loading}
+              >
                 Cancel
               </button>
               <button 
@@ -387,7 +458,7 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
                 disabled={loading || !inviteCode.trim()}
               >
                 {loading ? <Loader2 size={16} className="animate-spin" /> : <KeyRound size={16} />}
-                <span>{loading ? 'Connecting...' : 'Join Workspace'}</span>
+                <span>{loading ? 'Joining...' : 'Join Workspace'}</span>
               </button>
             </div>
           </form>
