@@ -27,6 +27,7 @@ function MainRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<App />} />
+        <Route path="/profile" element={<App defaultTab="profile" />} />
         <Route 
           path="/login" 
           element={<LoginRouteWrapper onLoginSuccess={handleLoginSuccess} />} 
@@ -35,6 +36,7 @@ function MainRouter() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+
     </BrowserRouter>
   );
 }

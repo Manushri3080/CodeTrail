@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Users, ShieldCheck, Zap, GitCommit, FileCode } from 'lucide-react';
+import { Users, ShieldCheck, Zap, GitCommit, FileCode, ArrowLeft, KeyRound, Globe, Lock } from 'lucide-react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 
-export const ModularWorkspace = () => {
-  const [activeFile, setActiveFile] = useState('index.js');
+export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
+  const [activeFile, setActiveFile] = useState(
+    activeWorkspace?.files?.[0]?.name || 'index.js'
+  );
 
   const activePeers = [
     { name: 'Alex', color: '#EC4899', initial: 'A' },
@@ -11,17 +13,42 @@ export const ModularWorkspace = () => {
     { name: 'Elena', color: '#10B981', initial: 'E' }
   ];
 
+  const wsTitle = activeWorkspace?.title || 'Shared Collaborative Workspace';
+  const wsDesc = activeWorkspace?.desc || activeWorkspace?.description || 'Simultaneous multi-user code editing with live cursor presence and instant operational synchronization.';
+  const wsCode = activeWorkspace?.inviteCode || 'CT-DEMO';
+  const wsFiles = (activeWorkspace?.files && activeWorkspace.files.length > 0) 
+    ? activeWorkspace.files.map(f => ({ id: f.name || f.id, name: f.name, iconColor: 'text-yellow-400' }))
+    : WORKSPACE_FILES;
+
   return (
     <section id="modular-workspace" className="ct-section ct-workspace-section">
       <div className="ct-container">
         
-        {/* Section Header */}
+        {/* Section Header with Back navigation if logged in workspace */}
         <div className="ct-section-header">
+          {onBackToHome && (
+            <div className="ct-workspace-nav-bar mb-4">
+              <button className="ct-btn-secondary" onClick={onBackToHome}>
+                <ArrowLeft size={14} />
+                <span>Back to Dashboard</span>
+              </button>
+              <div className="ct-ws-badge-group">
+                <span className="ct-meta-pill">
+                  <KeyRound size={12} className="text-purple-400" />
+                  <span>Room: <strong className="text-white font-mono">{wsCode}</strong></span>
+                </span>
+                {activeWorkspace?.settings?.isPublic ? (
+                  <span className="ct-meta-pill"><Globe size={12} className="text-cyan-400" /> Public</span>
+                ) : (
+                  <span className="ct-meta-pill"><Lock size={12} className="text-purple-400" /> Private</span>
+                )}
+              </div>
+            </div>
+          )}
+
           <span className="ct-demo-badge">REAL-TIME EDITOR</span>
-          <h2 className="ct-section-title">Shared Collaborative Workspace</h2>
-          <p className="ct-section-subtitle">
-            Simultaneous multi-user code editing with live cursor presence and instant operational synchronization.
-          </p>
+          <h2 className="ct-section-title">{wsTitle}</h2>
+          <p className="ct-section-subtitle">{wsDesc}</p>
         </div>
 
         {/* IDE Preview Card */}
