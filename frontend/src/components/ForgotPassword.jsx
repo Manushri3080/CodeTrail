@@ -92,7 +92,7 @@ export function ForgotPassword() {
           <button 
             type="submit" 
             style={{ height: '52px' }}
-            className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-[0_0_20px_rgba(124,58,237,0.2)] hover:shadow-[0_0_25px_rgba(124,58,237,0.45)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50" 
+            className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 disabled:opacity-50" 
             disabled={loading || !!success}
           >
             {loading ? 'SENDING RESET LINK...' : 'SEND RESET LINK'}

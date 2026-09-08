@@ -89,8 +89,8 @@ export function LoginPage({ onLoginSuccess }) {
           <div className="bg-[#0E1017]/80 backdrop-blur-md rounded-none shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col gap-8" style={{ padding: '28px 32px' }}>
             <div className="flex justify-between items-center pb-6">
               <div className="flex items-center gap-3 text-xs font-semibold text-gray-200 tracking-wider relative">
-                <span className="w-2 h-2 bg-[#10B981] rounded-full shadow-[0_0_8px_#10B981] animate-ping"></span>
-                <span className="w-2 h-2 bg-[#10B981] rounded-full shadow-[0_0_8px_#10B981] absolute"></span>
+                <span className="w-2 h-2 bg-[#10B981] rounded-full animate-ping"></span>
+                <span className="w-2 h-2 bg-[#10B981] rounded-full absolute"></span>
                 <span className="ml-6">SYSTEM STATUS</span>
               </div>
               <span className="font-mono text-[10px] text-[#10B981] bg-[#10B981]/10 rounded-full border border-[#10B981]/20 font-bold tracking-wider" style={{ padding: '8px 18px', display: 'inline-block' }}>ACTIVE</span>
@@ -147,10 +147,10 @@ export function LoginPage({ onLoginSuccess }) {
         </button>
 
         {/* Center Elevating Glass Card Container */}
-        <div className="w-full max-w-[450px] bg-[#0E1017]/40 backdrop-blur-xl border border-white/[0.05] rounded-3xl p-10 sm:p-12 lg:p-14 my-16 lg:my-0 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-8">
+        <div className="w-full max-w-[480px] bg-[#0E1017]/40 backdrop-blur-xl border border-white/[0.05] rounded-3xl p-6 sm:p-8 lg:p-10 my-16 lg:my-0 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-6" style={{ padding: '30px 32px 30px' }}>
           
           {/* Form Header */}
-          <div className="text-center flex flex-col gap-4 pt-10 pb-2">
+          <div className="text-center flex flex-col gap-3 pt-2 pb-1">
             <div>
               <h2 className="text-2xl font-extrabold text-white tracking-tight">
                 {isSignUp ? 'Create Account' : 'Access CodeTrail'}
@@ -164,7 +164,7 @@ export function LoginPage({ onLoginSuccess }) {
           </div>
 
           {/* Traditional Credentials Form */}
-          <form onSubmit={handleLoginSubmit} className="flex flex-col gap-6">
+          <form onSubmit={handleLoginSubmit} className="flex flex-col gap-5">
             {error && (
               <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl font-mono text-center">
                 {error}
@@ -242,7 +242,7 @@ export function LoginPage({ onLoginSuccess }) {
             <button 
               type="submit" 
               style={{ height: '52px' }}
-              className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-[0_0_20px_rgba(124,58,237,0.2)] hover:shadow-[0_0_25px_rgba(124,58,237,0.45)] active:scale-[0.98] transition-all duration-200 disabled:opacity-50" 
+              className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 disabled:opacity-50" 
               disabled={loading}
             >
               {loading 
