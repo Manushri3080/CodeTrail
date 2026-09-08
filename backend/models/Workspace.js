@@ -8,6 +8,20 @@ const WorkspaceFileSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+const WorkspaceHistoryLogSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  type: { 
+    type: String, 
+    enum: ['session', 'session-end', 'file', 'member', 'settings', 'code'], 
+    default: 'session' 
+  },
+  title: { type: String, required: true },
+  details: { type: String, required: true },
+  user: { type: String, default: 'Developer' },
+  sessionDuration: { type: String, default: null },
+  timestamp: { type: Date, default: Date.now }
+}, { _id: false });
+
 const WorkspaceMemberSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   role: { 
@@ -71,6 +85,7 @@ const WorkspaceSchema = new mongoose.Schema({
     type: String,
     default: '0h 0m'
   },
+  activityLogs: [WorkspaceHistoryLogSchema],
   lastActiveAt: {
     type: Date,
     default: Date.now

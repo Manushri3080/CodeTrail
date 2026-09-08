@@ -15,7 +15,7 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 
-export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, activeTab, setActiveTab, onNavigate }) => {
+export const Navbar = ({ isLoggedIn, currentUser, activeWorkspace, onLogin, onSignUp, onLogout, activeTab, setActiveTab, onNavigate, onJumpToWorkspace }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -30,13 +30,12 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
 
   const navLinks = isLoggedIn ? [
     { id: 'home', label: 'Home', icon: LayoutDashboard },
-    { id: 'modular-workspace', label: 'Workspace', icon: FileCode },
+    { id: 'workspaces-directory', label: 'Workspaces', icon: FileCode },
     { id: 'execution-engine', label: 'Code Runner', icon: Cpu },
-    { id: 'contribution-dossier', label: 'Telemetry', icon: ShieldCheck },
-    { id: 'docs', label: 'Docs', icon: BookOpen },
+    { id: 'contribution-dossier', label: 'Audit Logs', icon: ShieldCheck },
   ] : [
     { id: 'modules-grid', label: 'Features', icon: Layers },
-    { id: 'modular-workspace', label: 'Workspace', icon: FileCode },
+    { id: 'modular-workspace', label: 'Workspaces', icon: FileCode },
     { id: 'execution-engine', label: 'Code Runner', icon: Cpu },
     { id: 'contribution-dossier', label: 'Telemetry', icon: ShieldCheck },
     { id: 'docs', label: 'Docs', icon: BookOpen },
@@ -44,14 +43,22 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
 
   const handleNavClick = (id) => {
     if (setActiveTab) setActiveTab(id);
+
     if (id === 'docs') {
       const footer = document.querySelector('footer');
-      if (footer) footer.scrollIntoView({ behavior: 'smooth' });
+      if (footer) {
+        footer.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }
       return;
     }
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth' });
+
+    if (!isLoggedIn) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
     }
   };
 
@@ -65,15 +72,37 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
       <header className={`ct-navbar ${scrolled ? 'ct-navbar-scrolled' : ''} ${mobileMenuOpen ? 'ct-mobile-nav-open' : ''}`}>
         <div className="ct-nav-container">
 
-          {/* Brand / Logo */}
-          <div className="ct-brand" onClick={handleBrandClick}>
-            <div className="ct-logo-icon">
-              <Terminal size={18} />
+          {/* Brand / Logo + Workspace Status Badge */}
+          <div className="flex items-center gap-3">
+            <div className="ct-brand" onClick={handleBrandClick}>
+              <div className="ct-logo-icon">
+                <Terminal size={18} />
+              </div>
+              <div className="ct-brand-text">
+                <span className="ct-brand-title">Code<span className="ct-purple-text">Trail</span></span>
+                <span className="ct-brand-version">v1.0.0</span>
+              </div>
             </div>
-            <div className="ct-brand-text">
-              <span className="ct-brand-title">Code<span className="ct-purple-text">Trail</span></span>
-              <span className="ct-brand-version">v1.0.0</span>
-            </div>
+
+            {/* Logged-In Active Workspace Status Chip */}
+            {isLoggedIn && (
+              <div 
+                className="hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/[0.03] border border-white/10 hover:border-purple-500/30 transition-all cursor-pointer text-xs"
+                onClick={() => {
+                  if (activeWorkspace && onJumpToWorkspace) {
+                    onJumpToWorkspace(activeWorkspace);
+                  } else if (setActiveTab) {
+                    setActiveTab('modular-workspace');
+                  }
+                }}
+                title={activeWorkspace ? `Active Room: ${activeWorkspace.name}` : 'No active workspace session'}
+              >
+                <span className={`w-2 h-2 rounded-full ${activeWorkspace ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}`} />
+                <span className="font-mono text-[11px] text-gray-300 max-w-[130px] truncate">
+                  {activeWorkspace ? activeWorkspace.name : 'Idle Workspace'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Center Navigation Links Menu */}
@@ -98,6 +127,7 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
           <div className="ct-nav-actions">
             {isLoggedIn ? (
               <div className="ct-user-logged-wrap">
+                {/* User Badge */}
                 <div 
                   className="ct-nav-user-badge cursor-pointer hover:border-purple-500/50 transition-all"
                   onClick={() => {
@@ -112,6 +142,8 @@ export const Navbar = ({ isLoggedIn, currentUser, onLogin, onSignUp, onLogout, a
                     {currentUser?.name || 'User'}
                   </span>
                 </div>
+
+                {/* Logout Button */}
                 <button
                   className="ct-btn-logout"
                   onClick={() => setShowLogoutModal(true)}

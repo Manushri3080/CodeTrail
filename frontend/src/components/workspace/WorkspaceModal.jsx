@@ -14,7 +14,10 @@ import {
   Loader2, 
   AlertCircle,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Users,
+  ArrowRight,
+  RefreshCw
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api';
@@ -57,6 +60,8 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
   
   // Join form state
   const [inviteCode, setInviteCode] = useState('');
+  const [publicWorkspaces, setPublicWorkspaces] = useState([]);
+  const [discovering, setDiscovering] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -95,6 +100,29 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
       }, 60);
       return () => clearTimeout(timer);
     }
+  }, [isOpen, activeTab]);
+
+  React.useEffect(() => {
+    if (!isOpen || activeTab !== 'join') return;
+
+    const discoverWorkspaces = async () => {
+      const token = localStorage.getItem('ct-auth-token');
+      if (!token) return;
+      setDiscovering(true);
+      try {
+        const response = await axios.get(`${API_BASE}/workspaces/discover`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setPublicWorkspaces(response.data?.workspaces || []);
+      } catch (err) {
+        console.warn('Public workspace discovery failed:', err.message);
+        setPublicWorkspaces([]);
+      } finally {
+        setDiscovering(false);
+      }
+    };
+
+    discoverWorkspaces();
   }, [isOpen, activeTab]);
 
   if (!isOpen) return null;
@@ -155,15 +183,15 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
     }
   };
 
-  const handleJoin = async (e) => {
-    e.preventDefault();
+  const handleJoin = async (e, publicWorkspace = null) => {
+    if (e) e.preventDefault();
     if (loading) return;
     setError('');
     setSuccess('');
 
     const trimmedCode = inviteCode.trim().toUpperCase();
 
-    if (!trimmedCode) {
+    if (!trimmedCode && !publicWorkspace) {
       setError('Please enter a valid workspace invite code.');
       return;
     }
@@ -180,7 +208,7 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
     try {
       const response = await axios.post(
         `${API_BASE}/workspaces/join`,
-        { inviteCode: trimmedCode },
+        publicWorkspace ? { workspaceId: publicWorkspace.id || publicWorkspace._id } : { inviteCode: trimmedCode },
         {
           headers: {
             Authorization: `Bearer ${token}`
@@ -193,7 +221,7 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
 
       setTimeout(() => {
         if (onWorkspaceJoined) {
-          onWorkspaceJoined(response.data?.workspaceId);
+          onWorkspaceJoined(response.data?.workspace || response.data?.workspaceId);
         }
         onClose();
         setInviteCode('');
@@ -285,34 +313,35 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
         {/* Tab 1: Create Workspace Form */}
         {activeTab === 'create' ? (
           <form onSubmit={handleCreate} className="ct-modal-form">
-            {/* Title */}
-            <div className="ct-form-group">
-              <label className="ct-form-label">
-                Workspace Title <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. Distributed Consensus Engine"
-                className="ct-form-input"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                maxLength={80}
-                required
-                autoFocus
-              />
-            </div>
+            {/* Title & Description Row */}
+            <div className="ct-form-row">
+              <div className="ct-form-group flex-1">
+                <label className="ct-form-label">
+                  Workspace Title <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Distributed Consensus Engine"
+                  className="ct-form-input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  maxLength={80}
+                  required
+                  autoFocus
+                />
+              </div>
 
-            {/* Description */}
-            <div className="ct-form-group">
-              <label className="ct-form-label">Description (Optional)</label>
-              <input
-                type="text"
-                placeholder="Brief goal or notes for team members..."
-                className="ct-form-input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={200}
-              />
+              <div className="ct-form-group flex-1">
+                <label className="ct-form-label">Description (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="Brief goal or notes for team members..."
+                  className="ct-form-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={200}
+                />
+              </div>
             </div>
 
             {/* Language Selection */}
@@ -413,6 +442,42 @@ export const WorkspaceModal = ({ isOpen, onClose, onWorkspaceCreated, onWorkspac
         ) : (
           /* Tab 2: Join Workspace Form */
           <form onSubmit={handleJoin} className="ct-modal-form">
+            <div className="ct-form-group">
+              <div className="flex items-center justify-between gap-3">
+                <label className="ct-form-label mb-0">Open Workspaces</label>
+                {discovering && <RefreshCw size={14} className="animate-spin text-cyan-400" />}
+              </div>
+              {publicWorkspaces.length > 0 ? (
+                <div className="space-y-2 mt-2">
+                  {publicWorkspaces.map(workspace => (
+                    <button
+                      key={workspace.id || workspace._id}
+                      type="button"
+                      onClick={() => handleJoin(null, workspace)}
+                      disabled={loading}
+                      className="w-full flex items-center justify-between gap-3 rounded-xl border border-cyan-500/25 bg-cyan-500/5 hover:bg-cyan-500/15 px-3 py-3 text-left transition-colors disabled:opacity-60"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-white truncate">{workspace.title}</span>
+                        <span className="flex items-center gap-1.5 text-[11px] text-gray-400 mt-1">
+                          <Users size={12} /> {workspace.members?.length || 0} members · {workspace.language || 'javascript'}
+                        </span>
+                      </span>
+                      <ArrowRight size={15} className="text-cyan-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="ct-form-hint mt-2">No open workspaces are available. Use a private workspace invite code below.</p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3 text-[11px] text-gray-500 font-mono uppercase tracking-wider">
+              <span className="h-px bg-white/10 flex-1" />
+              <span>Private workspace code</span>
+              <span className="h-px bg-white/10 flex-1" />
+            </div>
+
             <div className="ct-form-group">
               <label htmlFor="ct-invite-code-input" className="ct-form-label">
                 Workspace Invite Code <span className="text-red-400">*</span>
