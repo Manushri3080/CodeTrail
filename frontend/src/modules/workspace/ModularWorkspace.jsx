@@ -29,8 +29,84 @@ import {
   Edit3,
   Settings
 } from 'lucide-react';
+import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
+
+// Map file extensions to Monaco language identifiers
+const getMonacoLanguage = (fileName = '') => {
+  const ext = fileName.split('.').pop().toLowerCase();
+  const map = {
+    js: 'javascript',
+    jsx: 'javascript',
+    ts: 'typescript',
+    tsx: 'typescript',
+    py: 'python',
+    cpp: 'cpp',
+    c: 'cpp',
+    h: 'cpp',
+    hpp: 'cpp',
+    java: 'java',
+    rs: 'rust',
+    go: 'go',
+    html: 'html',
+    css: 'css',
+    json: 'json',
+    md: 'markdown',
+    sql: 'sql',
+    sh: 'shell',
+    yaml: 'yaml',
+    yml: 'yaml',
+    xml: 'xml'
+  };
+  return map[ext] || 'javascript';
+};
+
+const getStarterBoilerplate = (filename = '') => {
+  const ext = filename.split('.').pop().toLowerCase();
+  switch (ext) {
+    case 'py':
+      return `# ${filename}\ndef main():\n    print("Hello from Python!")\n\nif __name__ == "__main__":\n    main()\n`;
+    case 'cpp':
+    case 'c':
+    case 'h':
+    case 'hpp':
+      return `// ${filename}\n#include <iostream>\n\nint main() {\n    std::cout << "Hello from C++!" << std::endl;\n    return 0;\n}\n`;
+    case 'java':
+      return `// ${filename}\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java!");\n    }\n}\n`;
+    case 'rs':
+      return `// ${filename}\nfn main() {\n    println!("Hello from Rust!");\n}\n`;
+    case 'go':
+      return `// ${filename}\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello from Go!")\n}\n`;
+    case 'css':
+      return `/* ${filename} */\nbody {\n  margin: 0;\n  padding: 0;\n}\n`;
+    case 'json':
+      return `{\n  "name": "project",\n  "version": "1.0.0"\n}\n`;
+    case 'html':
+      return `<!DOCTYPE html>\n<html>\n<head>\n  <title>CodeTrail</title>\n</head>\n<body>\n  <h1>Hello World</h1>\n</body>\n</html>\n`;
+    case 'md':
+      return `# ${filename}\n\nDocumentation for CodeTrail project.\n`;
+    case 'js':
+    default:
+      return `// ${filename}\nconsole.log("Ready to code in CodeTrail!");\n`;
+  }
+};
+
+const DEFAULT_WORKSPACE_FILES = [
+  { id: 'index.js', name: 'index.js', language: 'javascript', content: `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n` },
+  { id: 'server.js', name: 'server.js', language: 'javascript', content: `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n` },
+  { id: 'styles.css', name: 'styles.css', language: 'css', content: `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n` },
+  { id: 'package.json', name: 'package.json', language: 'json', content: `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n` },
+  { id: 'README.md', name: 'README.md', language: 'markdown', content: `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n` }
+];
+
+const DEFAULT_FILES_CONTENT = {
+  'index.js': `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n`,
+  'server.js': `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n`,
+  'styles.css': `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n`,
+  'package.json': `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n`,
+  'README.md': `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`
+};
 
 export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const [currentWorkspace, setCurrentWorkspace] = useState(activeWorkspace);
@@ -122,6 +198,75 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFiles));
     } catch (e) {}
   }, [customFiles, wsId]);
+
+  const editorRef = useRef(null);
+
+  // Dedicated in-memory map storing content per file name
+  const [filesContent, setFilesContent] = useState(() => {
+    const initial = { ...DEFAULT_FILES_CONTENT };
+    if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
+      activeWorkspace.files.forEach(f => {
+        const fname = f.name || f.id;
+        if (fname && f.content !== undefined) {
+          initial[fname] = f.content;
+        }
+      });
+    }
+    return initial;
+  });
+
+  // Keep filesContent in sync if workspace files load from backend
+  useEffect(() => {
+    if (currentWorkspace?.files && Array.isArray(currentWorkspace.files)) {
+      setFilesContent(prev => {
+        const next = { ...prev };
+        currentWorkspace.files.forEach(f => {
+          const fname = f.name || f.id;
+          if (fname && f.content !== undefined && next[fname] === undefined) {
+            next[fname] = f.content;
+          }
+        });
+        return next;
+      });
+    }
+  }, [currentWorkspace?.files]);
+
+  // Retrieve active file content strictly for the active file
+  const getActiveFileContent = () => {
+    if (filesContent[activeFile] !== undefined) {
+      return filesContent[activeFile];
+    }
+    return getStarterBoilerplate(activeFile);
+  };
+
+  // Update local in-memory workspace file buffer when user types in Monaco
+  const handleEditorChange = (newCode) => {
+    const content = newCode ?? '';
+
+    // 1. Immediately store under the specific activeFile key
+    setFilesContent(prev => ({
+      ...prev,
+      [activeFile]: content
+    }));
+
+    // 2. Keep currentWorkspace.files synchronized
+    setCurrentWorkspace(prev => {
+      if (!prev) return prev;
+      const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : DEFAULT_WORKSPACE_FILES;
+      const fileIndex = baseFiles.findIndex(f => (f.name || f.id) === activeFile);
+
+      let updatedFiles;
+      if (fileIndex >= 0) {
+        updatedFiles = baseFiles.map((f, i) => 
+          i === fileIndex ? { ...f, content } : f
+        );
+      } else {
+        updatedFiles = [...baseFiles, { id: activeFile, name: activeFile, language: getMonacoLanguage(activeFile), content }];
+      }
+
+      return { ...prev, files: updatedFiles };
+    });
+  };
 
   // Log real-time workspace session enter & history event once per session entrance
   const sessionLoggedRef = useRef(false);
@@ -234,15 +379,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     else if (ext === 'md') iconColor = 'text-purple-400';
     else if (ext === 'ts' || ext === 'tsx' || ext === 'jsx') iconColor = 'text-cyan-400';
 
+    const starterContent = getStarterBoilerplate(name);
+    const starterLanguage = getMonacoLanguage(name);
     const newFileObj = { id: name, name, iconColor, isFolder: false };
     setCustomFiles(prev => [...prev, newFileObj]);
+    setFilesContent(prev => ({
+      ...prev,
+      [name]: starterContent
+    }));
     setCurrentWorkspace(previous => ({
       ...(previous || {}),
-      files: [...(previous?.files || []), { id: name, name, language: previous?.language || 'javascript', content: '' }]
+      files: [...(previous?.files || []), { id: name, name, language: starterLanguage, content: starterContent }]
     }));
     if (token && wsId !== 'demo-workspace') {
       axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
-        files: [...(currentWorkspace?.files || []), { id: name, name, language: currentWorkspace?.language || 'javascript', content: '' }]
+        files: [...(currentWorkspace?.files || []), { id: name, name, language: starterLanguage, content: starterContent }]
       }, {
         headers: { Authorization: `Bearer ${token}` }
       }).catch(err => console.warn('Shared file update failed:', err.message));
@@ -1078,78 +1229,37 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               </div>
             </div>
 
-            {/* IDE Editor View Mock / Code Canvas */}
-            <div 
-              className="flex-1 overflow-y-auto font-mono text-xs md:text-sm leading-relaxed bg-[#0D0E15]"
-              style={{ padding: '20px 16px' }}
-            >
-              <div className="flex gap-4">
-                {/* VS Code / Antigravity Style Line Numbers Gutter */}
-                <div className="select-none text-gray-500/70 font-mono text-xs md:text-sm flex flex-col gap-2 w-9 border-r border-white/10 shrink-0 font-medium">
-                  {Array.from({ length: 15 }).map((_, i) => (
-                    <div key={i} className="h-[25px] flex items-center justify-start pl-1">{i + 1}</div>
-                  ))}
-                </div>
-
-                <div className="flex-1 flex flex-col gap-2 text-xs md:text-sm pl-2">
-                  <div className="ct-code-line">
-                    <span className="text-purple-400">import</span> &#123; useCollaboration &#125; <span className="text-purple-400">from</span> <span className="text-emerald-300">'@codetrail/react'</span>;
-                  </div>
-                  <div className="ct-code-line">
-                    <span className="text-purple-400">import</span> &#123; EditorContainer &#125; <span className="text-purple-400">from</span> <span className="text-emerald-300">'./components/Editor'</span>;
-                  </div>
-                  <div className="ct-code-line">&nbsp;</div>
-                  <div className="ct-code-line">
-                    <span className="text-gray-500 italic">// Initialize Real-Time Multi-User Workspace Session ({activeFile})</span>
-                  </div>
-                  <div className="ct-code-line">
-                    <span className="text-purple-400">export const</span> <span className="text-cyan-300">SharedWorkspace</span> = (&#123; roomId, user &#125;) =&gt; &#123;
-                  </div>
-                  <div className="ct-code-line pl-6">
-                    <span className="text-purple-400">const</span> &#123; peers, doc, status &#125; = <span className="text-cyan-300">useCollaboration</span>(&#123;
-                  </div>
-                  <div className="ct-code-line pl-10 relative flex items-center flex-wrap gap-x-2">
-                    <span>roomId: <span className="text-emerald-300">'{wsCode}'</span>,</span>
-                    {/* Authentic Inline Multiplayer Cursor for Alex */}
-                    <span className="inline-flex items-center select-none" title="Alex is editing line 7">
-                      <span className="w-[2px] h-4 bg-pink-500 rounded-full animate-pulse shrink-0" />
-                      <span className="text-[10px] font-sans font-bold bg-pink-500 text-white px-2 py-0.5 rounded-tr-md rounded-br-md rounded-bl-md shadow-md leading-none tracking-wide shrink-0">
-                        Alex
-                      </span>
-                    </span>
-                  </div>
-                  <div className="ct-code-line pl-10">
-                    user,
-                  </div>
-                  <div className="ct-code-line pl-10">
-                    onSync: (snapshot) =&gt; console.<span className="text-cyan-300">log</span>(<span className="text-emerald-300">'Synced'</span>, snapshot.id)
-                  </div>
-                  <div className="ct-code-line pl-6">
-                    &#125;);
-                  </div>
-                  <div className="ct-code-line">&nbsp;</div>
-                  <div className="ct-code-line pl-6">
-                    <span className="text-purple-400">return</span> (
-                  </div>
-                  <div className="ct-code-line pl-10 relative flex items-center flex-wrap gap-x-2">
-                    <span>&lt;<span className="text-cyan-300">EditorContainer</span> document=&#123;doc&#125;</span>
-                    {/* Authentic Inline Multiplayer Cursor for Sarah */}
-                    <span className="inline-flex items-center select-none" title="Sarah is editing line 13">
-                      <span className="w-[2px] h-4 bg-sky-400 rounded-full animate-pulse shrink-0" />
-                      <span className="text-[10px] font-sans font-bold bg-sky-400 text-white px-2 py-0.5 rounded-tr-md rounded-br-md rounded-bl-md shadow-md leading-none tracking-wide shrink-0">
-                        Sarah
-                      </span>
-                    </span>
-                    <span>activePeers=&#123;peers&#125; /&gt;</span>
-                  </div>
-                  <div className="ct-code-line pl-6">
-                    );
-                  </div>
-                  <div className="ct-code-line">
-                    &#125;;
-                  </div>
-                </div>
-              </div>
+            {/* Monaco Code Editor Canvas */}
+            <div className="flex-1 min-h-0 w-full relative bg-[#0D0E15] overflow-hidden">
+              <Editor
+                key={activeFile}
+                height="100%"
+                width="100%"
+                path={activeFile}
+                language={getMonacoLanguage(activeFile)}
+                theme="vs-dark"
+                value={getActiveFileContent()}
+                onChange={handleEditorChange}
+                onMount={(editor) => {
+                  editorRef.current = editor;
+                }}
+                options={{
+                  fontSize: 14,
+                  fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
+                  fontLigatures: true,
+                  minimap: { enabled: true, side: 'right' },
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                  wordWrap: 'on',
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  readOnly: !canEditFiles,
+                  lineNumbers: 'on',
+                  renderLineHighlight: 'all',
+                  padding: { top: 14, bottom: 14 }
+                }}
+              />
             </div>
 
             {/* IDE Bottom Status Bar */}
