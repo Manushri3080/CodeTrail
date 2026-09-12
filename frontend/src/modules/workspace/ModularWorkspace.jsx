@@ -117,11 +117,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
   }, [activeWorkspace]);
 
-  const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
-  const workspaceRole = currentWorkspace?.role || 'viewer';
-  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole);
   const currentUser = JSON.parse(localStorage.getItem('ct-auth-user')) || { id: 'usr-guest', name: 'Maryam Shaikh', role: 'admin' };
   const token = localStorage.getItem('ct-auth-token');
+  const currentUserId = currentUser?.id || currentUser?._id;
+
+  const isOwner = (currentWorkspace?.owner?._id || currentWorkspace?.owner) === currentUserId;
+  const memberObj = currentWorkspace?.members?.find(m => (m.user?._id || m.user?.id || m.user) === currentUserId || m.id === currentUserId);
+
+  const workspaceRole = currentWorkspace?.role 
+    || activeWorkspace?.role 
+    || (isOwner ? 'owner' : null) 
+    || memberObj?.role 
+    || (currentUser?.role ? currentUser.role : null)
+    || 'editor';
+  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole);
+  const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
 
   // Persistent Settings Modal Open State across page refreshes
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(() => {
@@ -200,20 +210,63 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   }, [customFiles, wsId]);
 
   const editorRef = useRef(null);
+  const activeFileRef = useRef(activeFile);
+  const isRemoteUpdateRef = useRef(false);
 
-  // Dedicated in-memory map storing content per file name
+  useEffect(() => {
+    activeFileRef.current = activeFile;
+  }, [activeFile]);
+
+  // Dedicated in-memory map storing content per file name (with localStorage backup support)
   const [filesContent, setFilesContent] = useState(() => {
     const initial = { ...DEFAULT_FILES_CONTENT };
+
+    // 1. Overlay from localStorage backup if available
+    try {
+      const savedBackup = localStorage.getItem(`ct-workspace-content-${wsId}`);
+      if (savedBackup) {
+        const parsed = JSON.parse(savedBackup);
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(initial, parsed);
+        }
+      }
+    } catch (e) {}
+
+    // 2. Overlay from activeWorkspace.files if available
     if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
       activeWorkspace.files.forEach(f => {
         const fname = f.name || f.id;
         if (fname && f.content !== undefined) {
-          initial[fname] = f.content;
+          if (!initial[fname] || initial[fname] === DEFAULT_FILES_CONTENT[fname]) {
+            initial[fname] = f.content;
+          }
         }
       });
     }
     return initial;
   });
+
+  const filesContentRef = useRef(filesContent);
+  useEffect(() => {
+    filesContentRef.current = filesContent;
+  }, [filesContent]);
+
+  const currentWorkspaceRef = useRef(currentWorkspace);
+  useEffect(() => {
+    currentWorkspaceRef.current = currentWorkspace;
+  }, [currentWorkspace]);
+
+  const autoSaveTimerRef = useRef(null);
+
+  // Clean up debounced auto-save timer on unmount or workspace switch (CT-88)
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+    };
+  }, [wsId]);
 
   // Keep filesContent in sync if workspace files load from backend
   useEffect(() => {
@@ -226,6 +279,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             next[fname] = f.content;
           }
         });
+        filesContentRef.current = next;
         return next;
       });
     }
@@ -239,17 +293,81 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     return getStarterBoilerplate(activeFile);
   };
 
+  // Debounced Auto-Save Request Handler (PATCH /api/workspaces/:id) (CT-88)
+  const triggerAutoSave = async () => {
+    if (!wsId || wsId === 'demo-workspace' || !token) {
+      setAutoSaveStatus('Auto-saved locally');
+      return;
+    }
+
+    if (!canEditFiles) return;
+
+    try {
+      setAutoSaveStatus('Saving...');
+
+      const baseFiles = (currentWorkspaceRef.current?.files && currentWorkspaceRef.current.files.length > 0)
+        ? currentWorkspaceRef.current.files
+        : DEFAULT_WORKSPACE_FILES;
+
+      const filesToSave = baseFiles.map(f => {
+        const fname = f.name || f.id;
+        const latestContent = filesContentRef.current[fname] !== undefined
+          ? filesContentRef.current[fname]
+          : (f.content || '');
+        return {
+          id: f.id || fname,
+          name: fname,
+          language: f.language || getMonacoLanguage(fname),
+          content: latestContent,
+          updatedAt: new Date()
+        };
+      });
+
+      const res = await axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
+        files: filesToSave
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (res.data?.workspace) {
+        setCurrentWorkspace(res.data.workspace);
+        currentWorkspaceRef.current = res.data.workspace;
+      }
+      setAutoSaveStatus('Auto-saved just now');
+    } catch (err) {
+      console.warn('Auto-save to backend failed:', err.message);
+      // Retain localStorage backup, avoid crashing, and show graceful offline state
+      setAutoSaveStatus('Saved locally (offline)');
+    }
+  };
+
   // Update local in-memory workspace file buffer when user types in Monaco
   const handleEditorChange = (newCode) => {
+    // Prevent programmatic / remote updates from triggering state churn or outbound code_change
+    if (isRemoteUpdateRef.current) return;
+
     const content = newCode ?? '';
 
-    // 1. Immediately store under the specific activeFile key
+    // 1. Immediately store under the specific activeFile key in state and ref
+    const updatedMap = {
+      ...filesContentRef.current,
+      [activeFile]: content
+    };
+    filesContentRef.current = updatedMap;
+
     setFilesContent(prev => ({
       ...prev,
       [activeFile]: content
     }));
 
-    // 2. Keep currentWorkspace.files synchronized
+    // 2. Synchronous LocalStorage Backup (CT-88 Requirement 8)
+    try {
+      localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(updatedMap));
+    } catch (e) {
+      console.warn('LocalStorage backup error:', e);
+    }
+
+    // 3. Keep currentWorkspace.files synchronized
     setCurrentWorkspace(prev => {
       if (!prev) return prev;
       const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : DEFAULT_WORKSPACE_FILES;
@@ -264,8 +382,29 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         updatedFiles = [...baseFiles, { id: activeFile, name: activeFile, language: getMonacoLanguage(activeFile), content }];
       }
 
-      return { ...prev, files: updatedFiles };
+      const nextWs = { ...prev, files: updatedFiles };
+      currentWorkspaceRef.current = nextWs;
+      return nextWs;
     });
+
+    // 4. Emit real-time code change to peers via Socket.IO (CT-85)
+    if (socketRef.current) {
+      socketRef.current.emit('code_change', {
+        workspaceId: wsId,
+        fileId: activeFile,
+        content
+      });
+    }
+
+    // 5. 2.5-second Debounced Auto-save (CT-88 Requirement 1, 2, 3, 10, 11)
+    setAutoSaveStatus('Unsaved changes...');
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      triggerAutoSave();
+    }, 2500);
   };
 
   // Log real-time workspace session enter & history event once per session entrance
@@ -599,6 +738,88 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }));
       });
 
+      // Real-time Collaborative Code Synchronization (CT-85)
+      socket.on('code_updated', ({ workspaceId, fileId, content }) => {
+        if (workspaceId && workspaceId !== wsId) return;
+        if (!fileId) return;
+
+        // 1. Update in-memory file content map
+        setFilesContent(prev => ({
+          ...prev,
+          [fileId]: content
+        }));
+
+        // 2. Keep workspace file list in sync
+        setCurrentWorkspace(prev => {
+          if (!prev) return prev;
+          const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : DEFAULT_WORKSPACE_FILES;
+          const fileIndex = baseFiles.findIndex(f => (f.name || f.id) === fileId);
+          let updatedFiles;
+          if (fileIndex >= 0) {
+            updatedFiles = baseFiles.map((f, i) => i === fileIndex ? { ...f, content } : f);
+          } else {
+            updatedFiles = [...baseFiles, { id: fileId, name: fileId, language: getMonacoLanguage(fileId), content }];
+          }
+          return { ...prev, files: updatedFiles };
+        });
+
+        // 3. If currently viewing this file in Monaco, apply remote update while preserving local cursor & selection
+        if (fileId === activeFileRef.current && editorRef.current) {
+          const editor = editorRef.current;
+          const model = editor.getModel();
+          if (model && model.getValue() !== content) {
+            // Capture local user's current cursor, selection, and viewport scroll position
+            const currentSelection = editor.getSelection();
+            const currentPosition = editor.getPosition();
+            const scrollTop = editor.getScrollTop();
+            const scrollLeft = editor.getScrollLeft();
+
+            isRemoteUpdateRef.current = true;
+            try {
+              // Apply remote edits without disposing model or recreating view
+              editor.executeEdits('remote-sync', [{
+                range: model.getFullModelRange(),
+                text: content,
+                forceMoveMarkers: true
+              }]);
+
+              // Restore cursor and selection, safely clamped to valid boundaries in updated document
+              if (currentSelection && !currentSelection.isEmpty()) {
+                const lineCount = model.getLineCount();
+                const startLine = Math.min(Math.max(1, currentSelection.selectionStartLineNumber || 1), lineCount);
+                const startCol = Math.min(Math.max(1, currentSelection.selectionStartColumn || 1), model.getLineMaxColumn(startLine));
+                const endLine = Math.min(Math.max(1, currentSelection.positionLineNumber || 1), lineCount);
+                const endCol = Math.min(Math.max(1, currentSelection.positionColumn || 1), model.getLineMaxColumn(endLine));
+
+                editor.setSelection({
+                  selectionStartLineNumber: startLine,
+                  selectionStartColumn: startCol,
+                  positionLineNumber: endLine,
+                  positionColumn: endCol
+                });
+              } else if (currentPosition) {
+                const lineCount = model.getLineCount();
+                const validLine = Math.min(Math.max(1, currentPosition.lineNumber || 1), lineCount);
+                const maxCol = model.getLineMaxColumn(validLine);
+                const validCol = Math.min(Math.max(1, currentPosition.column || 1), maxCol);
+
+                editor.setPosition({ lineNumber: validLine, column: validCol });
+              }
+
+              // Preserve scroll position so viewport doesn't jump
+              if (typeof scrollTop === 'number') {
+                editor.setScrollTop(scrollTop);
+              }
+              if (typeof scrollLeft === 'number') {
+                editor.setScrollLeft(scrollLeft);
+              }
+            } finally {
+              isRemoteUpdateRef.current = false;
+            }
+          }
+        }
+      });
+
     } catch (err) {
       console.warn('Socket.IO connection error:', err.message);
     }
@@ -670,6 +891,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // 4. File Switch Handler (Updates Session `currentFileId`)
   const handleSelectFile = async (fileId) => {
+    // Flush any pending debounced auto-save immediately before switching files (CT-88)
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+      triggerAutoSave();
+    }
+
     setActiveFile(fileId);
     if (!token) return;
 

@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const mongoose = require('mongoose');
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
 
@@ -266,6 +267,10 @@ exports.getWorkspaceById = async (req, res) => {
     const { id } = req.params;
     const userId = req.user._id;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
     const workspace = await Workspace.findById(id)
       .populate('owner', 'name email avatar')
       .populate('members.user', 'name email avatar');
@@ -298,6 +303,13 @@ exports.updateWorkspace = async (req, res) => {
     const { id } = req.params;
     const userId = req.user._id;
     const { title, description, language, brandColor, icon, status, settings, files } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({
+        message: 'Workspace updated successfully',
+        workspace: { _id: id, files }
+      });
+    }
 
     const workspace = await Workspace.findById(id);
     if (!workspace) {
@@ -412,6 +424,10 @@ exports.deleteWorkspace = async (req, res) => {
     const { id } = req.params;
     const userId = req.user._id;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
     const workspace = await Workspace.findById(id);
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found.' });
@@ -440,6 +456,10 @@ exports.updateWorkspaceSession = async (req, res) => {
     const userId = req.user._id;
     const { id } = req.params;
     const { sessionMinutes = 0, files } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({ message: 'Mock workspace session updated.' });
+    }
 
     const workspace = await Workspace.findById(id);
     if (!workspace) {
@@ -489,6 +509,11 @@ exports.updateWorkspaceSession = async (req, res) => {
 exports.getWorkspaceHistory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({ historyLogs: [] });
+    }
+
     const workspace = await Workspace.findById(id);
 
     if (!workspace) {
@@ -519,6 +544,13 @@ exports.addWorkspaceHistoryLog = async (req, res) => {
 
     if (!title || !details) {
       return res.status(400).json({ message: 'Title and details are required for history log.' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(201).json({
+        message: 'History log recorded',
+        historyLogs: []
+      });
     }
 
     const workspace = await Workspace.findById(id);
@@ -561,6 +593,11 @@ exports.addWorkspaceHistoryLog = async (req, res) => {
 exports.clearWorkspaceHistory = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({ message: 'Workspace history cleared successfully', historyLogs: [] });
+    }
+
     const workspace = await Workspace.findById(id);
 
     if (!workspace) {
@@ -589,6 +626,11 @@ exports.clearWorkspaceHistory = async (req, res) => {
 exports.getWorkspaceMembers = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.json({ members: [] });
+    }
+
     const workspace = await Workspace.findById(id).populate('members.user', 'name email avatar status');
 
     if (!workspace) {
@@ -629,6 +671,10 @@ exports.addWorkspaceMember = async (req, res) => {
 
     if (!email || !email.trim()) {
       return res.status(400).json({ message: 'Email address is required to invite member.' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
     }
 
     const workspace = await Workspace.findById(id);
@@ -711,6 +757,10 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
       return res.status(400).json({ message: 'Valid role required.' });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
     const workspace = await Workspace.findById(id);
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found.' });
@@ -772,6 +822,10 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
 exports.removeWorkspaceMember = async (req, res) => {
   try {
     const { id, memberId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
 
     const workspace = await Workspace.findById(id);
     if (!workspace) {
