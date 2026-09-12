@@ -97,6 +97,25 @@ const initWorkspaceSessionSocket = (io) => {
       }
     });
 
+    // Real-time Collaborative Code Synchronization (CT-85)
+    socket.on('code_change', ({ workspaceId, fileId, content }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !fileId) return;
+
+        const roomName = `workspace:${targetWorkspaceId}`;
+        // Broadcast to all other users in this workspace room, excluding sender
+        socket.to(roomName).emit('code_updated', {
+          workspaceId: targetWorkspaceId,
+          fileId,
+          content,
+          updatedBy: socket.userId
+        });
+      } catch (err) {
+        console.error('[Socket] Error in code_change:', err);
+      }
+    });
+
     // Leave Workspace Explicitly
     socket.on('leaveWorkspace', async ({ workspaceId, userId }) => {
       try {

@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const WorkspaceSession = require('../models/WorkspaceSession');
 const Workspace = require('../models/Workspace');
 
@@ -8,6 +9,10 @@ const getWorkspaceRole = (workspace, userId) => {
 };
 
 const getWorkspaceForMember = async (workspaceId, userId) => {
+  if (!workspaceId) return { workspace: null, role: null };
+  if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+    return { workspace: null, role: 'editor' };
+  }
   const workspace = await Workspace.findById(workspaceId);
   if (!workspace) return { workspace: null, role: null };
   return { workspace, role: getWorkspaceRole(workspace, userId) };
