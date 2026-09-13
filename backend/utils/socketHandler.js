@@ -31,14 +31,35 @@ const setupSocketHandler = (server) => {
     let currentWorkspaceId = null;
     let currentUser = null;
 
+    // In-memory version map for socketHandler: fileVersionMap[`${workspaceId}:${fileId}`] = number
+    const handlerVersionMap = new Map();
+
     // 1. Join Workspace Session Room
-    socket.on('join_workspace_session', async ({ workspaceId, user, activeFile = 'index.js' }) => {
+    socket.on('join_workspace_session', async ({ workspaceId, user, activeFile = 'index.js', role }) => {
       if (!workspaceId) return;
 
       currentWorkspaceId = workspaceId;
       currentUser = user || { name: 'Anonymous', initial: 'A' };
-      const roomName = `workspace_${workspaceId}`;
+      socket.userRole = role || user?.role || 'editor';
 
+      if (currentUser && (currentUser.id || currentUser._id)) {
+        try {
+          const ws = await Workspace.findById(workspaceId);
+          if (ws) {
+            const uid = (currentUser.id || currentUser._id).toString();
+            if (ws.owner && ws.owner.toString() === uid) {
+              socket.userRole = 'owner';
+            } else if (Array.isArray(ws.members)) {
+              const member = ws.members.find(m => (m.user?._id || m.user || '').toString() === uid);
+              if (member && member.role) {
+                socket.userRole = member.role;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+
+      const roomName = `workspace_${workspaceId}`;
       socket.join(roomName);
 
       if (!activeRoomSessions.has(workspaceId)) {
@@ -57,6 +78,7 @@ const setupSocketHandler = (server) => {
         name: currentUser.name || 'Developer',
         initial: (currentUser.name || 'Dev').charAt(0).toUpperCase(),
         color: currentUser.color || AVATAR_COLORS[colorIndex],
+        role: socket.userRole,
         joinedAt: new Date(),
         activeFile: activeFile
       };
@@ -73,15 +95,41 @@ const setupSocketHandler = (server) => {
         joinedUser: userSession
       });
 
-      console.log(`[Socket Session] ${userSession.name} joined workspace room: ${workspaceId} (${roomUsers.length} online)`);
+      console.log(`[Socket Session] ${userSession.name} (${socket.userRole}) joined workspace room: ${workspaceId} (${roomUsers.length} online)`);
     });
 
-    // 2. Real-time File/Code Changes
-    socket.on('code_change', ({ workspaceId, fileId, content }) => {
-      if (!workspaceId) return;
+    // 2. Real-time File/Code Changes with Viewer Guard & Version Tracking (CT-85, CT-89)
+    socket.on('code_change', ({ workspaceId, fileId, content, version }) => {
+      if (!workspaceId || !fileId) return;
+
+      if (socket.userRole === 'viewer') {
+        console.warn(`[Socket Guard] Blocked code_change from viewer user on workspace ${workspaceId}`);
+        socket.emit('code_change_error', {
+          fileId,
+          message: 'Permission denied: Viewers are not permitted to modify workspace code.',
+          isViewer: true
+        });
+        return;
+      }
+
+      const versionKey = `${workspaceId}:${fileId}`;
+      const currentVer = handlerVersionMap.get(versionKey) || 0;
+      const clientVer = typeof version === 'number' ? version : (currentVer + 1);
+
+      if (clientVer < currentVer) {
+        console.warn(`[Socket Version] Packet conflict for ${fileId}: client ${clientVer} < server ${currentVer}. Dropping.`);
+        socket.emit('code_conflict', { fileId, serverVersion: currentVer, message: 'Client version outdated.' });
+        return;
+      }
+
+      const nextVer = Math.max(currentVer + 1, clientVer);
+      handlerVersionMap.set(versionKey, nextVer);
+
       socket.to(`workspace_${workspaceId}`).emit('code_updated', {
+        workspaceId,
         fileId,
         content,
+        version: nextVer,
         updatedBy: currentUser?.name || 'Peer'
       });
     });

@@ -3,13 +3,21 @@ import { io } from 'socket.io-client';
 
 const SOCKET_SERVER_URL = 'http://localhost:5000';
 
-export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'index.js') => {
+export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'index.js', role = 'editor') => {
   const [activeUsers, setActiveUsers] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connected'); // 'connected' | 'reconnecting' | 'disconnected'
   const [timeSpent, setTimeSpent] = useState('0h 0m');
   const [peerCursors, setPeerCursors] = useState({});
   const [remoteCodeUpdates, setRemoteCodeUpdates] = useState(null);
+  const [fileVersions, setFileVersions] = useState({});
+  const fileVersionsRef = useRef({});
   const socketRef = useRef(null);
+  const isViewer = role === 'viewer';
+
+  useEffect(() => {
+    fileVersionsRef.current = fileVersions;
+  }, [fileVersions]);
 
   useEffect(() => {
     if (!workspaceId) return;
@@ -17,7 +25,8 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
     // Initialize Socket Connection
     const socket = io(SOCKET_SERVER_URL, {
       transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
+      reconnection: true,
+      reconnectionAttempts: 10,
       timeout: 10000
     });
 
@@ -25,20 +34,46 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
 
     socket.on('connect', () => {
       setIsConnected(true);
+      setConnectionStatus('connected');
       // Join room session
       socket.emit('join_workspace_session', {
         workspaceId,
         user: currentUser ? {
           id: currentUser.id || currentUser._id,
           name: currentUser.name || 'Anonymous Developer',
-          email: currentUser.email
+          email: currentUser.email,
+          role
         } : null,
-        activeFile
+        activeFile,
+        role
       });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('disconnect', (reason) => {
       setIsConnected(false);
+      if (reason !== 'io client disconnect') {
+        setConnectionStatus('reconnecting');
+      }
+    });
+
+    socket.on('connect_error', () => {
+      setIsConnected(false);
+      setConnectionStatus('reconnecting');
+    });
+
+    socket.io.on('reconnect_failed', () => {
+      setConnectionStatus('disconnected');
+    });
+
+    socket.on('code_change_error', (err) => {
+      console.warn('[useWorkspaceSession Guard]:', err);
+    });
+
+    socket.on('code_conflict', ({ fileId, serverVersion }) => {
+      if (typeof serverVersion === 'number') {
+        fileVersionsRef.current[fileId] = serverVersion;
+        setFileVersions(prev => ({ ...prev, [fileId]: serverVersion }));
+      }
     });
 
     // Listen for live active peers in this workspace
@@ -48,9 +83,15 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
       }
     });
 
-    // Listen for code changes made by other collaborators
-    socket.on('code_updated', ({ fileId, content, updatedBy }) => {
-      setRemoteCodeUpdates({ fileId, content, updatedBy, timestamp: Date.now() });
+    // Listen for code changes made by other collaborators with version checks (CT-85, CT-89)
+    socket.on('code_updated', ({ fileId, content, updatedBy, version }) => {
+      const currentVer = fileVersionsRef.current[fileId] || 0;
+      if (typeof version === 'number') {
+        if (version < currentVer) return; // Drop stale packet
+        fileVersionsRef.current[fileId] = version;
+        setFileVersions(prev => ({ ...prev, [fileId]: version }));
+      }
+      setRemoteCodeUpdates({ fileId, content, updatedBy, version, timestamp: Date.now() });
     });
 
     // Listen for remote peer cursor movements (CT-86)
@@ -100,15 +141,24 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
         socket.disconnect();
       }
     };
-  }, [workspaceId, currentUser]);
+  }, [workspaceId, currentUser, role]);
 
-  // Broadcast code edits
+  // Broadcast code edits with monotonic version increment (CT-85, CT-89)
   const emitCodeChange = (fileId, content) => {
+    if (isViewer) {
+      console.warn('[useWorkspaceSession] Viewers cannot emit code edits');
+      return;
+    }
     if (socketRef.current && socketRef.current.connected) {
+      const nextVer = (fileVersionsRef.current[fileId] || 0) + 1;
+      fileVersionsRef.current[fileId] = nextVer;
+      setFileVersions(prev => ({ ...prev, [fileId]: nextVer }));
+
       socketRef.current.emit('code_change', {
         workspaceId,
         fileId,
-        content
+        content,
+        version: nextVer
       });
     }
   };
@@ -144,6 +194,9 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
     activeUsers,
     peerCursors,
     isConnected,
+    connectionStatus,
+    isViewer,
+    fileVersions,
     timeSpent,
     remoteCodeUpdates,
     emitCodeChange,
