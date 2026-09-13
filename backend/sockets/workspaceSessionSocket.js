@@ -1,11 +1,15 @@
 const WorkspaceSession = require('../models/WorkspaceSession');
+const Workspace = require('../models/Workspace');
+
+// In-memory version tracking: fileVersionMap[`${workspaceId}:${fileId}`] = currentVersionNumber
+const fileVersionMap = new Map();
 
 const initWorkspaceSessionSocket = (io) => {
   io.on('connection', (socket) => {
     console.log(`[Socket] New client connected: ${socket.id}`);
 
     // Join Workspace Room
-    socket.on('joinWorkspace', async ({ workspaceId, user, currentFileId }) => {
+    socket.on('joinWorkspace', async ({ workspaceId, user, currentFileId, role }) => {
       try {
         if (!workspaceId) return;
 
@@ -13,15 +17,34 @@ const initWorkspaceSessionSocket = (io) => {
         socket.join(roomName);
         socket.workspaceId = workspaceId;
         socket.userId = user?.id || user?._id;
+        socket.userRole = role || user?.role || 'editor';
 
-        console.log(`[Socket] Client ${socket.id} (User ${socket.userId || 'Guest'}) joined ${roomName}`);
+        console.log(`[Socket] Client ${socket.id} (User ${socket.userId || 'Guest'}, Role ${socket.userRole}) joined ${roomName}`);
 
         if (socket.userId) {
+          // Verify actual member role against Workspace document if available
+          try {
+            const ws = await Workspace.findById(workspaceId);
+            if (ws) {
+              if (ws.owner && ws.owner.toString() === socket.userId.toString()) {
+                socket.userRole = 'owner';
+              } else if (Array.isArray(ws.members)) {
+                const member = ws.members.find(m => (m.user?._id || m.user || '').toString() === socket.userId.toString());
+                if (member && member.role) {
+                  socket.userRole = member.role;
+                }
+              }
+            }
+          } catch (wsErr) {
+            console.warn('[Socket] Workspace role check warning:', wsErr.message);
+          }
+
           await WorkspaceSession.findOneAndUpdate(
             { userId: socket.userId, workspaceId },
             {
               socketId: socket.id,
               status: 'online',
+              role: socket.userRole,
               lastActiveAt: new Date(),
               leftAt: null,
               ...(currentFileId ? { currentFileId } : {})
@@ -32,7 +55,7 @@ const initWorkspaceSessionSocket = (io) => {
           // Broadcast user joined to other members in the workspace room
           socket.to(roomName).emit('userJoined', {
             userId: socket.userId,
-            user,
+            user: { ...(user || {}), role: socket.userRole },
             joinedAt: new Date()
           });
         }
@@ -97,18 +120,55 @@ const initWorkspaceSessionSocket = (io) => {
       }
     });
 
-    // Real-time Collaborative Code Synchronization (CT-85)
-    socket.on('code_change', ({ workspaceId, fileId, content }) => {
+    // Real-time Collaborative Code Synchronization with Viewer Guard & Version Counters (CT-85, CT-89)
+    socket.on('code_change', async ({ workspaceId, fileId, content, version }) => {
       try {
         const targetWorkspaceId = workspaceId || socket.workspaceId;
         if (!targetWorkspaceId || !fileId) return;
 
+        // 1. Backend Role Guard: Viewers cannot modify code
+        let effectiveRole = socket.userRole;
+        if (!effectiveRole && socket.userId) {
+          const session = await WorkspaceSession.findOne({ userId: socket.userId, workspaceId: targetWorkspaceId });
+          effectiveRole = session?.role;
+        }
+
+        if (effectiveRole === 'viewer') {
+          console.warn(`[Socket Guard] Blocked unauthorized code_change from viewer user ${socket.userId || socket.id} on workspace ${targetWorkspaceId}`);
+          socket.emit('code_change_error', {
+            fileId,
+            message: 'Permission denied: Viewers are not permitted to modify workspace code.',
+            isViewer: true
+          });
+          return;
+        }
+
+        // 2. Version Counter & Conflict Guard (CT-89)
+        const versionKey = `${targetWorkspaceId}:${fileId}`;
+        const currentServerVersion = fileVersionMap.get(versionKey) || 0;
+        const clientVersion = typeof version === 'number' ? version : (currentServerVersion + 1);
+
+        // If client's edit version is strictly older than current server version, drop stale packet to prevent conflicts
+        if (clientVersion < currentServerVersion) {
+          console.warn(`[Socket Version] Packet conflict for file "${fileId}" in workspace "${targetWorkspaceId}". Incoming version (${clientVersion}) < server version (${currentServerVersion}). Dropping packet.`);
+          socket.emit('code_conflict', {
+            fileId,
+            serverVersion: currentServerVersion,
+            message: 'Code packet conflict: Client version is outdated.'
+          });
+          return;
+        }
+
+        const newVersion = Math.max(currentServerVersion + 1, clientVersion);
+        fileVersionMap.set(versionKey, newVersion);
+
         const roomName = `workspace:${targetWorkspaceId}`;
-        // Broadcast to all other users in this workspace room, excluding sender
+        // Broadcast to all other users in this workspace room with monotonic version counter
         socket.to(roomName).emit('code_updated', {
           workspaceId: targetWorkspaceId,
           fileId,
           content,
+          version: newVersion,
           updatedBy: socket.userId
         });
       } catch (err) {

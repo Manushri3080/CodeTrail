@@ -27,7 +27,12 @@ import {
   ChevronRight,
   Eye,
   Edit3,
-  Settings
+  Settings,
+  WifiOff,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  ShieldAlert
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
@@ -155,8 +160,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     || memberObj?.role 
     || (currentUser?.role ? currentUser.role : null)
     || 'editor';
-  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole);
+  const isViewer = workspaceRole === 'viewer';
+  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole) && !isViewer;
   const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
+
+  // Real-time Connection Status State & Reconnect Tracking (CT-89)
+  const [connectionStatus, setConnectionStatus] = useState('connected'); // 'connected' | 'reconnecting' | 'disconnected' | 'reconnected'
+  const wasDisconnectedRef = useRef(false);
+  const reconnectToastTimerRef = useRef(null);
+
+  // File Version Counters to Avoid Packet Conflicts (CT-89)
+  const [fileVersions, setFileVersions] = useState({});
+  const fileVersionsRef = useRef({});
+  useEffect(() => {
+    fileVersionsRef.current = fileVersions;
+  }, [fileVersions]);
 
   // Persistent Settings Modal Open State across page refreshes
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(() => {
@@ -522,7 +540,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // Prevent programmatic / remote updates from triggering state churn or outbound code_change
     if (isRemoteUpdateRef.current) return;
 
+    // Guard: Viewers cannot modify code (CT-89)
+    if (!canEditFiles || isViewer) {
+      setAutoSaveStatus('Viewing mode: Editing disabled');
+      return;
+    }
+
     const content = newCode ?? '';
+
+    // Increment monotonic version counter for this file (CT-89)
+    const currentVer = fileVersionsRef.current[activeFile] || 0;
+    const nextVer = currentVer + 1;
+    fileVersionsRef.current[activeFile] = nextVer;
+    setFileVersions(prev => ({
+      ...prev,
+      [activeFile]: nextVer
+    }));
 
     // 1. Immediately store under the specific activeFile key in state and ref
     const updatedMap = {
@@ -552,10 +585,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       let updatedFiles;
       if (fileIndex >= 0) {
         updatedFiles = baseFiles.map((f, i) => 
-          i === fileIndex ? { ...f, content } : f
+          i === fileIndex ? { ...f, content, version: nextVer } : f
         );
       } else {
-        updatedFiles = [...baseFiles, { id: activeFile, name: activeFile, language: getMonacoLanguage(activeFile), content }];
+        updatedFiles = [...baseFiles, { id: activeFile, name: activeFile, language: getMonacoLanguage(activeFile), content, version: nextVer }];
       }
 
       const nextWs = { ...prev, files: updatedFiles };
@@ -563,12 +596,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       return nextWs;
     });
 
-    // 4. Emit real-time code change to peers via Socket.IO (CT-85)
+    // 4. Emit real-time code change to peers via Socket.IO with version counter (CT-85, CT-89)
     if (socketRef.current) {
       socketRef.current.emit('code_change', {
         workspaceId: wsId,
         fileId: activeFile,
-        content
+        content,
+        version: nextVer
       });
     }
 
@@ -843,6 +877,95 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
+  // Reconnection State Sync Handler (CT-89)
+  const syncWorkspaceState = async () => {
+    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    try {
+      // 1. Fetch latest workspace details and files from backend
+      const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.data?.workspace) {
+        const latestWs = res.data.workspace;
+        setCurrentWorkspace(latestWs);
+        currentWorkspaceRef.current = latestWs;
+
+        if (Array.isArray(latestWs.files) && latestWs.files.length > 0) {
+          setFilesContent(prev => {
+            const next = { ...prev };
+            latestWs.files.forEach(f => {
+              const fname = f.name || f.id;
+              if (fname && f.content !== undefined) {
+                // If this file is currently open in Monaco and model content differs, sync smoothly
+                if (fname === activeFileRef.current && editorRef.current) {
+                  const editor = editorRef.current;
+                  const model = editor.getModel();
+                  if (model && model.getValue() !== f.content) {
+                    const sel = editor.getSelection();
+                    const pos = editor.getPosition();
+                    isRemoteUpdateRef.current = true;
+                    try {
+                      editor.executeEdits('reconnect-sync', [{
+                        range: model.getFullModelRange(),
+                        text: f.content,
+                        forceMoveMarkers: true
+                      }]);
+                      if (sel && !sel.isEmpty()) editor.setSelection(sel);
+                      else if (pos) editor.setPosition(pos);
+                    } finally {
+                      isRemoteUpdateRef.current = false;
+                    }
+                  }
+                }
+                next[fname] = f.content;
+                if (typeof f.version === 'number') {
+                  fileVersionsRef.current[fname] = Math.max(fileVersionsRef.current[fname] || 0, f.version);
+                }
+              }
+            });
+            filesContentRef.current = next;
+            return next;
+          });
+        }
+      }
+
+      // 2. Fetch latest active sessions
+      const sessionRes = await axios.get(`http://localhost:5000/api/workspaces/${wsId}/session/all`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (sessionRes.data?.sessions && sessionRes.data.sessions.length > 0) {
+        setActiveSessions(sessionRes.data.sessions);
+      }
+    } catch (syncErr) {
+      console.warn('[Sync] State sync after reconnect failed:', syncErr.message);
+    }
+  };
+
+  // Browser Network Drop / Online Detection (CT-89)
+  useEffect(() => {
+    const handleOffline = () => {
+      wasDisconnectedRef.current = true;
+      setConnectionStatus('disconnected');
+    };
+    const handleOnline = () => {
+      setConnectionStatus('reconnecting');
+      if (socketRef.current) {
+        if (!socketRef.current.connected) {
+          socketRef.current.connect();
+        } else {
+          syncWorkspaceState();
+        }
+      }
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [wsId]);
+
   // 3. Workspace Session Lifecycle (REST + Socket.IO Presence Engine)
   useEffect(() => {
     if (!token) return;
@@ -894,8 +1017,58 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         socket.emit('joinWorkspace', {
           workspaceId: wsId,
           user: currentUser,
-          currentFileId: activeFile
+          currentFileId: activeFileRef.current,
+          role: workspaceRole
         });
+
+        if (wasDisconnectedRef.current) {
+          setConnectionStatus('reconnected');
+          syncWorkspaceState();
+
+          if (reconnectToastTimerRef.current) clearTimeout(reconnectToastTimerRef.current);
+          reconnectToastTimerRef.current = setTimeout(() => {
+            setConnectionStatus('connected');
+            wasDisconnectedRef.current = false;
+          }, 3000);
+        } else {
+          setConnectionStatus('connected');
+        }
+      });
+
+      socket.on('disconnect', (reason) => {
+        console.warn('[Socket.IO] Disconnected:', reason);
+        wasDisconnectedRef.current = true;
+        if (reason !== 'io client disconnect') {
+          setConnectionStatus('reconnecting');
+        }
+      });
+
+      socket.on('connect_error', () => {
+        wasDisconnectedRef.current = true;
+        setConnectionStatus('reconnecting');
+      });
+
+      socket.io.on('reconnect_attempt', () => {
+        wasDisconnectedRef.current = true;
+        setConnectionStatus('reconnecting');
+      });
+
+      socket.io.on('reconnect_failed', () => {
+        wasDisconnectedRef.current = true;
+        setConnectionStatus('disconnected');
+      });
+
+      socket.on('code_change_error', ({ message }) => {
+        console.warn('[Socket Guard Alert]:', message);
+        setAutoSaveStatus(message || 'Viewing mode: Editing disabled');
+      });
+
+      socket.on('code_conflict', ({ fileId, serverVersion, message }) => {
+        console.warn('[Socket Conflict]:', message, 'for file', fileId, 'server version:', serverVersion);
+        if (typeof serverVersion === 'number') {
+          fileVersionsRef.current[fileId] = serverVersion;
+          setFileVersions(prev => ({ ...prev, [fileId]: serverVersion }));
+        }
       });
 
       socket.on('presenceUpdate', ({ sessions }) => {
@@ -961,10 +1134,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         });
       });
 
-      // Real-time Collaborative Code Synchronization (CT-85)
-      socket.on('code_updated', ({ workspaceId, fileId, content }) => {
+      // Real-time Collaborative Code Synchronization with Version Counter (CT-85, CT-89)
+      socket.on('code_updated', ({ workspaceId, fileId, content, version }) => {
         if (workspaceId && workspaceId !== wsId) return;
         if (!fileId) return;
+
+        // Version counter check to avoid packet conflicts (CT-89)
+        const currentVer = fileVersionsRef.current[fileId] || 0;
+        if (typeof version === 'number') {
+          if (version < currentVer) {
+            console.warn(`[Version Control] Dropping stale packet for ${fileId}. Incoming (${version}) < local (${currentVer})`);
+            return;
+          }
+          fileVersionsRef.current[fileId] = version;
+          setFileVersions(prev => ({ ...prev, [fileId]: version }));
+        }
 
         // 1. Update in-memory file content map
         setFilesContent(prev => ({
@@ -979,9 +1163,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           const fileIndex = baseFiles.findIndex(f => (f.name || f.id) === fileId);
           let updatedFiles;
           if (fileIndex >= 0) {
-            updatedFiles = baseFiles.map((f, i) => i === fileIndex ? { ...f, content } : f);
+            updatedFiles = baseFiles.map((f, i) => i === fileIndex ? { ...f, content, version: version || f.version } : f);
           } else {
-            updatedFiles = [...baseFiles, { id: fileId, name: fileId, language: getMonacoLanguage(fileId), content }];
+            updatedFiles = [...baseFiles, { id: fileId, name: fileId, language: getMonacoLanguage(fileId), content, version: version || 1 }];
           }
           return { ...prev, files: updatedFiles };
         });
@@ -1276,6 +1460,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           ) : (
             <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 14px', gap: '6px' }}><Lock size={14} /> Private</span>
           )}
+
+          {/* Viewer Mode Badge (CT-89) */}
+          {isViewer && (
+            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse" style={{ padding: '8px 14px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
+              <Lock size={14} className="text-amber-400" />
+              <span>Viewer (Read-Only)</span>
+            </div>
+          )}
         </div>
 
         {/* Right Actions: Start / Record Session & Leave Session Controls */}
@@ -1327,6 +1519,61 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           </button>
         </div>
       </header>
+
+      {/* Dynamic Connection Status / Reconnecting Banner (CT-89) */}
+      {connectionStatus === 'reconnecting' && (
+        <div className="w-full bg-gradient-to-r from-amber-600/90 via-orange-600/90 to-amber-600/90 text-white px-6 py-2.5 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-amber-400/40 animate-pulse shrink-0 z-40">
+          <div className="flex items-center gap-3">
+            <RefreshCw size={15} className="animate-spin text-amber-200 shrink-0" />
+            <span className="flex items-center gap-2">
+              <strong className="font-extrabold uppercase tracking-wide">Reconnecting...</strong>
+              <span className="hidden sm:inline text-amber-100 font-normal">Connection to collaborative session lost. Attempting to restore sync...</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (socketRef.current) socketRef.current.connect();
+              syncWorkspaceState();
+            }}
+            className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white border border-white/30 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            Retry Now
+          </button>
+        </div>
+      )}
+
+      {connectionStatus === 'disconnected' && (
+        <div className="w-full bg-gradient-to-r from-red-600/95 via-rose-600/95 to-red-600/95 text-white px-6 py-2.5 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-red-400/40 shrink-0 z-40">
+          <div className="flex items-center gap-3">
+            <WifiOff size={15} className="text-red-200 shrink-0" />
+            <span className="flex items-center gap-2">
+              <strong className="font-extrabold uppercase tracking-wide">Disconnected</strong>
+              <span className="hidden sm:inline text-red-100 font-normal">You are offline. Live changes are being saved locally to localStorage backup.</span>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setConnectionStatus('reconnecting');
+              if (socketRef.current) socketRef.current.connect();
+              syncWorkspaceState();
+            }}
+            className="px-3 py-1 bg-white/20 hover:bg-white/30 text-white border border-white/30 rounded-lg text-xs font-bold transition-all cursor-pointer shadow-sm active:scale-95"
+          >
+            Reconnect
+          </button>
+        </div>
+      )}
+
+      {connectionStatus === 'reconnected' && (
+        <div className="w-full bg-gradient-to-r from-emerald-600/90 via-teal-600/90 to-emerald-600/90 text-white px-6 py-2 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-emerald-400/40 shrink-0 z-40 transition-opacity">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 size={15} className="text-emerald-200 shrink-0" />
+            <span><strong>Reconnected!</strong> Workspace synchronized with live peers.</span>
+          </div>
+        </div>
+      )}
 
       {/* Main Workspace View Container (FULL WIDTH & FLUSH DIRECTLY BELOW NAVBAR) */}
       <section 
@@ -1662,6 +1909,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 <Users size={15} className="text-purple-400 shrink-0" />
                 <span className="text-xs font-mono text-gray-400 shrink-0">Active Editors:</span>
                 <div className="flex items-center gap-2">
+                  {isViewer && (
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-amber-300 text-xs font-mono font-bold shrink-0">
+                      <Lock size={12} />
+                      <span>Read-Only</span>
+                    </div>
+                  )}
                   {activeSessions.filter(s => s.status !== 'offline').map((s, idx) => {
                     const uid = s.userId?._id || s.userId?.id || s.userId || `peer-${idx}`;
                     const name = s.userId?.name || `Peer ${idx + 1}`;
@@ -1731,7 +1984,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   wordWrap: 'on',
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
-                  readOnly: !canEditFiles,
+                  readOnly: !canEditFiles || isViewer,
+                  domReadOnly: !canEditFiles || isViewer,
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
                   padding: { top: 14, bottom: 14 }
@@ -1752,6 +2006,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 <div className="flex items-center gap-2">
                   <Code2 size={14} className="text-cyan-400 shrink-0" />
                   <span>Active File: <strong className="text-white font-bold">{activeFile}</strong></span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${isViewer ? 'bg-amber-400' : 'bg-emerald-400'}`} />
+                  <span>Role: <strong className={`capitalize ${isViewer ? 'text-amber-300' : 'text-emerald-300'}`}>{workspaceRole}</strong></span>
                 </div>
               </div>
 

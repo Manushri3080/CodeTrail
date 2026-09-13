@@ -5,6 +5,7 @@ const WorkspaceFileSchema = new mongoose.Schema({
   name: { type: String, required: true },
   content: { type: String, default: '' },
   language: { type: String, default: 'javascript' },
+  version: { type: Number, default: 1 },
   updatedAt: { type: Date, default: Date.now }
 }, { _id: false });
 
