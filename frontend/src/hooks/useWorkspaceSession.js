@@ -7,6 +7,7 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
   const [activeUsers, setActiveUsers] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
   const [timeSpent, setTimeSpent] = useState('0h 0m');
+  const [peerCursors, setPeerCursors] = useState({});
   const [remoteCodeUpdates, setRemoteCodeUpdates] = useState(null);
   const socketRef = useRef(null);
 
@@ -50,6 +51,29 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
     // Listen for code changes made by other collaborators
     socket.on('code_updated', ({ fileId, content, updatedBy }) => {
       setRemoteCodeUpdates({ fileId, content, updatedBy, timestamp: Date.now() });
+    });
+
+    // Listen for remote peer cursor movements (CT-86)
+    socket.on('cursor_position_updated', (data) => {
+      if (!data || !data.userId) return;
+      setPeerCursors(prev => ({
+        ...prev,
+        [data.userId]: {
+          ...data,
+          lastUpdatedAt: Date.now()
+        }
+      }));
+    });
+
+    socket.on('cursor_updated', (data) => {
+      if (!data || !data.userId) return;
+      setPeerCursors(prev => ({
+        ...prev,
+        [data.userId]: {
+          ...data,
+          lastUpdatedAt: Date.now()
+        }
+      }));
     });
 
     // Listen for real-time updated session duration
@@ -99,13 +123,32 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
     }
   };
 
+  // Broadcast cursor movement (CT-86)
+  const emitCursorPosition = (fileId, position, selection) => {
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('cursor_position_update', {
+        workspaceId,
+        fileId,
+        user: currentUser ? {
+          id: currentUser.id || currentUser._id,
+          name: currentUser.name || 'Anonymous Developer',
+          email: currentUser.email
+        } : null,
+        position,
+        selection
+      });
+    }
+  };
+
   return {
     activeUsers,
+    peerCursors,
     isConnected,
     timeSpent,
     remoteCodeUpdates,
     emitCodeChange,
-    emitActiveFileChange
+    emitActiveFileChange,
+    emitCursorPosition
   };
 };
 

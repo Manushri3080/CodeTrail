@@ -86,6 +86,27 @@ const setupSocketHandler = (server) => {
       });
     });
 
+    // Real-time Multiplayer Monaco Cursor Tracking & Broadcast (CT-86)
+    socket.on('cursor_position_update', (data) => {
+      if (!data?.workspaceId) return;
+      const payload = {
+        ...data,
+        userId: currentUser?._id || currentUser?.id || socket.id
+      };
+      socket.to(`workspace_${data.workspaceId}`).emit('cursor_position_updated', payload);
+      socket.to(`workspace_${data.workspaceId}`).emit('cursor_updated', payload);
+    });
+
+    socket.on('cursor_move', (data) => {
+      if (!data?.workspaceId) return;
+      const payload = {
+        ...data,
+        userId: currentUser?._id || currentUser?.id || socket.id
+      };
+      socket.to(`workspace_${data.workspaceId}`).emit('cursor_position_updated', payload);
+      socket.to(`workspace_${data.workspaceId}`).emit('cursor_updated', payload);
+    });
+
     // 3. Switch Active File
     socket.on('active_file_change', ({ workspaceId, activeFile }) => {
       if (!workspaceId) return;

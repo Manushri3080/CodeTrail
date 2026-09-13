@@ -116,6 +116,46 @@ const initWorkspaceSessionSocket = (io) => {
       }
     });
 
+    // Real-time Multiplayer Monaco Cursor Tracking & Broadcast (CT-86)
+    socket.on('cursor_position_update', (data) => {
+      try {
+        const targetWorkspaceId = data?.workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId) return;
+
+        const roomName = `workspace:${targetWorkspaceId}`;
+        const payload = {
+          ...data,
+          workspaceId: targetWorkspaceId,
+          userId: socket.userId || data?.user?.id || data?.user?._id || socket.id
+        };
+
+        // Broadcast live cursor and selection coordinates to other peers in room
+        socket.to(roomName).emit('cursor_position_updated', payload);
+        socket.to(roomName).emit('cursor_updated', payload);
+      } catch (err) {
+        console.error('[Socket] Error in cursor_position_update:', err);
+      }
+    });
+
+    socket.on('cursor_move', (data) => {
+      try {
+        const targetWorkspaceId = data?.workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId) return;
+
+        const roomName = `workspace:${targetWorkspaceId}`;
+        const payload = {
+          ...data,
+          workspaceId: targetWorkspaceId,
+          userId: socket.userId || data?.user?.id || data?.user?._id || socket.id
+        };
+
+        socket.to(roomName).emit('cursor_position_updated', payload);
+        socket.to(roomName).emit('cursor_updated', payload);
+      } catch (err) {
+        console.error('[Socket] Error in cursor_move:', err);
+      }
+    });
+
     // Leave Workspace Explicitly
     socket.on('leaveWorkspace', async ({ workspaceId, userId }) => {
       try {

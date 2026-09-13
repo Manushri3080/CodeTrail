@@ -92,6 +92,31 @@ const getStarterBoilerplate = (filename = '') => {
   }
 };
 
+// Vibrant color palette for collaborative peers and live cursors (CT-86)
+const PEER_COLORS = [
+  '#EC4899', // Pink
+  '#38BDF8', // Sky Blue
+  '#10B981', // Emerald
+  '#F59E0B', // Amber
+  '#8B5CF6', // Purple
+  '#EF4444', // Red
+  '#06B6D4', // Cyan
+  '#14B8A6', // Teal
+  '#F97316', // Orange
+  '#A855F7'  // Violet
+];
+
+const getPeerColor = (userId = '', index = 0) => {
+  if (!userId) return PEER_COLORS[index % PEER_COLORS.length];
+  let hash = 0;
+  const str = String(userId);
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return PEER_COLORS[Math.abs(hash) % PEER_COLORS.length];
+};
+
 const DEFAULT_WORKSPACE_FILES = [
   { id: 'index.js', name: 'index.js', language: 'javascript', content: `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n` },
   { id: 'server.js', name: 'server.js', language: 'javascript', content: `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n` },
@@ -210,12 +235,163 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   }, [customFiles, wsId]);
 
   const editorRef = useRef(null);
+  const monacoRef = useRef(null);
   const activeFileRef = useRef(activeFile);
   const isRemoteUpdateRef = useRef(false);
+
+  // Multiplayer Peer Cursors & Selection State (CT-86)
+  const [peerCursors, setPeerCursors] = useState({});
+  const peerCursorsRef = useRef({});
+  const remoteDecorationIdsRef = useRef([]);
+  const lastCursorEmitRef = useRef(0);
+  const pendingCursorTimeoutRef = useRef(null);
+  const myPeerColor = getPeerColor(currentUserId, 0);
+
+  useEffect(() => {
+    peerCursorsRef.current = peerCursors;
+  }, [peerCursors]);
 
   useEffect(() => {
     activeFileRef.current = activeFile;
   }, [activeFile]);
+
+  // Update Monaco decorations for multiplayer peer cursors & selections (CT-86)
+  const updateMonacoDecorations = () => {
+    if (!editorRef.current || !monacoRef.current) return;
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const currentFile = activeFileRef.current;
+
+    let dynamicCss = '';
+    const newDecorations = [];
+
+    const activePeers = Object.values(peerCursorsRef.current);
+    activePeers.forEach((peer, idx) => {
+      const peerUid = peer.userId || peer.user?.id || peer.user?._id;
+      if (!peerUid || peerUid === currentUserId) return;
+
+      // Only render cursor if peer is currently viewing the active file
+      if (peer.fileId && peer.fileId !== currentFile) return;
+
+      const peerName = (peer.user?.name || peer.name || `Peer ${idx + 1}`).replace(/["\\]/g, '');
+      const peerColor = peer.user?.color || peer.color || getPeerColor(peerUid, idx);
+      const safeId = peerUid.toString().replace(/[^a-zA-Z0-9_-]/g, '_');
+      const isTopLine = (peer.position?.lineNumber || 1) <= 1;
+
+      dynamicCss += `
+        .ct-peer-cursor-${safeId} {
+          border-left: 2px solid ${peerColor} !important;
+        }
+        .ct-peer-cursor-${safeId}::before {
+          content: "${peerName}";
+          background-color: ${peerColor} !important;
+        }
+        .ct-peer-selection-${safeId} {
+          background-color: ${peerColor}33 !important;
+        }
+      `;
+
+      if (peer.position && typeof peer.position.lineNumber === 'number') {
+        const line = Math.max(1, peer.position.lineNumber);
+        const col = Math.max(1, peer.position.column || 1);
+
+        newDecorations.push({
+          range: new monaco.Range(line, col, line, col),
+          options: {
+            className: `ct-monaco-remote-cursor ct-monaco-nametag ct-peer-cursor-${safeId} ${isTopLine ? 'ct-monaco-nametag-top' : ''}`,
+            hoverMessage: { value: `**${peerName}** is actively editing here` },
+            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            zIndex: 100
+          }
+        });
+      }
+
+      if (peer.selection) {
+        const { startLineNumber, startColumn, endLineNumber, endColumn } = peer.selection;
+        if (
+          startLineNumber && endLineNumber &&
+          (startLineNumber !== endLineNumber || startColumn !== endColumn)
+        ) {
+          const sLine = Math.min(startLineNumber, endLineNumber);
+          const eLine = Math.max(startLineNumber, endLineNumber);
+          const sCol = startLineNumber < endLineNumber ? startColumn : (startLineNumber > endLineNumber ? endColumn : Math.min(startColumn, endColumn));
+          const eCol = startLineNumber < endLineNumber ? endColumn : (startLineNumber > endLineNumber ? startColumn : Math.max(startColumn, endColumn));
+
+          newDecorations.push({
+            range: new monaco.Range(sLine, sCol, eLine, eCol),
+            options: {
+              className: `ct-monaco-remote-selection ct-peer-selection-${safeId}`,
+              stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+              zIndex: 90
+            }
+          });
+        }
+      }
+    });
+
+    // Update dynamic stylesheet in document head
+    let styleEl = document.getElementById('ct-monaco-peer-cursor-styles');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'ct-monaco-peer-cursor-styles';
+      document.head.appendChild(styleEl);
+    }
+    styleEl.textContent = dynamicCss;
+
+    // Apply delta decorations to Monaco Editor
+    try {
+      const oldIds = remoteDecorationIdsRef.current || [];
+      const newIds = editor.deltaDecorations(oldIds, newDecorations);
+      remoteDecorationIdsRef.current = newIds;
+    } catch (err) {
+      console.warn('[Monaco] Decoration apply warning:', err);
+    }
+  };
+
+  // Re-render decorations when active file or peer cursors change
+  useEffect(() => {
+    updateMonacoDecorations();
+  }, [activeFile, peerCursors]);
+
+  // Handle Local Cursor Movement & Emit over Socket.IO (CT-86)
+  const handleLocalCursorChange = (position, selection) => {
+    if (!position || !socketRef.current || !socketRef.current.connected) return;
+
+    const send = () => {
+      lastCursorEmitRef.current = Date.now();
+      const payload = {
+        workspaceId: wsId,
+        fileId: activeFileRef.current,
+        user: {
+          id: currentUserId,
+          name: currentUser.name || 'Maryam Shaikh',
+          color: myPeerColor
+        },
+        position: {
+          lineNumber: position.lineNumber,
+          column: position.column
+        },
+        selection: selection && !selection.isEmpty() ? {
+          startLineNumber: selection.selectionStartLineNumber,
+          startColumn: selection.selectionStartColumn,
+          endLineNumber: selection.positionLineNumber,
+          endColumn: selection.positionColumn
+        } : null
+      };
+
+      socketRef.current.emit('cursor_position_update', payload);
+    };
+
+    const now = Date.now();
+    if (now - lastCursorEmitRef.current > 30) {
+      send();
+    } else {
+      if (pendingCursorTimeoutRef.current) {
+        clearTimeout(pendingCursorTimeoutRef.current);
+      }
+      pendingCursorTimeoutRef.current = setTimeout(send, 30);
+    }
+  };
 
   // Dedicated in-memory map storing content per file name (with localStorage backup support)
   const [filesContent, setFilesContent] = useState(() => {
@@ -736,6 +912,53 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           }
           return s;
         }));
+
+        if (userId && peerCursorsRef.current[userId]) {
+          setPeerCursors(prev => {
+            const next = {
+              ...prev,
+              [userId]: {
+                ...prev[userId],
+                fileId
+              }
+            };
+            peerCursorsRef.current = next;
+            return next;
+          });
+        }
+      });
+
+      // Real-time Multiplayer Monaco Cursor Tracking (CT-86)
+      const handleRemoteCursor = (data) => {
+        if (!data) return;
+        const peerUid = data.userId || data.user?.id || data.user?._id;
+        if (!peerUid || peerUid === currentUserId) return;
+
+        setPeerCursors(prev => {
+          const next = {
+            ...prev,
+            [peerUid]: {
+              ...data,
+              userId: peerUid,
+              lastUpdatedAt: Date.now()
+            }
+          };
+          peerCursorsRef.current = next;
+          return next;
+        });
+      };
+
+      socket.on('cursor_position_updated', handleRemoteCursor);
+      socket.on('cursor_updated', handleRemoteCursor);
+
+      socket.on('userLeft', ({ userId }) => {
+        if (!userId) return;
+        setPeerCursors(prev => {
+          const next = { ...prev };
+          delete next[userId];
+          peerCursorsRef.current = next;
+          return next;
+        });
       });
 
       // Real-time Collaborative Code Synchronization (CT-85)
@@ -1440,16 +1663,28 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 <span className="text-xs font-mono text-gray-400 shrink-0">Active Editors:</span>
                 <div className="flex items-center gap-2">
                   {activeSessions.filter(s => s.status !== 'offline').map((s, idx) => {
+                    const uid = s.userId?._id || s.userId?.id || s.userId || `peer-${idx}`;
                     const name = s.userId?.name || `Peer ${idx + 1}`;
-                    const color = idx % 3 === 0 ? '#EC4899' : idx % 3 === 1 ? '#38BDF8' : '#10B981';
+                    const color = getPeerColor(uid, idx);
+                    const isMe = uid === currentUserId;
+                    const peerCur = peerCursors[uid];
+                    const isOnSameFile = (peerCur?.fileId === activeFile) || (s.currentFileId === activeFile);
+                    const posInfo = peerCur?.position ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}` : null;
+
                     return (
                       <div 
                         key={s._id || idx} 
-                        className="rounded-full border text-xs font-mono flex items-center gap-2 shrink-0 bg-white/[0.04]"
+                        className="rounded-full border text-xs font-mono flex items-center gap-2 shrink-0 bg-white/[0.04] transition-all"
                         style={{ padding: '6px 14px', borderColor: color, color: color }}
+                        title={`${name}${isMe ? ' (You)' : ''}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ''}`}
                       >
-                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                        <span>{name}</span>
+                        <span className="w-2 h-2 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: color }} />
+                        <span>{name}{isMe ? ' (You)' : ''}</span>
+                        {isOnSameFile && posInfo && !isMe && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
+                            {posInfo}
+                          </span>
+                        )}
                       </div>
                     );
                   })}
@@ -1468,8 +1703,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 theme="vs-dark"
                 value={getActiveFileContent()}
                 onChange={handleEditorChange}
-                onMount={(editor) => {
+                onMount={(editor, monaco) => {
                   editorRef.current = editor;
+                  monacoRef.current = monaco;
+
+                  // Track cursor position in Monaco (onDidChangeCursorPosition) (CT-86)
+                  editor.onDidChangeCursorPosition((e) => {
+                    handleLocalCursorChange(e.position, editor.getSelection());
+                  });
+
+                  // Track cursor selection in Monaco (onDidChangeCursorSelection) (CT-86)
+                  editor.onDidChangeCursorSelection((e) => {
+                    handleLocalCursorChange(editor.getPosition(), e.selection);
+                  });
+
+                  // Initial decoration pass
+                  updateMonacoDecorations();
                 }}
                 options={{
                   fontSize: 14,
