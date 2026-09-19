@@ -12,14 +12,26 @@ export const ExecutionEngine = () => {
 
   const currentLang = EXECUTION_LANGUAGES.find(l => l.id === selectedLang) || EXECUTION_LANGUAGES[0];
 
-  const handleRunCode = () => {
+  const handleRunCode = async () => {
     setIsRunning(true);
     setOutputLogs([`Compiling & executing ${currentLang.name} script...`]);
 
-    setTimeout(() => {
+    try {
+      const response = await axios.post('http://localhost:5000/api/execute', {
+        language: currentLang.id,
+        code: currentLang.snippet
+      });
+      const data = response.data;
+      const lines = (data.output || 'Execution completed with no output.').split('\n');
+      lines.push(`\n[Process exited with status code ${data.exitCode} in ${data.version || 'sandbox'}]`);
+      setOutputLogs(lines);
+    } catch (err) {
+      console.error('Execution Error:', err);
+      const errMsg = err.response?.data?.output || err.response?.data?.message || err.message;
+      setOutputLogs([`[Execution Error]: ${errMsg}`]);
+    } finally {
       setIsRunning(false);
-      setOutputLogs(currentLang.expectedOutput);
-    }, 650);
+    }
   };
 
   return (

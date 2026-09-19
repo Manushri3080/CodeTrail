@@ -24,11 +24,19 @@ const API_BASE = 'http://localhost:5000/api';
 
 const AVAILABLE_LANGUAGES = [
   { id: 'javascript', name: 'JavaScript', ext: '.js', tag: 'Node.js 20' },
+  { id: 'typescript', name: 'TypeScript', ext: '.ts', tag: 'TS 5.3' },
   { id: 'python', name: 'Python', ext: '.py', tag: 'Python 3.12' },
   { id: 'cpp', name: 'C++', ext: '.cpp', tag: 'GCC 13' },
+  { id: 'c', name: 'C', ext: '.c', tag: 'GCC 13' },
   { id: 'java', name: 'Java', ext: '.java', tag: 'OpenJDK 21' },
-  { id: 'rust', name: 'Rust', ext: '.rs', tag: 'Rustc 1.75' },
-  { id: 'go', name: 'Go', ext: '.go', tag: 'Go 1.22' }
+  { id: 'rust', name: 'Rust', ext: '.rs', tag: 'Rustc 1.76' },
+  { id: 'go', name: 'Go', ext: '.go', tag: 'Go 1.22' },
+  { id: 'html', name: 'HTML', ext: '.html', tag: 'HTML5' },
+  { id: 'css', name: 'CSS', ext: '.css', tag: 'CSS3' },
+  { id: 'json', name: 'JSON', ext: '.json', tag: 'JSON' },
+  { id: 'markdown', name: 'Markdown', ext: '.md', tag: 'CommonMark' },
+  { id: 'sql', name: 'SQL', ext: '.sql', tag: 'SQL' },
+  { id: 'shell', name: 'Shell / Bash', ext: '.sh', tag: 'Bash 5' }
 ];
 
 const ACCENT_COLORS = [

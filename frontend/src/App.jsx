@@ -20,11 +20,14 @@ function App({ defaultTab }) {
   
   const [activeTab, setActiveTabState] = useState(() => {
     if (defaultTab) return defaultTab;
-    try {
-      const saved = localStorage.getItem('ct-active-tab');
-      if (saved) return saved;
-    } catch (e) {}
-    return isLoggedIn ? 'home' : 'modules-grid';
+    if (isLoggedIn) {
+      try {
+        const saved = localStorage.getItem('ct-active-tab');
+        if (saved && saved !== 'modules-grid' && saved !== 'landing') return saved;
+      } catch (e) {}
+      return 'home';
+    }
+    return 'modules-grid';
   });
 
   const setActiveTab = (tab) => {
@@ -124,37 +127,39 @@ function App({ defaultTab }) {
           onLogout={handleLogout}
           onBackToHome={() => setActiveTab(isLoggedIn ? 'home' : 'modules-grid')}
         />
-      ) : isLoggedIn && activeTab === 'modular-workspace' ? (
-        <div className="ct-logged-workspace-wrap">
-          <ModularWorkspace 
-            activeWorkspace={activeWorkspace} 
-            onBackToHome={() => setActiveTab('home')} 
+      ) : isLoggedIn ? (
+        activeTab === 'modular-workspace' ? (
+          <div className="ct-logged-workspace-wrap">
+            <ModularWorkspace 
+              activeWorkspace={activeWorkspace} 
+              onBackToHome={() => setActiveTab('home')} 
+            />
+          </div>
+        ) : activeTab === 'workspaces-directory' ? (
+          <WorkspacesPage
+            currentUser={currentUser}
+            onJumpToWorkspace={handleJumpToWorkspace}
+            onBackToHome={() => setActiveTab('home')}
           />
-        </div>
-      ) : isLoggedIn && activeTab === 'workspaces-directory' ? (
-        <WorkspacesPage
-          currentUser={currentUser}
-          onJumpToWorkspace={handleJumpToWorkspace}
-          onBackToHome={() => setActiveTab('home')}
-        />
-      ) : isLoggedIn && activeTab === 'execution-engine' ? (
-        <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
-          <ExecutionEngine />
-        </div>
-      ) : isLoggedIn && activeTab === 'contribution-dossier' ? (
-        <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
-          <ContributionDossier />
-        </div>
-      ) : isLoggedIn && (activeTab === 'home' || !activeTab) ? (
-        <HomePage
-          currentUser={currentUser}
-          onJumpToWorkspace={handleJumpToWorkspace}
-          onOpenProfile={() => setActiveTab('profile')}
-          onNavigateToAllWorkspaces={() => setActiveTab('workspaces-directory')}
-        />
+        ) : activeTab === 'execution-engine' ? (
+          <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
+            <ExecutionEngine />
+          </div>
+        ) : activeTab === 'contribution-dossier' ? (
+          <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
+            <ContributionDossier />
+          </div>
+        ) : (
+          <HomePage
+            currentUser={currentUser}
+            onJumpToWorkspace={handleJumpToWorkspace}
+            onOpenProfile={() => setActiveTab('profile')}
+            onNavigateToAllWorkspaces={() => setActiveTab('workspaces-directory')}
+          />
+        )
       ) : (
         <>
-          {/* LANDING PAGE HERO */}
+          {/* LANDING PAGE HERO (ONLY SHOWN FOR LOGGED-OUT VISITORS) */}
           <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
 
           {/* COLLABORATIVE WORKSPACE MODULE */}

@@ -176,6 +176,65 @@ const initWorkspaceSessionSocket = (io) => {
       }
     });
 
+    // Real-time Collaborative Programming Language Selection
+    socket.on('language_change', ({ workspaceId, fileId, language }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !fileId || !language) return;
+
+        const roomName = `workspace:${targetWorkspaceId}`;
+        socket.to(roomName).emit('language_updated', {
+          workspaceId: targetWorkspaceId,
+          fileId,
+          language,
+          updatedBy: socket.userId
+        });
+      } catch (err) {
+        console.error('[Socket] Error in language_change:', err);
+      }
+    });
+
+    // Real-time File Management Events (Creation, Deletion, Renaming)
+    socket.on('file_created', ({ workspaceId, file }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !file) return;
+        socket.to(`workspace:${targetWorkspaceId}`).emit('file_created', { file, createdBy: socket.userId });
+      } catch (err) {
+        console.error('[Socket] Error in file_created:', err);
+      }
+    });
+
+    socket.on('file_deleted', ({ workspaceId, fileId }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !fileId) return;
+        socket.to(`workspace:${targetWorkspaceId}`).emit('file_deleted', { fileId, deletedBy: socket.userId });
+      } catch (err) {
+        console.error('[Socket] Error in file_deleted:', err);
+      }
+    });
+
+    socket.on('file_renamed', ({ workspaceId, oldFileId, newFileId }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !oldFileId || !newFileId) return;
+        socket.to(`workspace:${targetWorkspaceId}`).emit('file_renamed', { oldFileId, newFileId, renamedBy: socket.userId });
+      } catch (err) {
+        console.error('[Socket] Error in file_renamed:', err);
+      }
+    });
+
+    socket.on('files_updated', ({ workspaceId, files }) => {
+      try {
+        const targetWorkspaceId = workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId || !files) return;
+        socket.to(`workspace:${targetWorkspaceId}`).emit('files_updated', { files, updatedBy: socket.userId });
+      } catch (err) {
+        console.error('[Socket] Error in files_updated:', err);
+      }
+    });
+
     // Real-time Multiplayer Monaco Cursor Tracking & Broadcast (CT-86)
     socket.on('cursor_position_update', (data) => {
       try {

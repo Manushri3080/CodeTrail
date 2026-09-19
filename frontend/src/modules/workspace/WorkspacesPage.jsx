@@ -25,6 +25,7 @@ import {
   Copy,
   Check,
   Loader2,
+  AlertCircle,
   Trash2,
   Archive,
   ArrowLeft
@@ -33,77 +34,6 @@ import { WorkspaceModal } from '../../components/workspace/WorkspaceModal';
 import { WorkspaceSettingsModal } from '../../components/workspace/WorkspaceSettingsModal';
 
 const API_BASE = 'http://localhost:5000/api';
-
-const INITIAL_FALLBACK_WORKSPACES = [
-  {
-    id: 'ws-core',
-    _id: 'ws-core',
-    title: 'CodeTrail Core Engine',
-    description: 'Real-time multi-user workspace & collaborative Monaco editor.',
-    language: 'javascript',
-    roomCode: 'CT-EDMAV8',
-    inviteCode: 'CT-EDMAV8',
-    brandColor: 'purple',
-    icon: 'Rocket',
-    status: 'active',
-    starred: true,
-    settings: { isPublic: false },
-    members: [{ name: 'Maryam Shaikh', role: 'owner' }, { name: 'Alex Johnson', role: 'editor' }, { name: 'Sarah Chen', role: 'editor' }],
-    filesCount: 5,
-    updatedAt: new Date().toISOString()
-  },
-  {
-    id: 'ws-python-ai',
-    _id: 'ws-python-ai',
-    title: 'Python Telemetry ML Model',
-    description: 'Automated telemetry data pipeline & model execution sandbox.',
-    language: 'python',
-    roomCode: 'CT-PYML92',
-    inviteCode: 'CT-PYML92',
-    brandColor: 'cyan',
-    icon: 'Cpu',
-    status: 'active',
-    starred: true,
-    settings: { isPublic: true },
-    members: [{ name: 'Maryam Shaikh', role: 'owner' }, { name: 'Meet Patel', role: 'viewer' }],
-    filesCount: 3,
-    updatedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString()
-  },
-  {
-    id: 'ws-cpp-kernel',
-    _id: 'ws-cpp-kernel',
-    title: 'C++ Low-Latency Kernel',
-    description: 'High-performance memory buffer & system kernel benchmarks.',
-    language: 'cpp',
-    roomCode: 'CT-CPP88X',
-    inviteCode: 'CT-CPP88X',
-    brandColor: 'emerald',
-    icon: 'Database',
-    status: 'active',
-    starred: false,
-    settings: { isPublic: false },
-    members: [{ name: 'Maryam Shaikh', role: 'owner' }],
-    filesCount: 2,
-    updatedAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
-  },
-  {
-    id: 'ws-rust-wasm',
-    _id: 'ws-rust-wasm',
-    title: 'Rust WebAssembly Parser',
-    description: 'Wasm compilation sandbox for client-side code parsing.',
-    language: 'rust',
-    roomCode: 'CT-RSW991',
-    inviteCode: 'CT-RSW991',
-    brandColor: 'amber',
-    icon: 'Code2',
-    status: 'archived',
-    starred: false,
-    settings: { isPublic: true },
-    members: [{ name: 'Maryam Shaikh', role: 'owner' }, { name: 'Alex Johnson', role: 'editor' }],
-    filesCount: 4,
-    updatedAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString()
-  }
-];
 
 const resolveIcon = (iconName) => {
   switch (iconName) {
@@ -123,6 +53,7 @@ export const WorkspacesPage = ({
 }) => {
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dbError, setDbError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'starred' | 'shared' | 'archived'
   const [languageFilter, setLanguageFilter] = useState('all');
@@ -161,28 +92,31 @@ export const WorkspacesPage = ({
   
   const [copiedCodeId, setCopiedCodeId] = useState(null);
 
-  // Fetch workspaces from REST API or Local Fallback
+  // Fetch workspaces strictly from database via REST API
   const fetchWorkspaces = async () => {
     const token = localStorage.getItem('ct-auth-token');
     if (!token) {
-      setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+      setWorkspaces([]);
       setLoading(false);
       return;
     }
 
     try {
       setLoading(true);
+      setDbError('');
       const res = await axios.get(`${API_BASE}/workspaces`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.data?.workspaces && res.data.workspaces.length > 0) {
+      if (res.data?.workspaces) {
         setWorkspaces(res.data.workspaces);
       } else {
-        setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+        setWorkspaces([]);
       }
     } catch (err) {
-      console.warn('Fetch workspaces failed:', err.message);
-      setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+      console.error('Fetch workspaces failed:', err);
+      setWorkspaces([]);
+      const msg = err.response?.data?.message || 'Database connection is currently offline or unreachable. Please try again later.';
+      setDbError(msg);
     } finally {
       setLoading(false);
     }
@@ -326,6 +260,17 @@ export const WorkspacesPage = ({
           </button>
         </div>
       </div>
+
+      {/* DB Offline Error Alert Banner */}
+      {dbError && (
+        <div className="p-4 mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-xs flex items-center gap-3 shadow-lg">
+          <AlertCircle size={20} className="shrink-0 text-rose-400" />
+          <div>
+            <p className="font-bold text-sm text-white">Database Offline / Connection Error</p>
+            <p className="text-xs text-rose-200/80 mt-0.5">{dbError}</p>
+          </div>
+        </div>
+      )}
 
       {/* 2. FILTER & SEARCH CONTROL BAR */}
       <div className="ct-workspaces-toolbar">

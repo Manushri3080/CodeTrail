@@ -32,7 +32,12 @@ import {
   RefreshCw,
   AlertTriangle,
   CheckCircle2,
-  ShieldAlert
+  ShieldAlert,
+  Play,
+  Terminal,
+  Loader2,
+  Trash2,
+  Edit2
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
@@ -65,6 +70,35 @@ const getMonacoLanguage = (fileName = '') => {
     xml: 'xml'
   };
   return map[ext] || 'javascript';
+};
+
+// Map file extension directly to clean display name & icon color badge
+const getLanguageInfo = (fileName = '') => {
+  const ext = fileName.split('.').pop().toLowerCase();
+  const map = {
+    js: { name: 'JavaScript', tag: 'JS', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' },
+    jsx: { name: 'React JSX', tag: 'JSX', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' },
+    ts: { name: 'TypeScript', tag: 'TS', color: 'text-sky-400', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
+    tsx: { name: 'React TSX', tag: 'TSX', color: 'text-sky-400', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
+    py: { name: 'Python 3', tag: 'PY', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' },
+    cpp: { name: 'C++', tag: 'C++', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
+    c: { name: 'C', tag: 'C', color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300' },
+    h: { name: 'C Header', tag: 'H', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
+    hpp: { name: 'C++ Header', tag: 'HPP', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
+    java: { name: 'Java', tag: 'JAVA', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/30 text-rose-300' },
+    rs: { name: 'Rust', tag: 'RS', color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
+    go: { name: 'Go', tag: 'GO', color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/30 text-teal-300' },
+    html: { name: 'HTML5', tag: 'HTML', color: 'text-orange-500', bg: 'bg-orange-500/10 border-orange-500/30 text-orange-300' },
+    css: { name: 'CSS3', tag: 'CSS', color: 'text-sky-300', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
+    json: { name: 'JSON', tag: 'JSON', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' },
+    md: { name: 'Markdown', tag: 'MD', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30 text-purple-300' },
+    sql: { name: 'SQL', tag: 'SQL', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
+    sh: { name: 'Shell / Bash', tag: 'SH', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/30 text-green-300' },
+    yaml: { name: 'YAML', tag: 'YAML', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30 text-red-300' },
+    yml: { name: 'YAML', tag: 'YAML', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30 text-red-300' },
+    xml: { name: 'XML', tag: 'XML', color: 'text-purple-300', bg: 'bg-purple-500/10 border-purple-500/30 text-purple-300' }
+  };
+  return map[ext] || { name: 'Plain Text', tag: 'TXT', color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/30 text-gray-300' };
 };
 
 const getStarterBoilerplate = (filename = '') => {
@@ -208,43 +242,140 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     } catch (e) {}
   }, [activeFile, wsId]);
   
-  // Dynamic Files & Folders List State (Persisted in localStorage)
+  // Helper to normalize file objects with full path and parent ID attributes
+  const normalizeFileItem = (f) => {
+    const path = f.path || f.id || f.name || 'file.js';
+    const name = f.name || path.split('/').pop() || path;
+    const parts = path.split('/');
+    const parentId = f.parentId !== undefined ? f.parentId : (parts.length > 1 ? parts.slice(0, -1).join('/') : null);
+    const isFolder = !!f.isFolder;
+    const iconColor = f.iconColor || (isFolder ? 'text-purple-400' : getLanguageInfo(name).color);
+    return {
+      id: path,
+      name,
+      path,
+      parentId,
+      isFolder,
+      iconColor
+    };
+  };
+
+  // Default workspace starter files
+  const DEFAULT_WORKSPACE_FILES = [
+    { id: 'index.js', name: 'index.js', path: 'index.js', parentId: null, iconColor: 'text-yellow-400', isFolder: false },
+    { id: 'server.js', name: 'server.js', path: 'server.js', parentId: null, iconColor: 'text-cyan-400', isFolder: false },
+    { id: 'styles.css', name: 'styles.css', path: 'styles.css', parentId: null, iconColor: 'text-sky-400', isFolder: false },
+    { id: 'package.json', name: 'package.json', path: 'package.json', parentId: null, iconColor: 'text-emerald-400', isFolder: false },
+    { id: 'README.md', name: 'README.md', path: 'README.md', parentId: null, iconColor: 'text-purple-400', isFolder: false }
+  ];
+
+  // Dynamic Files & Folders List State (Persisted in localStorage & synced with MongoDB)
   const [customFiles, setCustomFiles] = useState(() => {
     try {
       const saved = localStorage.getItem(`ct-workspace-files-${wsId}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map(normalizeFileItem);
+        }
+      }
     } catch (e) {}
 
     if (activeWorkspace?.files && activeWorkspace.files.length > 0) {
-      return activeWorkspace.files.map(f => ({
-        id: f.name || f.id,
-        name: f.name,
-        iconColor: f.name?.endsWith('.js') ? 'text-yellow-400' : f.name?.endsWith('.css') ? 'text-sky-400' : f.name?.endsWith('.json') ? 'text-emerald-400' : 'text-purple-400',
-        isFolder: false
+      return activeWorkspace.files.map(f => normalizeFileItem({
+        id: f.path || f.name || f.id,
+        name: f.name || f.id,
+        path: f.path || f.name || f.id,
+        isFolder: !!f.isFolder,
+        parentId: f.parentId || null,
+        iconColor: f.iconColor
       }));
     }
-    return [
-      { id: 'index.js', name: 'index.js', iconColor: 'text-yellow-400', isFolder: false },
-      { id: 'server.js', name: 'server.js', iconColor: 'text-cyan-400', isFolder: false },
-      { id: 'styles.css', name: 'styles.css', iconColor: 'text-sky-400', isFolder: false },
-      { id: 'package.json', name: 'package.json', iconColor: 'text-emerald-400', isFolder: false },
-      { id: 'README.md', name: 'README.md', iconColor: 'text-purple-400', isFolder: false }
-    ];
+    return DEFAULT_WORKSPACE_FILES.map(normalizeFileItem);
   });
+
+  // Fetch the authoritative latest workspace state directly from backend MongoDB on mount / wsId change
+  useEffect(() => {
+    let isMounted = true;
+    if (!wsId || wsId === 'demo-workspace' || !token) return;
+
+    const fetchWorkspaceFromBackend = async () => {
+      try {
+        const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!isMounted) return;
+
+        const fetchedWs = res.data?.workspace;
+        if (fetchedWs) {
+          setCurrentWorkspace(fetchedWs);
+          currentWorkspaceRef.current = fetchedWs;
+          try {
+            localStorage.setItem('ct-active-workspace-session', JSON.stringify(fetchedWs));
+          } catch (e) {}
+
+          if (Array.isArray(fetchedWs.files) && fetchedWs.files.length > 0) {
+            const normalized = fetchedWs.files.map(f => normalizeFileItem({
+              id: f.path || f.name || f.id,
+              name: f.name || f.id,
+              path: f.path || f.name || f.id,
+              isFolder: !!f.isFolder,
+              parentId: f.parentId || null,
+              iconColor: f.iconColor
+            }));
+
+            setCustomFiles(normalized);
+            customFilesRef.current = normalized;
+            try {
+              localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(normalized));
+            } catch (e) {}
+
+            setFilesContent(prev => {
+              const next = { ...prev };
+              fetchedWs.files.forEach(f => {
+                const fileKey = f.path || f.name || f.id;
+                if (fileKey && f.content !== undefined) {
+                  next[fileKey] = f.content;
+                  if (f.name) next[f.name] = f.content;
+                }
+              });
+              filesContentRef.current = next;
+              try {
+                localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
+              } catch (e) {}
+              return next;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('Backend workspace fetch on mount failed:', err.message);
+      }
+    };
+
+    fetchWorkspaceFromBackend();
+    return () => { isMounted = false; };
+  }, [wsId, token]);
 
   useEffect(() => {
     if (!Array.isArray(currentWorkspace?.files) || currentWorkspace.files.length === 0) return;
 
-    const sharedFiles = currentWorkspace.files.map(file => ({
-      id: file.id || file.name,
-      name: file.name || file.id,
-      iconColor: file.name?.endsWith('.js') ? 'text-yellow-400' : file.name?.endsWith('.css') ? 'text-sky-400' : file.name?.endsWith('.json') ? 'text-emerald-400' : 'text-purple-400',
-      isFolder: false
+    const sharedFiles = currentWorkspace.files.map(f => normalizeFileItem({
+      id: f.path || f.name || f.id,
+      name: f.name || f.id,
+      path: f.path || f.name || f.id,
+      isFolder: !!f.isFolder,
+      parentId: f.parentId || null,
+      iconColor: f.iconColor
     }));
 
     setCustomFiles(sharedFiles);
-    setActiveFile(previous => sharedFiles.some(file => file.name === previous) ? previous : sharedFiles[0].name);
+    setActiveFile(previous => sharedFiles.some(file => (file.path || file.name || file.id) === previous) ? previous : (sharedFiles[0]?.path || sharedFiles[0]?.name || 'index.js'));
   }, [currentWorkspace?.files]);
+
+  const customFilesRef = useRef(customFiles);
+  useEffect(() => {
+    customFilesRef.current = customFiles;
+  }, [customFiles]);
 
   useEffect(() => {
     try {
@@ -411,11 +542,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
   };
 
-  // Dedicated in-memory map storing content per file name (with localStorage backup support)
+  // Dedicated in-memory map storing content per file key (path-based id) with localStorage backup
   const [filesContent, setFilesContent] = useState(() => {
-    const initial = { ...DEFAULT_FILES_CONTENT };
+    const initial = {};
 
-    // 1. Overlay from localStorage backup if available
+    // 1. Overlay from localStorage backup first (most recent local changes)
     try {
       const savedBackup = localStorage.getItem(`ct-workspace-content-${wsId}`);
       if (savedBackup) {
@@ -426,17 +557,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
     } catch (e) {}
 
-    // 2. Overlay from activeWorkspace.files if available
+    // 2. Overlay from activeWorkspace.files (session data from localStorage)
+    //    Only fill keys not already in localStorage backup
     if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
       activeWorkspace.files.forEach(f => {
-        const fname = f.name || f.id;
-        if (fname && f.content !== undefined) {
-          if (!initial[fname] || initial[fname] === DEFAULT_FILES_CONTENT[fname]) {
-            initial[fname] = f.content;
+        const fileKey = f.id || f.path || f.name;
+        if (fileKey && f.content !== undefined) {
+          // Only set if not already restored from localStorage backup
+          if (initial[fileKey] === undefined) {
+            initial[fileKey] = f.content;
+          }
+          // Also store by name as secondary key for backward compat
+          if (f.name && f.name !== fileKey && initial[f.name] === undefined) {
+            initial[f.name] = f.content;
           }
         }
       });
     }
+
     return initial;
   });
 
@@ -468,9 +606,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       setFilesContent(prev => {
         const next = { ...prev };
         currentWorkspace.files.forEach(f => {
-          const fname = f.name || f.id;
-          if (fname && f.content !== undefined && next[fname] === undefined) {
-            next[fname] = f.content;
+          const fileKey = f.id || f.path || f.name;
+          if (fileKey && f.content !== undefined) {
+            next[fileKey] = f.content;
+            if (f.name) next[f.name] = f.content;
           }
         });
         filesContentRef.current = next;
@@ -479,12 +618,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
   }, [currentWorkspace?.files]);
 
-  // Retrieve active file content strictly for the active file
+  // Retrieve active file content for the active file (preserves empty string files, tries name fallback)
   const getActiveFileContent = () => {
+    // Primary lookup: by canonical id/path key
     if (filesContent[activeFile] !== undefined) {
       return filesContent[activeFile];
     }
-    return getStarterBoilerplate(activeFile);
+    // Fallback: by file name only (handles legacy stored content)
+    const activeFileObj = customFilesRef.current?.find(f => f.id === activeFile || f.path === activeFile);
+    if (activeFileObj?.name && filesContent[activeFileObj.name] !== undefined) {
+      return filesContent[activeFileObj.name];
+    }
+    return '';
   };
 
   // Debounced Auto-Save Request Handler (PATCH /api/workspaces/:id) (CT-88)
@@ -499,19 +644,35 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     try {
       setAutoSaveStatus('Saving...');
 
-      const baseFiles = (currentWorkspaceRef.current?.files && currentWorkspaceRef.current.files.length > 0)
-        ? currentWorkspaceRef.current.files
-        : DEFAULT_WORKSPACE_FILES;
+      const currentFilesList = (customFilesRef.current && customFilesRef.current.length > 0)
+        ? customFilesRef.current
+        : customFiles;
 
-      const filesToSave = baseFiles.map(f => {
-        const fname = f.name || f.id;
-        const latestContent = filesContentRef.current[fname] !== undefined
-          ? filesContentRef.current[fname]
-          : (f.content || '');
+      const filesToSave = currentFilesList.map(f => {
+        const fileKey = f.id || f.path || f.name;
+        const fname = f.name || fileKey.split('/').pop() || fileKey;
+
+        let latestContent = '';
+        if (f.isFolder) {
+          latestContent = '';
+        } else if (filesContentRef.current[fileKey] !== undefined) {
+          latestContent = filesContentRef.current[fileKey];
+        } else if (filesContentRef.current[fname] !== undefined) {
+          latestContent = filesContentRef.current[fname];
+        } else if (f.content !== undefined) {
+          latestContent = f.content;
+        } else {
+          latestContent = '';
+        }
+
         return {
-          id: f.id || fname,
+          id: fileKey,
           name: fname,
-          language: f.language || getMonacoLanguage(fname),
+          path: f.path || fileKey,
+          parentId: f.parentId || null,
+          isFolder: !!f.isFolder,
+          language: f.isFolder ? 'plaintext' : (f.language || getMonacoLanguage(fname)),
+          iconColor: f.iconColor || (f.isFolder ? 'text-purple-400' : getLanguageInfo(fname).color),
           content: latestContent,
           updatedAt: new Date()
         };
@@ -526,11 +687,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       if (res.data?.workspace) {
         setCurrentWorkspace(res.data.workspace);
         currentWorkspaceRef.current = res.data.workspace;
+        try {
+          localStorage.setItem('ct-active-workspace-session', JSON.stringify(res.data.workspace));
+          localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFilesRef.current));
+          localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(filesContentRef.current));
+        } catch (e) {}
       }
       setAutoSaveStatus('Auto-saved just now');
     } catch (err) {
       console.warn('Auto-save to backend failed:', err.message);
-      // Retain localStorage backup, avoid crashing, and show graceful offline state
       setAutoSaveStatus('Saved locally (offline)');
     }
   };
@@ -576,11 +741,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       console.warn('LocalStorage backup error:', e);
     }
 
-    // 3. Keep currentWorkspace.files synchronized
+    // 3. Keep currentWorkspace.files synchronized (match by id or path, not name)
     setCurrentWorkspace(prev => {
       if (!prev) return prev;
-      const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : DEFAULT_WORKSPACE_FILES;
-      const fileIndex = baseFiles.findIndex(f => (f.name || f.id) === activeFile);
+      const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : [];
+      // Match by canonical id/path key
+      const fileIndex = baseFiles.findIndex(f => (f.id || f.path || f.name) === activeFile);
 
       let updatedFiles;
       if (fileIndex >= 0) {
@@ -588,7 +754,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           i === fileIndex ? { ...f, content, version: nextVer } : f
         );
       } else {
-        updatedFiles = [...baseFiles, { id: activeFile, name: activeFile, language: getMonacoLanguage(activeFile), content, version: nextVer }];
+        // File not yet in currentWorkspace.files — add it
+        const activeFileObj = customFilesRef.current?.find(f => f.id === activeFile);
+        updatedFiles = [...baseFiles, {
+          id: activeFile,
+          name: activeFileObj?.name || activeFile.split('/').pop() || activeFile,
+          path: activeFile,
+          parentId: activeFileObj?.parentId || null,
+          isFolder: false,
+          language: getMonacoLanguage(activeFile),
+          content,
+          version: nextVer
+        }];
       }
 
       const nextWs = { ...prev, files: updatedFiles };
@@ -616,6 +793,717 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       triggerAutoSave();
     }, 2500);
   };
+
+  // Dynamic Programming Language Selection Handler
+  const handleLanguageChange = (newLang) => {
+    if (!activeFile) return;
+
+    const langExtMap = {
+      javascript: 'js',
+      typescript: 'ts',
+      python: 'py',
+      cpp: 'cpp',
+      c: 'c',
+      java: 'java',
+      rust: 'rs',
+      go: 'go',
+      html: 'html',
+      css: 'css',
+      json: 'json',
+      markdown: 'md',
+      sql: 'sql',
+      shell: 'sh',
+      yaml: 'yaml',
+      xml: 'xml'
+    };
+    const targetExt = langExtMap[newLang] || 'js';
+
+    // Compute target filename by swapping extension
+    const dotIdx = activeFile.lastIndexOf('.');
+    const baseName = dotIdx > 0 ? activeFile.substring(0, dotIdx) : activeFile;
+    const targetFileName = `${baseName}.${targetExt}`;
+
+    const iconColorMap = {
+      javascript: 'text-yellow-400',
+      typescript: 'text-sky-400',
+      python: 'text-cyan-400',
+      cpp: 'text-blue-400',
+      c: 'text-indigo-400',
+      java: 'text-rose-400',
+      rust: 'text-amber-500',
+      go: 'text-teal-400',
+      html: 'text-orange-500',
+      css: 'text-sky-300',
+      json: 'text-emerald-400',
+      markdown: 'text-purple-400',
+      sql: 'text-amber-300',
+      shell: 'text-green-400',
+      yaml: 'text-red-400',
+      xml: 'text-purple-300'
+    };
+    const iconColor = iconColorMap[newLang] || 'text-purple-400';
+
+    const oldContent = filesContentRef.current[activeFile] || getStarterBoilerplate(activeFile);
+    const oldDefault = getStarterBoilerplate(activeFile);
+    const isDefaultContent = !oldContent || oldContent.trim() === '' || oldContent.trim() === oldDefault.trim();
+    const newContent = isDefaultContent ? getStarterBoilerplate(targetFileName) : oldContent;
+
+    // Update files tree state
+    setCustomFiles(prev => prev.map(f => (f.name === activeFile || f.id === activeFile) ? { ...f, id: targetFileName, name: targetFileName, iconColor } : f));
+
+    // Update in-memory files content map
+    const updatedContentMap = { ...filesContentRef.current };
+    delete updatedContentMap[activeFile];
+    updatedContentMap[targetFileName] = newContent;
+    filesContentRef.current = updatedContentMap;
+    setFilesContent(updatedContentMap);
+
+    // Update active file
+    setActiveFile(targetFileName);
+    activeFileRef.current = targetFileName;
+
+    // Dynamically update Monaco Editor language model
+    if (editorRef.current && monacoRef.current) {
+      const model = editorRef.current.getModel();
+      if (model) {
+        monacoRef.current.editor.setModelLanguage(model, newLang);
+      }
+    }
+
+    // Broadcast language change to Socket.IO room peers
+    if (socketRef.current) {
+      socketRef.current.emit('language_change', {
+        workspaceId: wsId,
+        fileId: targetFileName,
+        language: newLang
+      });
+    }
+
+    recordHistoryLog('language', `Language Switched: ${newLang.toUpperCase()}`, `Active file syntax changed to ${newLang} ("${targetFileName}").`);
+  };
+
+  // ── Toast Notification System ──────────────────────────────────────────────
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+
+  const showToast = (message, type = 'success', duration = 3500) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, duration);
+  };
+
+  // ── VS Code Style File Explorer State & Tree Handlers ──────────────────────
+  const [expandedFolders, setExpandedFolders] = useState(() => ({}));
+  const [selectedItem, setSelectedItem] = useState(null); // ID of active/selected tree item
+  const [targetFolderId, setTargetFolderId] = useState(null); // Parent ID for inline creation
+  const [showNewFileInput, setShowNewFileInput] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [renamingFileId, setRenamingFileId] = useState(null);
+  const [renamingFileName, setRenamingFileName] = useState('');
+
+  // Right-click Floating Context Menu State
+  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, item: null });
+
+  // Drag and Drop Moving State
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState(null);
+
+  // Close context menu when clicking anywhere on the window
+  useEffect(() => {
+    const handleCloseMenu = () => {
+      setContextMenu({ visible: false, x: 0, y: 0, item: null });
+    };
+    window.addEventListener('click', handleCloseMenu);
+    return () => window.removeEventListener('click', handleCloseMenu);
+  }, []);
+
+  // Folder Expansion Toggles
+  const toggleFolder = (folderId, e) => {
+    if (e) e.stopPropagation();
+    setExpandedFolders(prev => ({
+      ...prev,
+      [folderId]: !prev[folderId]
+    }));
+  };
+
+  const collapseAllFolders = () => {
+    setExpandedFolders({});
+  };
+
+  // Open Context Menu (Right Click)
+  const handleContextMenu = (e, item = null) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedItem(item ? item.id : null);
+    setContextMenu({
+      visible: true,
+      x: Math.min(e.clientX, window.innerWidth - 220),
+      y: Math.min(e.clientY, window.innerHeight - 260),
+      item
+    });
+  };
+
+  // 1. Create File Handler (Root or inside target folder)
+  const handleCreateFile = (e) => {
+    if (e) e.preventDefault();
+    const cleanName = newFileName.trim();
+    if (!cleanName) return;
+
+    const parentFolder = customFiles.find(f => f.isFolder && (f.id === targetFolderId || f.path === targetFolderId));
+    const parentPath = parentFolder ? parentFolder.path : null;
+    const fullPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
+
+    if (customFiles.some(f => f.id === fullPath || f.path === fullPath)) {
+      showToast(`File "${fullPath}" already exists.`, 'error');
+      return;
+    }
+
+    const iconColor = getLanguageInfo(cleanName).color;
+    const newFileObj = normalizeFileItem({
+      id: fullPath,
+      name: cleanName,
+      path: fullPath,
+      parentId: parentFolder ? parentFolder.id : null,
+      isFolder: false,
+      iconColor
+    });
+
+    const updatedFiles = [...customFiles, newFileObj];
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+
+    const boilerplate = getStarterBoilerplate(cleanName);
+    filesContentRef.current = { ...filesContentRef.current, [fullPath]: boilerplate };
+    setFilesContent(prev => ({ ...prev, [fullPath]: boilerplate }));
+
+    if (parentFolder) {
+      setExpandedFolders(prev => ({ ...prev, [parentFolder.id]: true }));
+    }
+
+    setActiveFile(fullPath);
+    activeFileRef.current = fullPath;
+    setShowNewFileInput(false);
+    setNewFileName('');
+    setTargetFolderId(null);
+
+    if (socketRef.current) {
+      socketRef.current.emit('file_created', { workspaceId: wsId, file: newFileObj });
+      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+    }
+
+    showToast(`📄 Created ${cleanName}`, 'success');
+    triggerAutoSave();
+    recordHistoryLog('file', `File Created: ${cleanName}`, `Created workspace file ${fullPath}.`);
+  };
+
+  // 2. Create Folder Handler (Root or inside target folder)
+  const handleCreateFolder = (e) => {
+    if (e) e.preventDefault();
+    const cleanName = newFolderName.trim();
+    if (!cleanName) return;
+
+    const parentFolder = customFiles.find(f => f.isFolder && (f.id === targetFolderId || f.path === targetFolderId));
+    const parentPath = parentFolder ? parentFolder.path : null;
+    const fullPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
+
+    if (customFiles.some(f => f.id === fullPath || f.path === fullPath)) {
+      showToast(`Folder "${fullPath}" already exists.`, 'error');
+      return;
+    }
+
+    const newFolderObj = normalizeFileItem({
+      id: fullPath,
+      name: cleanName,
+      path: fullPath,
+      parentId: parentFolder ? parentFolder.id : null,
+      isFolder: true,
+      iconColor: 'text-purple-400'
+    });
+
+    const updatedFiles = [...customFiles, newFolderObj];
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+
+    setExpandedFolders(prev => ({
+      ...prev,
+      ...(parentFolder ? { [parentFolder.id]: true } : {}),
+      [fullPath]: true
+    }));
+
+    setShowNewFolderInput(false);
+    setNewFolderName('');
+    setTargetFolderId(null);
+
+    if (socketRef.current) {
+      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+    }
+
+    showToast(`📁 Created folder ${cleanName}`, 'success');
+    triggerAutoSave();
+    recordHistoryLog('file', `Folder Created: ${cleanName}`, `Created folder ${fullPath}.`);
+  };
+
+  // 3. Rename Handler (File or Folder with path cascading)
+  const handleRenameSubmit = (itemToRename, e) => {
+    if (e) e.preventDefault();
+    const oldId = itemToRename.id || itemToRename.path;
+    const cleanName = renamingFileName.trim();
+
+    if (!cleanName || cleanName === itemToRename.name) {
+      setRenamingFileId(null);
+      setRenamingFileName('');
+      return;
+    }
+
+    const parentFolder = customFiles.find(f => f.isFolder && f.id === itemToRename.parentId);
+    const parentPath = parentFolder ? parentFolder.path : null;
+    const newPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
+
+    if (customFiles.some(f => f.id !== oldId && (f.id === newPath || f.path === newPath))) {
+      showToast(`An item named "${cleanName}" already exists.`, 'error');
+      return;
+    }
+
+    let updatedFiles = [];
+    if (itemToRename.isFolder) {
+      const prefixOld = oldId + '/';
+      const prefixNew = newPath + '/';
+
+      updatedFiles = customFiles.map(f => {
+        if (f.id === oldId) {
+          return normalizeFileItem({ ...f, id: newPath, name: cleanName, path: newPath });
+        }
+        if (f.id.startsWith(prefixOld) || f.path?.startsWith(prefixOld)) {
+          const subPath = f.path.substring(prefixOld.length);
+          const updatedPath = prefixNew + subPath;
+          const updatedParentId = f.parentId === oldId ? newPath : (f.parentId?.startsWith(prefixOld) ? prefixNew + f.parentId.substring(prefixOld.length) : f.parentId);
+          return normalizeFileItem({ ...f, id: updatedPath, path: updatedPath, parentId: updatedParentId });
+        }
+        if (f.parentId === oldId) {
+          return normalizeFileItem({ ...f, parentId: newPath });
+        }
+        return f;
+      });
+
+      // Cascading update for content map
+      const updatedContentMap = { ...filesContentRef.current };
+      Object.keys(updatedContentMap).forEach(key => {
+        if (key === oldId || key.startsWith(prefixOld)) {
+          const newKey = key === oldId ? newPath : prefixNew + key.substring(prefixOld.length);
+          updatedContentMap[newKey] = updatedContentMap[key];
+          delete updatedContentMap[key];
+        }
+      });
+      filesContentRef.current = updatedContentMap;
+      setFilesContent(updatedContentMap);
+
+      if (activeFileRef.current && (activeFileRef.current === oldId || activeFileRef.current.startsWith(prefixOld))) {
+        const newActive = activeFileRef.current === oldId ? newPath : prefixNew + activeFileRef.current.substring(prefixOld.length);
+        setActiveFile(newActive);
+        activeFileRef.current = newActive;
+      }
+
+      setExpandedFolders(prev => {
+        const next = { ...prev };
+        if (next[oldId]) {
+          next[newPath] = true;
+          delete next[oldId];
+        }
+        Object.keys(next).forEach(k => {
+          if (k.startsWith(prefixOld)) {
+            const newK = prefixNew + k.substring(prefixOld.length);
+            next[newK] = next[k];
+            delete next[k];
+          }
+        });
+        return next;
+      });
+
+      if (socketRef.current) {
+        socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      }
+
+      showToast(`📁 Renamed folder ${itemToRename.name} → ${cleanName}`, 'success');
+    } else {
+      const iconColor = getLanguageInfo(cleanName).color;
+      updatedFiles = customFiles.map(f => f.id === oldId ? normalizeFileItem({ ...f, id: newPath, name: cleanName, path: newPath, iconColor }) : f);
+
+      const updatedContentMap = { ...filesContentRef.current };
+      const content = updatedContentMap[oldId] !== undefined ? updatedContentMap[oldId] : getStarterBoilerplate(oldId);
+      delete updatedContentMap[oldId];
+      updatedContentMap[newPath] = content;
+      filesContentRef.current = updatedContentMap;
+      setFilesContent(updatedContentMap);
+
+      if (activeFileRef.current === oldId) {
+        setActiveFile(newPath);
+        activeFileRef.current = newPath;
+      }
+
+      if (socketRef.current) {
+        socketRef.current.emit('file_renamed', { workspaceId: wsId, oldFileId: oldId, newFileId: newPath });
+        socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      }
+
+      showToast(`✏️ Renamed ${itemToRename.name} → ${cleanName}`, 'success');
+    }
+
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+    setRenamingFileId(null);
+    setRenamingFileName('');
+    triggerAutoSave();
+    recordHistoryLog('file', `Renamed: ${itemToRename.name} -> ${cleanName}`, `Renamed ${oldId} to ${newPath}.`);
+  };
+
+  // 4. Delete Handler (Recursive for folders)
+  const handleDeleteItem = (itemToDelete, e) => {
+    if (e) e.stopPropagation();
+    const targetId = itemToDelete.id || itemToDelete.path;
+
+    if (customFiles.length <= 1) {
+      showToast('Cannot delete the last item in the workspace.', 'error');
+      return;
+    }
+
+    if (!window.confirm(`Delete ${itemToDelete.isFolder ? 'folder' : 'file'} "${itemToDelete.name}"${itemToDelete.isFolder ? ' and all its contents' : ''}?`)) return;
+
+    let idsToDelete = [];
+    if (itemToDelete.isFolder) {
+      const prefix = targetId + '/';
+      idsToDelete = customFiles.filter(f => f.id === targetId || f.id.startsWith(prefix) || f.path?.startsWith(prefix)).map(f => f.id);
+    } else {
+      idsToDelete = [targetId];
+    }
+
+    const updatedFiles = customFiles.filter(f => !idsToDelete.includes(f.id));
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+
+    const updatedContentMap = { ...filesContentRef.current };
+    idsToDelete.forEach(id => delete updatedContentMap[id]);
+    filesContentRef.current = updatedContentMap;
+    setFilesContent(updatedContentMap);
+
+    if (idsToDelete.includes(activeFileRef.current)) {
+      const remainingFile = updatedFiles.find(f => !f.isFolder);
+      const nextActive = remainingFile ? remainingFile.id : 'index.js';
+      setActiveFile(nextActive);
+      activeFileRef.current = nextActive;
+    }
+
+    if (socketRef.current) {
+      if (!itemToDelete.isFolder) {
+        socketRef.current.emit('file_deleted', { workspaceId: wsId, fileId: targetId });
+      }
+      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+    }
+
+    showToast(`🗑 Deleted "${itemToDelete.name}"`, 'warning');
+    triggerAutoSave();
+    recordHistoryLog('file', `Deleted: ${itemToDelete.name}`, `Removed ${targetId} from workspace.`);
+  };
+
+  // 5. Duplicate File Handler
+  const handleDuplicateFile = (fileItem, e) => {
+    if (e) e.stopPropagation();
+    if (fileItem.isFolder) return;
+
+    const oldId = fileItem.id;
+    const parts = fileItem.name.split('.');
+    let newName;
+    if (parts.length > 1) {
+      const ext = parts.pop();
+      newName = `${parts.join('.')}_copy.${ext}`;
+    } else {
+      newName = `${fileItem.name}_copy`;
+    }
+
+    const parentFolder = customFiles.find(f => f.isFolder && f.id === fileItem.parentId);
+    const parentPath = parentFolder ? parentFolder.path : null;
+    let newPath = parentPath ? `${parentPath}/${newName}` : newName;
+
+    if (customFiles.some(f => f.id === newPath)) {
+      newName = `${fileItem.name}_copy_${Date.now().toString().slice(-4)}`;
+      newPath = parentPath ? `${parentPath}/${newName}` : newName;
+    }
+
+    const iconColor = getLanguageInfo(newName).color;
+    const newFileObj = normalizeFileItem({
+      id: newPath,
+      name: newName,
+      path: newPath,
+      parentId: fileItem.parentId || null,
+      isFolder: false,
+      iconColor
+    });
+
+    const existingContent = filesContentRef.current[oldId] !== undefined ? filesContentRef.current[oldId] : getStarterBoilerplate(oldId);
+    const updatedFiles = [...customFiles, newFileObj];
+
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+    filesContentRef.current = { ...filesContentRef.current, [newPath]: existingContent };
+    setFilesContent(prev => ({ ...prev, [newPath]: existingContent }));
+
+    setActiveFile(newPath);
+    activeFileRef.current = newPath;
+
+    if (socketRef.current) {
+      socketRef.current.emit('file_created', { workspaceId: wsId, file: newFileObj });
+      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+    }
+
+    showToast(`📋 Duplicated ${fileItem.name} → ${newName}`, 'success');
+    triggerAutoSave();
+  };
+
+  // 6. Drag & Drop Move Handler
+  const handleDragStart = (e, item) => {
+    e.stopPropagation();
+    setDraggedItem(item);
+    e.dataTransfer.setData('text/plain', item.id);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e, targetFolder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!draggedItem) return;
+    if (targetFolder && (draggedItem.id === targetFolder.id || targetFolder.path.startsWith(draggedItem.id + '/'))) {
+      return;
+    }
+    setDragOverFolderId(targetFolder ? targetFolder.id : 'root');
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, targetFolder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverFolderId(null);
+    if (!draggedItem) return;
+
+    const itemToMove = draggedItem;
+    setDraggedItem(null);
+
+    const newParentId = targetFolder ? targetFolder.id : null;
+    if (itemToMove.parentId === newParentId) return;
+
+    if (targetFolder && (itemToMove.id === targetFolder.id || targetFolder.path.startsWith(itemToMove.id + '/'))) {
+      showToast('Cannot move a folder into itself.', 'error');
+      return;
+    }
+
+    const oldId = itemToMove.id;
+    const newParentPath = targetFolder ? targetFolder.path : null;
+    const newPath = newParentPath ? `${newParentPath}/${itemToMove.name}` : itemToMove.name;
+
+    if (customFiles.some(f => f.id !== oldId && f.id === newPath)) {
+      showToast(`Item "${itemToMove.name}" already exists in ${targetFolder ? targetFolder.name : 'root'}.`, 'error');
+      return;
+    }
+
+    let updatedFiles = [];
+    if (itemToMove.isFolder) {
+      const prefixOld = oldId + '/';
+      const prefixNew = newPath + '/';
+
+      updatedFiles = customFiles.map(f => {
+        if (f.id === oldId) {
+          return normalizeFileItem({ ...f, id: newPath, path: newPath, parentId: newParentId });
+        }
+        if (f.id.startsWith(prefixOld)) {
+          const subPath = f.path.substring(prefixOld.length);
+          const updatedPath = prefixNew + subPath;
+          const updatedParentId = f.parentId === oldId ? newPath : (f.parentId?.startsWith(prefixOld) ? prefixNew + f.parentId.substring(prefixOld.length) : f.parentId);
+          return normalizeFileItem({ ...f, id: updatedPath, path: updatedPath, parentId: updatedParentId });
+        }
+        return f;
+      });
+
+      const updatedContentMap = { ...filesContentRef.current };
+      Object.keys(updatedContentMap).forEach(key => {
+        if (key.startsWith(prefixOld)) {
+          const newKey = prefixNew + key.substring(prefixOld.length);
+          updatedContentMap[newKey] = updatedContentMap[key];
+          delete updatedContentMap[key];
+        }
+      });
+      filesContentRef.current = updatedContentMap;
+      setFilesContent(updatedContentMap);
+
+      if (activeFileRef.current && activeFileRef.current.startsWith(prefixOld)) {
+        const newActive = prefixNew + activeFileRef.current.substring(prefixOld.length);
+        setActiveFile(newActive);
+        activeFileRef.current = newActive;
+      }
+    } else {
+      updatedFiles = customFiles.map(f => f.id === oldId ? normalizeFileItem({ ...f, id: newPath, path: newPath, parentId: newParentId }) : f);
+
+      const updatedContentMap = { ...filesContentRef.current };
+      const content = updatedContentMap[oldId] !== undefined ? updatedContentMap[oldId] : getStarterBoilerplate(oldId);
+      delete updatedContentMap[oldId];
+      updatedContentMap[newPath] = content;
+      filesContentRef.current = updatedContentMap;
+      setFilesContent(updatedContentMap);
+
+      if (activeFileRef.current === oldId) {
+        setActiveFile(newPath);
+        activeFileRef.current = newPath;
+      }
+    }
+
+    setCustomFiles(updatedFiles);
+    customFilesRef.current = updatedFiles;
+    if (targetFolder) {
+      setExpandedFolders(prev => ({ ...prev, [targetFolder.id]: true }));
+    }
+
+    if (socketRef.current) {
+      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+    }
+
+    showToast(`🚚 Moved "${itemToMove.name}" to ${targetFolder ? targetFolder.name : 'root'}`, 'success');
+    triggerAutoSave();
+  };
+
+  // 7. Keyboard Shortcuts Handler for File Explorer
+  const handleExplorerKeyDown = (e) => {
+    if (showNewFileInput || showNewFolderInput || renamingFileId) return;
+
+    if (e.key === 'F2' && selectedItem) {
+      e.preventDefault();
+      const item = customFiles.find(f => f.id === selectedItem);
+      if (item) {
+        setRenamingFileId(item.id);
+        setRenamingFileName(item.name);
+      }
+    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItem) {
+      e.preventDefault();
+      const item = customFiles.find(f => f.id === selectedItem);
+      if (item) {
+        handleDeleteItem(item, e);
+      }
+    }
+  };
+
+  // Helper to compute visible tree rows with depth indentation
+  const getVisibleTreeItems = () => {
+    const fileMap = new Map();
+    customFiles.forEach(f => fileMap.set(f.id, f));
+
+    const getChildren = (pId) => {
+      const children = customFiles.filter(f => (f.parentId || null) === pId);
+      children.sort((a, b) => {
+        if (a.isFolder && !b.isFolder) return -1;
+        if (!a.isFolder && b.isFolder) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      return children;
+    };
+
+    const visibleList = [];
+    const traverse = (pId, depth = 0) => {
+      const children = getChildren(pId);
+      children.forEach(item => {
+        visibleList.push({ ...item, depth });
+        if (item.isFolder && expandedFolders[item.id]) {
+          traverse(item.id, depth + 1);
+        }
+      });
+    };
+
+    traverse(null, 0);
+
+    // If there are orphan items whose parentId is invalid, append at root
+    const renderedIds = new Set(visibleList.map(i => i.id));
+    customFiles.forEach(f => {
+      if (!renderedIds.has(f.id)) {
+        visibleList.push({ ...f, depth: 0 });
+      }
+    });
+
+    return visibleList;
+  };
+
+  // Live Code Execution State
+  const [isExecuting, setIsExecuting] = useState(false);
+
+  const handleRunActiveCode = async () => {
+    if (!activeFile || isExecuting) return;
+
+    // Folders can't be run
+    const activeFileObj = customFiles.find(f => f.id === activeFile);
+    if (activeFileObj?.isFolder) {
+      showToast('📁 Cannot run a folder — select a file first.', 'warning');
+      return;
+    }
+
+    setIsExecuting(true);
+    showToast(`▶ Running ${activeFile}...`, 'info', 20000); // long-lived until resolved
+
+    try {
+      const codeToRun = getActiveFileContent();
+      const language = getMonacoLanguage(activeFile);
+
+      if (!codeToRun || codeToRun.trim() === '') {
+        setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
+        showToast(`📄 ${activeFile} is empty — nothing to run.`, 'warning');
+        return;
+      }
+
+      const response = await axios.post('http://localhost:5000/api/execute', {
+        language,
+        code: codeToRun,
+        filename: activeFile
+      });
+
+      const data = response.data;
+      const exitCode = data.exitCode ?? 0;
+      const stdout = (data.stdout || '').trim();
+      const stderr = (data.stderr || '').trim();
+
+      setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
+
+      if (exitCode === 0) {
+        const preview = stdout ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? '…' : ''}` : '';
+        showToast(`✅ ${activeFile} ran successfully (exit 0)${preview}`, 'success', 5000);
+      } else {
+        const errPreview = stderr
+          ? stderr.split('\n')[0].substring(0, 100)
+          : (stdout ? stdout.split('\n')[0].substring(0, 100) : `Exit code ${exitCode}`);
+        showToast(`⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`, 'error', 7000);
+      }
+
+      recordHistoryLog('execution', `Code Executed: ${activeFile}`, `Ran ${activeFile} (${language}) — exit code ${exitCode}.`);
+
+    } catch (err) {
+      console.error('Execution Failed:', err);
+      setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
+
+      // Build a clear, actionable error message
+      let errMsg = '';
+      if (!err.response) {
+        errMsg = 'Cannot reach execution server. Make sure the backend is running on port 5000.';
+      } else if (err.response?.status === 400) {
+        errMsg = err.response.data?.message || 'Invalid code or unsupported language.';
+      } else if (err.response?.status === 503) {
+        errMsg = 'Execution service is unavailable. Try again in a moment.';
+      } else {
+        errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown execution error.';
+      }
+
+      showToast(`✗ ${errMsg}`, 'error', 7000);
+      recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
+    } finally {
+      setIsExecuting(false);
+    }
+  };
+
 
   // Log real-time workspace session enter & history event once per session entrance
   const sessionLoggedRef = useRef(false);
@@ -662,11 +1550,6 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     startSessionInDB();
   }, [wsId]);
 
-  // Dropdown Input Popovers State
-  const [showNewFileInput, setShowNewFileInput] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
-  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
 
   // Collapsible Members Panel State
   const [isMembersCollapsed, setIsMembersCollapsed] = useState(() => {
@@ -716,55 +1599,6 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
   };
 
-  // New File & Folder Handlers
-  const handleCreateFile = (e) => {
-    if (e) e.preventDefault();
-    if (!newFileName.trim()) return;
-    const name = newFileName.trim();
-    const ext = name.split('.').pop().toLowerCase();
-    let iconColor = 'text-yellow-400';
-    if (ext === 'css') iconColor = 'text-sky-400';
-    else if (ext === 'json') iconColor = 'text-emerald-400';
-    else if (ext === 'md') iconColor = 'text-purple-400';
-    else if (ext === 'ts' || ext === 'tsx' || ext === 'jsx') iconColor = 'text-cyan-400';
-
-    const starterContent = getStarterBoilerplate(name);
-    const starterLanguage = getMonacoLanguage(name);
-    const newFileObj = { id: name, name, iconColor, isFolder: false };
-    setCustomFiles(prev => [...prev, newFileObj]);
-    setFilesContent(prev => ({
-      ...prev,
-      [name]: starterContent
-    }));
-    setCurrentWorkspace(previous => ({
-      ...(previous || {}),
-      files: [...(previous?.files || []), { id: name, name, language: starterLanguage, content: starterContent }]
-    }));
-    if (token && wsId !== 'demo-workspace') {
-      axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
-        files: [...(currentWorkspace?.files || []), { id: name, name, language: starterLanguage, content: starterContent }]
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(err => console.warn('Shared file update failed:', err.message));
-    }
-    setActiveFile(name);
-    setNewFileName('');
-    setShowNewFileInput(false);
-
-    recordHistoryLog('file', `File Created: ${name}`, `File "${name}" added to workspace file tree.`);
-  };
-
-  const handleCreateFolder = (e) => {
-    if (e) e.preventDefault();
-    if (!newFolderName.trim()) return;
-    const name = newFolderName.trim();
-    const newFolderObj = { id: name, name, iconColor: 'text-purple-400', isFolder: true };
-    setCustomFiles(prev => [...prev, newFolderObj]);
-    setNewFolderName('');
-    setShowNewFolderInput(false);
-
-    recordHistoryLog('file', `Folder Created: ${name}`, `Directory "${name}" created in workspace structure.`);
-  };
 
   // Persistent Session Start Timestamp
   const sessionStartRef = useRef(null);
@@ -1227,6 +2061,95 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }
       });
 
+      // Real-time Collaborative Language Change Listener
+      socket.on('language_updated', ({ fileId, language }) => {
+        if (!fileId || !language) return;
+
+        if (editorRef.current && monacoRef.current && activeFileRef.current === fileId) {
+          const model = editorRef.current.getModel();
+          if (model) {
+            monacoRef.current.editor.setModelLanguage(model, language);
+          }
+        }
+      });
+
+      // Real-time Collaborative File Operation Listeners
+      socket.on('file_created', ({ file }) => {
+        if (!file) return;
+        const normFile = normalizeFileItem(file);
+        setCustomFiles(prev => {
+          if (prev.some(f => f.id === normFile.id)) return prev;
+          return [...prev, normFile];
+        });
+        const fname = normFile.id;
+        if (!normFile.isFolder && filesContentRef.current[fname] === undefined) {
+          const boilerplate = getStarterBoilerplate(normFile.name);
+          filesContentRef.current = { ...filesContentRef.current, [fname]: boilerplate };
+          setFilesContent(prev => ({ ...prev, [fname]: boilerplate }));
+        }
+      });
+
+      socket.on('file_deleted', ({ fileId }) => {
+        if (!fileId) return;
+        setCustomFiles(prev => prev.filter(f => f.id !== fileId && !f.id.startsWith(fileId + '/')));
+        const updatedContent = { ...filesContentRef.current };
+        delete updatedContent[fileId];
+        Object.keys(updatedContent).forEach(k => {
+          if (k.startsWith(fileId + '/')) delete updatedContent[k];
+        });
+        filesContentRef.current = updatedContent;
+        setFilesContent(updatedContent);
+
+        if (activeFileRef.current === fileId || activeFileRef.current.startsWith(fileId + '/')) {
+          setCustomFiles(latest => {
+            const next = latest.find(f => !f.isFolder)?.id || 'index.js';
+            setActiveFile(next);
+            activeFileRef.current = next;
+            return latest;
+          });
+        }
+      });
+
+      socket.on('file_renamed', ({ oldFileId, newFileId }) => {
+        if (!oldFileId || !newFileId) return;
+        setCustomFiles(prev => prev.map(f => (f.id === oldFileId || f.path === oldFileId) ? normalizeFileItem({ ...f, id: newFileId, path: newFileId, name: newFileId.split('/').pop() }) : f));
+
+        const updatedContentMap = { ...filesContentRef.current };
+        const content = updatedContentMap[oldFileId] !== undefined ? updatedContentMap[oldFileId] : getStarterBoilerplate(oldFileId);
+        delete updatedContentMap[oldFileId];
+        updatedContentMap[newFileId] = content;
+        filesContentRef.current = updatedContentMap;
+        setFilesContent(updatedContentMap);
+
+        if (activeFileRef.current === oldFileId) {
+          setActiveFile(newFileId);
+          activeFileRef.current = newFileId;
+        }
+      });
+
+      socket.on('files_updated', ({ files }) => {
+        if (!files || !Array.isArray(files)) return;
+        const normalized = files.map(normalizeFileItem);
+        setCustomFiles(normalized);
+
+        setFilesContent(prev => {
+          const next = { ...prev };
+          normalized.forEach(f => {
+            if (!f.isFolder && next[f.id] === undefined) {
+              next[f.id] = getStarterBoilerplate(f.name);
+            }
+          });
+          filesContentRef.current = next;
+          return next;
+        });
+
+        if (!normalized.some(f => f.id === activeFileRef.current)) {
+          const nextActive = normalized.find(f => !f.isFolder)?.id || 'index.js';
+          setActiveFile(nextActive);
+          activeFileRef.current = nextActive;
+        }
+      });
+
     } catch (err) {
       console.warn('Socket.IO connection error:', err.message);
     }
@@ -1507,6 +2430,29 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <span>Settings</span>
           </button>
 
+          {/* Run Code Button */}
+          <button
+            type="button"
+            onClick={handleRunActiveCode}
+            disabled={isExecuting || isViewer}
+            className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer shadow-xl hover:scale-[1.03] ${
+              isExecuting
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-wait'
+                : isViewer
+                ? 'bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50'
+                : 'bg-gradient-to-r from-emerald-500/25 to-teal-500/25 hover:from-emerald-500/40 hover:to-teal-500/40 border-emerald-500/50 hover:border-emerald-400/70 text-emerald-300 hover:text-emerald-200 shadow-[0_0_16px_rgba(52,211,153,0.25)] hover:shadow-[0_0_24px_rgba(52,211,153,0.45)]'
+            }`}
+            style={{ padding: '10px 22px', gap: '10px' }}
+            title={isViewer ? 'Viewers cannot run code' : `Run ${activeFile} (${getLanguageInfo(activeFile).name})`}
+          >
+            {isExecuting ? (
+              <Loader2 size={15} className="animate-spin text-emerald-400" />
+            ) : (
+              <Play size={15} className="text-emerald-400" />
+            )}
+            <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
+          </button>
+
           <button
             type="button"
             className="flex items-center bg-red-500/25 hover:bg-red-500/35 border border-red-500/50 text-red-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xl hover:scale-[1.03]"
@@ -1517,6 +2463,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <LogOut size={14} />
             <span>Leave Session</span>
           </button>
+
         </div>
       </header>
 
@@ -1601,44 +2548,77 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   <Folder size={15} className="text-purple-400" />
                   <span>Explorer</span>
                 </span>
-                <div className="flex items-center gap-2 text-gray-400">
-                  {canEditFiles && <button
+                <div className="flex items-center gap-1.5 text-gray-400">
+                  {canEditFiles && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetFolderId(null);
+                        setShowNewFileInput(prev => !prev);
+                        setShowNewFolderInput(false);
+                      }}
+                      className="hover:text-purple-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
+                      title="New File (Root)"
+                    >
+                      <FilePlus size={15} />
+                    </button>
+                  )}
+                  {canEditFiles && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetFolderId(null);
+                        setShowNewFolderInput(prev => !prev);
+                        setShowNewFileInput(false);
+                      }}
+                      className="hover:text-indigo-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
+                      title="New Folder (Root)"
+                    >
+                      <FolderPlus size={15} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={collapseAllFolders}
+                    className="hover:text-sky-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
+                    title="Collapse All Folders"
+                  >
+                    <ChevronUp size={15} />
+                  </button>
+                  <button
                     type="button"
                     onClick={() => {
-                      setShowNewFileInput(prev => !prev);
-                      setShowNewFolderInput(false);
+                      syncWorkspaceState();
+                      showToast('🔄 Resynced explorer', 'info');
                     }}
-                    className="hover:text-purple-300 transition-all p-1 rounded-lg hover:bg-white/10"
-                    title="Create New File"
+                    className="hover:text-emerald-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
+                    title="Refresh Explorer"
                   >
-                    <FilePlus size={15} />
-                  </button>}
-                  {canEditFiles && <button
-                    type="button"
-                    onClick={() => {
-                      setShowNewFolderInput(prev => !prev);
-                      setShowNewFileInput(false);
-                    }}
-                    className="hover:text-purple-300 transition-all p-1 rounded-lg hover:bg-white/10"
-                    title="Create New Folder"
-                  >
-                    <FolderPlus size={15} />
-                  </button>}
+                    <RefreshCw size={14} />
+                  </button>
                 </div>
               </div>
 
-              {/* File List Tree (VS CODE / ANTIGRAVITY STYLE INLINE CREATION) */}
-              <div className="overflow-y-auto flex-1 flex flex-col" style={{ padding: '16px', gap: '8px' }}>
+              {/* File List Tree Container (VS Code / Antigravity Style Hierarchy & Drag-and-Drop) */}
+              <div 
+                className="overflow-y-auto flex-1 flex flex-col focus:outline-none select-none" 
+                style={{ padding: '12px 8px', gap: '4px' }}
+                tabIndex={0}
+                onKeyDown={handleExplorerKeyDown}
+                onContextMenu={(e) => handleContextMenu(e, null)}
+                onDragOver={(e) => handleDragOver(e, null)}
+                onDrop={(e) => handleDrop(e, null)}
+              >
                 
-                {/* VS Code / Antigravity Style Inline New File Row */}
-                {showNewFileInput && (
+                {/* Inline New File Row at Root */}
+                {showNewFileInput && targetFolderId === null && (
                   <form 
                     onSubmit={handleCreateFile} 
-                    className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all"
-                    style={{ padding: '8px 12px', gap: '8px' }}
+                    className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                    style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <FileCode size={16} className="text-purple-400 shrink-0" />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <FileCode size={15} className="text-purple-400 shrink-0" />
                       <input
                         type="text"
                         value={newFileName}
@@ -1660,7 +2640,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
                         title="Create File (Enter)"
                       >
-                        <Check size={15} />
+                        <Check size={14} />
                       </button>
                       <button 
                         type="button"
@@ -1671,21 +2651,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
                         title="Cancel (Esc)"
                       >
-                        <X size={15} />
+                        <X size={14} />
                       </button>
                     </div>
                   </form>
                 )}
 
-                {/* VS Code / Antigravity Style Inline New Folder Row */}
-                {showNewFolderInput && (
+                {/* Inline New Folder Row at Root */}
+                {showNewFolderInput && targetFolderId === null && (
                   <form 
                     onSubmit={handleCreateFolder} 
-                    className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all"
-                    style={{ padding: '8px 12px', gap: '8px' }}
+                    className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                    style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <Folder size={16} className="text-indigo-400 shrink-0" />
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Folder size={15} className="text-indigo-400 shrink-0" />
                       <input
                         type="text"
                         value={newFolderName}
@@ -1707,7 +2687,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
                         title="Create Folder (Enter)"
                       >
-                        <Check size={15} />
+                        <Check size={14} />
                       </button>
                       <button 
                         type="button"
@@ -1718,51 +2698,431 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
                         title="Cancel (Esc)"
                       >
-                        <X size={15} />
+                        <X size={14} />
                       </button>
                     </div>
                   </form>
                 )}
-                {customFiles.map((file) => {
-                  const fname = file.name || file.id;
-                  const isSelected = activeFile === fname;
-                  const peersInFile = activeSessions.filter(s => s.status !== 'offline' && s.currentFileId === fname);
+
+                {/* Render Visible Tree Items */}
+                {getVisibleTreeItems().map((item) => {
+                  const isSelected = selectedItem === item.id || activeFile === item.id;
+                  const isExpanded = !!expandedFolders[item.id];
+                  const isDragOver = dragOverFolderId === item.id;
+                  const peersInFile = activeSessions.filter(s => s.status !== 'offline' && s.currentFileId === item.id);
+                  const isRenamingThis = renamingFileId === item.id;
+                  const paddingLeft = (item.depth * 14) + 12;
 
                   return (
-                    <button
-                      key={file.id}
-                      onClick={() => !file.isFolder && handleSelectFile(fname)}
-                      className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left ${isSelected ? 'bg-purple-600/30 text-white border border-purple-500/50 font-semibold shadow-md' : 'text-gray-400 hover:text-gray-100 hover:bg-white/[0.07] border border-transparent'}`}
-                      style={{ padding: '10px 16px' }}
-                    >
-                      <div className="flex items-center gap-3 truncate min-w-0 pr-2">
-                        {file.isFolder ? (
-                          <Folder size={15} className="shrink-0 text-purple-400" />
+                    <React.Fragment key={item.id}>
+                      <div
+                        draggable={canEditFiles && !isRenamingThis}
+                        onDragStart={(e) => handleDragStart(e, item)}
+                        onDragOver={(e) => item.isFolder && handleDragOver(e, item)}
+                        onDrop={(e) => item.isFolder && handleDrop(e, item)}
+                        onContextMenu={(e) => handleContextMenu(e, item)}
+                        onClick={(e) => {
+                          setSelectedItem(item.id);
+                          if (item.isFolder) {
+                            toggleFolder(item.id, e);
+                          } else {
+                            handleSelectFile(item.id);
+                          }
+                        }}
+                        className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${
+                          isDragOver 
+                            ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50' 
+                            : isSelected 
+                            ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md' 
+                            : 'text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent'
+                        }`}
+                        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px' }}
+                      >
+                        {/* Inline Renaming Input Form */}
+                        {isRenamingThis ? (
+                          <form 
+                            onSubmit={(e) => handleRenameSubmit(item, e)}
+                            className="flex items-center gap-2 flex-1 min-w-0"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              value={renamingFileName}
+                              onChange={(e) => setRenamingFileName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                  setRenamingFileId(null);
+                                  setRenamingFileName('');
+                                }
+                              }}
+                              autoFocus
+                              className="w-full bg-[#0D0E15] border border-purple-500/80 rounded-lg px-2 py-1 text-xs text-white outline-none font-mono focus:ring-1 focus:ring-purple-400"
+                            />
+                            <button type="submit" className="text-purple-400 hover:text-purple-300 p-0.5"><Check size={14} /></button>
+                            <button type="button" onClick={() => setRenamingFileId(null)} className="text-gray-400 hover:text-white p-0.5"><X size={14} /></button>
+                          </form>
                         ) : (
-                          <FileCode size={15} className={`shrink-0 ${file.iconColor || 'text-yellow-400'}`} />
+                          <>
+                            {/* Left Side: Folder Chevron + Icon + Name */}
+                            <div className="flex items-center gap-2 truncate min-w-0 pr-2 flex-1">
+                              {item.isFolder ? (
+                                <span 
+                                  onClick={(e) => toggleFolder(item.id, e)} 
+                                  className="text-purple-400 hover:text-white shrink-0 p-0.5"
+                                >
+                                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                </span>
+                              ) : (
+                                <span className="w-3.5 shrink-0" />
+                              )}
+
+                              {item.isFolder ? (
+                                <Folder size={15} className="shrink-0 text-purple-400" />
+                              ) : (
+                                <FileCode size={15} className={`shrink-0 ${item.iconColor || 'text-yellow-400'}`} />
+                              )}
+
+                              <span className="truncate text-xs font-medium">{item.name}</span>
+                            </div>
+
+                            {/* Right Side: Hover Quick Action Buttons & Peer Indicators */}
+                            <div className="flex items-center gap-1 shrink-0 ml-2">
+                              {peersInFile.length > 0 && (
+                                <div className="flex items-center gap-1 shrink-0 mr-1">
+                                  {peersInFile.map((p, pidx) => (
+                                    <span 
+                                      key={pidx}
+                                      className="w-5 h-5 rounded-full bg-purple-500 text-white font-mono text-[10px] font-bold flex items-center justify-center border border-[#12131F] shadow-sm"
+                                      title={`${p.userId?.name || 'Peer'} is viewing ${item.name}`}
+                                    >
+                                      {(p.userId?.name || 'P')[0].toUpperCase()}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {canEditFiles && (
+                                <div className="hidden group-hover:flex items-center gap-1 text-gray-400">
+                                  {item.isFolder ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTargetFolderId(item.id);
+                                          setShowNewFileInput(true);
+                                          setShowNewFolderInput(false);
+                                          setExpandedFolders(prev => ({ ...prev, [item.id]: true }));
+                                        }}
+                                        className="hover:text-purple-300 p-1 rounded hover:bg-white/10"
+                                        title="New File inside folder"
+                                      >
+                                        <FilePlus size={13} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setTargetFolderId(item.id);
+                                          setShowNewFolderInput(true);
+                                          setShowNewFileInput(false);
+                                          setExpandedFolders(prev => ({ ...prev, [item.id]: true }));
+                                        }}
+                                        className="hover:text-indigo-300 p-1 rounded hover:bg-white/10"
+                                        title="New Folder inside folder"
+                                      >
+                                        <FolderPlus size={13} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDuplicateFile(item, e)}
+                                      className="hover:text-cyan-300 p-1 rounded hover:bg-white/10"
+                                      title="Duplicate File"
+                                    >
+                                      <Copy size={13} />
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRenamingFileId(item.id);
+                                      setRenamingFileName(item.name);
+                                    }}
+                                    className="hover:text-yellow-300 p-1 rounded hover:bg-white/10"
+                                    title="Rename (F2)"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteItem(item, e)}
+                                    className="hover:text-red-400 p-1 rounded hover:bg-white/10"
+                                    title="Delete (Del)"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </>
                         )}
-                        <span className="truncate text-xs font-medium">{fname}</span>
                       </div>
 
-                      {/* Peer indicator badge next to file */}
-                      {peersInFile.length > 0 && (
-                        <div className="flex items-center gap-1 shrink-0 ml-2">
-                          {peersInFile.map((p, pidx) => (
-                            <span 
-                              key={pidx}
-                              className="w-5 h-5 rounded-full bg-purple-500 text-white font-mono text-[10px] font-bold flex items-center justify-center border border-[#12131F] shadow-sm"
-                              title={`${p.userId?.name || 'Peer'} is viewing ${fname}`}
+                      {/* Inline New File / Folder inside this Folder */}
+                      {item.isFolder && isExpanded && targetFolderId === item.id && showNewFileInput && (
+                        <form 
+                          onSubmit={handleCreateFile} 
+                          className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                          style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <FileCode size={15} className="text-purple-400 shrink-0" />
+                            <input
+                              type="text"
+                              value={newFileName}
+                              onChange={(e) => setNewFileName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                  setShowNewFileInput(false);
+                                  setNewFileName('');
+                                }
+                              }}
+                              placeholder="filename.js (Enter)"
+                              autoFocus
+                              className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button 
+                              type="submit"
+                              className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
+                              title="Create File (Enter)"
                             >
-                              {(p.userId?.name || 'P')[0].toUpperCase()}
-                            </span>
-                          ))}
-                        </div>
+                              <Check size={14} />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                setShowNewFileInput(false);
+                                setNewFileName('');
+                              }}
+                              className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
+                              title="Cancel (Esc)"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </form>
                       )}
-                    </button>
+
+                      {item.isFolder && isExpanded && targetFolderId === item.id && showNewFolderInput && (
+                        <form 
+                          onSubmit={handleCreateFolder} 
+                          className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                          style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Folder size={15} className="text-indigo-400 shrink-0" />
+                            <input
+                              type="text"
+                              value={newFolderName}
+                              onChange={(e) => setNewFolderName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                  setShowNewFolderInput(false);
+                                  setNewFolderName('');
+                                }
+                              }}
+                              placeholder="foldername (Enter)"
+                              autoFocus
+                              className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button 
+                              type="submit"
+                              className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
+                              title="Create Folder (Enter)"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button 
+                              type="button"
+                              onClick={() => {
+                                setShowNewFolderInput(false);
+                                setNewFolderName('');
+                              }}
+                              className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
+                              title="Cancel (Esc)"
+                            >
+                              <X size={14} />
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </div>
             </div>
+
+            {/* VS Code Floating Right-Click Context Menu */}
+            {contextMenu.visible && (
+              <div 
+                className="fixed z-[9999] bg-[#161726]/95 border border-purple-500/30 rounded-xl shadow-2xl backdrop-blur-xl py-1.5 min-w-[190px] text-xs font-mono select-none animate-fadeIn"
+                style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {contextMenu.item ? (
+                  <>
+                    <div className="px-3 py-1 text-[10px] uppercase font-bold text-purple-300 border-b border-white/10 truncate max-w-[210px] flex items-center gap-1.5">
+                      {contextMenu.item.isFolder ? <Folder size={12} className="text-purple-400" /> : <FileCode size={12} className={contextMenu.item.iconColor} />}
+                      <span className="truncate">{contextMenu.item.name}</span>
+                    </div>
+                    
+                    {contextMenu.item.isFolder ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetFolderId(contextMenu.item.id);
+                            setShowNewFileInput(true);
+                            setShowNewFolderInput(false);
+                            setExpandedFolders(prev => ({ ...prev, [contextMenu.item.id]: true }));
+                            setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                        >
+                          <FilePlus size={14} className="text-purple-400" />
+                          <span>New File...</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetFolderId(contextMenu.item.id);
+                            setShowNewFolderInput(true);
+                            setShowNewFileInput(false);
+                            setExpandedFolders(prev => ({ ...prev, [contextMenu.item.id]: true }));
+                            setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                        >
+                          <FolderPlus size={14} className="text-indigo-400" />
+                          <span>New Folder...</span>
+                        </button>
+                        <div className="h-[1px] bg-white/10 my-1" />
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleDuplicateFile(contextMenu.item);
+                          setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                      >
+                        <Copy size={14} className="text-cyan-400" />
+                        <span>Duplicate File</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRenamingFileId(contextMenu.item.id);
+                        setRenamingFileName(contextMenu.item.name);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Edit2 size={14} className="text-yellow-400" />
+                        <span>Rename</span>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-mono">F2</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDeleteItem(contextMenu.item);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 text-red-400 hover:text-red-200 hover:bg-red-500/20 text-left transition-all cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <Trash2 size={14} />
+                        <span>Delete</span>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-mono">Del</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetFolderId(null);
+                        setShowNewFileInput(true);
+                        setShowNewFolderInput(false);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                    >
+                      <FilePlus size={14} className="text-purple-400" />
+                      <span>New File in Root</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetFolderId(null);
+                        setShowNewFolderInput(true);
+                        setShowNewFileInput(false);
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                    >
+                      <FolderPlus size={14} className="text-indigo-400" />
+                      <span>New Folder in Root</span>
+                    </button>
+
+                    <div className="h-[1px] bg-white/10 my-1" />
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        collapseAllFolders();
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                    >
+                      <ChevronUp size={14} className="text-sky-400" />
+                      <span>Collapse All Folders</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        syncWorkspaceState();
+                        showToast('🔄 Explorer refreshed', 'info');
+                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
+                    >
+                      <RefreshCw size={14} className="text-emerald-400" />
+                      <span>Refresh Explorer</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* SIDEBAR BOTTOM: Active Session Members Panel (PROPER SPACING & COLLAPSIBLE TOGGLE) */}
             <div 
@@ -1887,22 +3247,38 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                 <div className="flex items-center gap-2 min-w-0">
                   {customFiles.filter(f => !f.isFolder).map((file) => {
-                    const fname = file.name || file.id;
-                    const isTabActive = activeFile === fname;
+                    // Always use canonical id (path-based) as the active file key
+                    const isTabActive = activeFile === file.id || activeFile === file.path;
+                    const displayName = file.name || file.id.split('/').pop() || file.id;
                     return (
                       <button 
                         key={file.id}
                         className={`rounded-t-xl text-xs font-mono flex items-center gap-2.5 border-t border-x transition-all shrink-0 ${isTabActive ? 'bg-[#0D0E15] text-white border-purple-500/50 font-semibold shadow-md' : 'bg-white/5 text-gray-400 border-transparent hover:text-gray-200 hover:bg-white/10'}`}
                         style={{ padding: '9px 18px' }}
-                        onClick={() => handleSelectFile(fname)}
+                        onClick={() => handleSelectFile(file.id)}
                       >
                         <FileCode size={14} className={file.iconColor || 'text-yellow-400'} />
-                        <span>{fname}</span>
+                        <span>{displayName}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
+
+              {/* Automatic Programming Language Indicator Badge (Derived from File Extension) */}
+              {(() => {
+                const langInfo = getLanguageInfo(activeFile);
+                return (
+                  <div 
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono shrink-0 shadow-sm transition-all ml-2 ${langInfo.bg}`}
+                    title={`Language: ${langInfo.name} (derived from .${activeFile.split('.').pop()})`}
+                  >
+                    <Code2 size={14} className={langInfo.color} />
+                    <span className="font-bold">{langInfo.name}</span>
+                    <span className="text-[10px] opacity-75 font-mono font-normal">(.{activeFile.split('.').pop()})</span>
+                  </div>
+                );
+              })()}
 
               {/* Active Peers Pills (Fixed Right Container with Border Separator) */}
               <div className="hidden lg:flex items-center gap-3 shrink-0 border-l border-white/15" style={{ paddingLeft: '20px' }}>
@@ -2041,6 +3417,44 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }}
         customFiles={customFiles}
       />
+
+      {/* ── Toast Notification Stack ──────────────────────────────────────── */}
+      <div
+        aria-live="polite"
+        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2.5 pointer-events-none"
+        style={{ maxWidth: '360px' }}
+      >
+        {toasts.map(toast => {
+          const styles = {
+            success: 'bg-emerald-900/90 border-emerald-500/60 text-emerald-200 shadow-[0_0_20px_rgba(52,211,153,0.3)]',
+            error:   'bg-red-900/90 border-red-500/60 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.3)]',
+            warning: 'bg-amber-900/90 border-amber-500/60 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.3)]',
+            info:    'bg-indigo-900/90 border-indigo-500/60 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]',
+          };
+          const icons = {
+            success: <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />,
+            error:   <AlertTriangle size={16} className="text-red-400 shrink-0" />,
+            warning: <AlertTriangle size={16} className="text-amber-400 shrink-0" />,
+            info:    <Loader2 size={16} className="text-indigo-400 shrink-0 animate-spin" />,
+          };
+          return (
+            <div
+              key={toast.id}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+            >
+              {icons[toast.type] || icons.info}
+              <span className="flex-1 leading-relaxed">{toast.message}</span>
+              <button
+                type="button"
+                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };

@@ -5,7 +5,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'codetrail_secret_default_key_99';
 
 /**
  * Authentication Middleware:
- * Verifies JWT token from Authorization header or x-auth-token and attaches req.user
+ * Verifies JWT token from Authorization header or x-auth-token and attaches req.user strictly from DB
  */
 const authMiddleware = async (req, res, next) => {
   try {
@@ -26,34 +26,24 @@ const authMiddleware = async (req, res, next) => {
     try {
       decoded = jwt.verify(token, JWT_SECRET);
     } catch (jwtErr) {
-      // In development or demo mode, accept mock tokens gracefully
-      if (token.startsWith('mock-') || token.startsWith('demo-') || token === 'guest-token' || token.length < 30) {
-        decoded = { _id: '65e000000000000000000001', id: 'usr-guest', name: 'Mahi', role: 'editor', email: 'mahi@codetrail.io' };
-      } else {
-        throw jwtErr;
-      }
+      return res.status(401).json({ message: 'Token is invalid or expired. Please sign in again.' });
     }
 
-    if (!decoded) {
+    if (!decoded || (!decoded.id && !decoded._id)) {
       return res.status(401).json({ message: 'Invalid token payload.' });
     }
 
-    // Try finding the user in DB, otherwise attach decoded payload
-    try {
-      const user = await User.findById(decoded._id || decoded.id).select('-password');
-      if (user) {
-        req.user = user;
-      } else {
-        req.user = decoded;
-      }
-    } catch {
-      req.user = decoded;
+    const userId = decoded.id || decoded._id;
+    const user = await User.findById(userId).select('-password');
+    if (!user) {
+      return res.status(401).json({ message: 'User account not found in database.' });
     }
 
+    req.user = user;
     next();
   } catch (err) {
     console.error('Auth Middleware Error:', err.message);
-    return res.status(401).json({ message: 'Token is invalid or expired.' });
+    return res.status(401).json({ message: 'Authentication failed due to database or server error.', error: err.message });
   }
 };
 

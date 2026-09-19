@@ -3,8 +3,12 @@ const mongoose = require('mongoose');
 const WorkspaceFileSchema = new mongoose.Schema({
   id: { type: String, required: true },
   name: { type: String, required: true },
+  path: { type: String, default: '' },
+  parentId: { type: String, default: null },
+  isFolder: { type: Boolean, default: false },
   content: { type: String, default: '' },
   language: { type: String, default: 'javascript' },
+  iconColor: { type: String, default: '' },
   version: { type: Number, default: 1 },
   updatedAt: { type: Date, default: Date.now }
 }, { _id: false });
@@ -13,7 +17,7 @@ const WorkspaceHistoryLogSchema = new mongoose.Schema({
   id: { type: String, required: true },
   type: { 
     type: String, 
-    enum: ['session', 'session-end', 'file', 'member', 'settings', 'code'], 
+    enum: ['session', 'session-end', 'file', 'member', 'settings', 'code', 'execution', 'language'], 
     default: 'session' 
   },
   title: { type: String, required: true },
