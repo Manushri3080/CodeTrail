@@ -31,7 +31,8 @@ import {
   KeyRound,
   Loader2,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  AlertCircle
 } from 'lucide-react';
 import WorkspaceModal from '../../components/workspace/WorkspaceModal';
 
@@ -63,53 +64,6 @@ const resolveIcon = (icon) => {
   return ICON_MAP[icon] || Rocket;
 };
 
-const INITIAL_FALLBACK_WORKSPACES = [
-  {
-    id: 'ws-1',
-    title: 'Project Alpha',
-    desc: 'Next.js core application with React server components.',
-    brandColor: 'purple',
-    icon: 'Rocket',
-    role: 'Lead',
-    timeSpent: '14h 30m',
-    status: 'active',
-    collaborators: ['A', 'S', '+3']
-  },
-  {
-    id: 'ws-2',
-    title: 'Microservices Beta',
-    desc: 'Go based gRPC services with Docker containerization.',
-    brandColor: 'cyan',
-    icon: 'Cpu',
-    role: 'Collaborator',
-    timeSpent: '8h 15m',
-    status: 'active',
-    collaborators: ['M', 'E']
-  },
-  {
-    id: 'ws-3',
-    title: 'Data Pipeline V2',
-    desc: 'Apache Airflow DAGs for customer analytics processing.',
-    brandColor: 'emerald',
-    icon: 'Database',
-    role: 'Maintainer',
-    timeSpent: '2h 45m',
-    status: 'archived',
-    collaborators: ['A', '+1']
-  },
-  {
-    id: 'ws-4',
-    title: 'Component Lib',
-    desc: 'Shared UI components for all internal dashboards.',
-    brandColor: 'rose',
-    icon: 'Palette',
-    role: 'Contributor',
-    timeSpent: '0h 0m',
-    status: 'archived',
-    collaborators: ['S']
-  }
-];
-
 const formatRelativeTime = (dateInput) => {
   if (!dateInput) return 'Recently';
   const date = new Date(dateInput);
@@ -137,19 +91,21 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   const [modalInitialTab, setModalInitialTab] = useState('create'); // 'create' | 'join'
   const [workspaces, setWorkspaces] = useState([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
+  const [dbError, setDbError] = useState('');
 
-  // Fetch workspaces on mount or currentUser update
+  // Fetch workspaces strictly from database
   useEffect(() => {
     const fetchWorkspaces = async () => {
       const token = localStorage.getItem('ct-auth-token');
       if (!token) {
-        setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+        setWorkspaces([]);
         setLoadingWorkspaces(false);
         return;
       }
 
       try {
         setLoadingWorkspaces(true);
+        setDbError('');
         const res = await axios.get(`${API_BASE}/workspaces`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -157,11 +113,13 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
         if (res.data && Array.isArray(res.data.workspaces)) {
           setWorkspaces(res.data.workspaces);
         } else {
-          setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+          setWorkspaces([]);
         }
       } catch (err) {
-        console.warn('Backend offline or workspace fetch failed, using fallback:', err.message);
-        setWorkspaces(INITIAL_FALLBACK_WORKSPACES);
+        console.error('Backend offline or workspace fetch failed:', err);
+        setWorkspaces([]);
+        const msg = err.response?.data?.message || 'Database connection is currently offline or unreachable. Please ensure MongoDB is running.';
+        setDbError(msg);
       } finally {
         setLoadingWorkspaces(false);
       }
@@ -474,6 +432,17 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
       {/* Main Home Dashboard Body */}
       <main className={`ct-home-main ${sidebarHovered ? 'sidebar-expanded' : ''}`}>
         
+        {/* DB Offline Error Alert Banner */}
+        {dbError && (
+          <div className="p-4 mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-xs flex items-center gap-3 shadow-lg">
+            <AlertCircle size={20} className="shrink-0 text-rose-400" />
+            <div>
+              <p className="font-bold text-sm text-white">Database Offline / Connection Error</p>
+              <p className="text-xs text-rose-200/80 mt-0.5">{dbError}</p>
+            </div>
+          </div>
+        )}
+
         {/* Top Active Session Banner */}
         <div className="ct-recent-banner">
           <div className="ct-banner-content">

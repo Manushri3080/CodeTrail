@@ -259,20 +259,48 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-// 6. Get Authenticated User Profile
+// 6. Get Authenticated User Profile (Derived purely from Database)
 exports.getProfile = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password -resetPasswordToken -resetPasswordExpires');
+    const user = await User.findById(req.user._id || req.user.id).select('-password -resetPasswordToken -resetPasswordExpires');
     if (!user) {
-      return res.status(404).json({ message: 'User profile not found' });
+      return res.status(404).json({ message: 'User profile not found in database' });
     }
 
-    // Return user with stats and activity structured for API integration
+    const Workspace = require('../models/Workspace');
+    const userWorkspaces = await Workspace.find({
+      $or: [
+        { owner: user._id },
+        { 'members.user': user._id }
+      ]
+    });
+
+    const activeWorkspacesCount = userWorkspaces.filter(w => w.status === 'active').length;
+    const totalFilesCount = userWorkspaces.reduce((acc, w) => acc + (w.files ? w.files.length : 0), 0);
+
     const username = user.username || user.email.split('@')[0];
     const role = user.role || 'CodeTrail Learner';
     const avatar = user.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${user.email}`;
-
     const updatedAt = user.updatedAt || user.createdAt;
+
+    // Build recent activity array dynamically from database workspace activity logs
+    let dbActivities = [];
+    userWorkspaces.forEach(ws => {
+      if (ws.activityLogs && Array.isArray(ws.activityLogs)) {
+        ws.activityLogs.forEach(log => {
+          dbActivities.push({
+            id: log.id || log._id,
+            title: `${log.title} (${ws.title})`,
+            category: log.type || 'Workspace',
+            time: log.timestamp ? new Date(log.timestamp).toISOString() : 'Recently',
+            details: log.details,
+            tagColor: 'purple'
+          });
+        });
+      }
+    });
+
+    dbActivities.sort((a, b) => new Date(b.time) - new Date(a.time));
 
     res.json({
       user: {
@@ -288,21 +316,16 @@ exports.getProfile = async (req, res) => {
         updatedAt: updatedAt
       },
       stats: {
-        problemsSolved: 42,
-        codingStreak: 7,
-        modulesCompleted: 8,
-        totalPracticeTime: '34.5 hrs'
+        totalWorkspaces: userWorkspaces.length,
+        activeWorkspaces: activeWorkspacesCount,
+        totalFiles: totalFilesCount,
+        accountCreated: user.createdAt
       },
-      recentActivity: [
-        { id: 1, title: 'Solved "Binary Tree Maximum Path Sum"', category: 'Problem Solving', time: '2 hours ago', tagColor: 'emerald' },
-        { id: 2, title: 'Completed "Async JavaScript & Event Loop" Module', category: 'Learning', time: 'Yesterday', tagColor: 'purple' },
-        { id: 3, title: 'Started Practice Session in Code Runner', category: 'Sandbox', time: '3 days ago', tagColor: 'cyan' },
-        { id: 4, title: 'Updated Profile & Account Details', category: 'Account', updatedAt: updatedAt, time: 'dynamic', tagColor: 'amber' }
-      ]
+      recentActivity: dbActivities.slice(0, 10)
     });
   } catch (err) {
     console.error('Get Profile Error:', err);
-    res.status(500).json({ message: 'Failed to fetch user profile', error: err.message });
+    res.status(500).json({ message: 'Failed to fetch user profile from database', error: err.message });
   }
 };
 

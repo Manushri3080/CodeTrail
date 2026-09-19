@@ -305,10 +305,7 @@ exports.updateWorkspace = async (req, res) => {
     const { title, description, language, brandColor, icon, status, settings, files } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.json({
-        message: 'Workspace updated successfully',
-        workspace: { _id: id, files }
-      });
+      return res.status(400).json({ message: 'Invalid workspace ID format.' });
     }
 
     const workspace = await Workspace.findById(id);
@@ -458,7 +455,7 @@ exports.updateWorkspaceSession = async (req, res) => {
     const { sessionMinutes = 0, files } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.json({ message: 'Mock workspace session updated.' });
+      return res.status(400).json({ message: 'Invalid workspace ID format.' });
     }
 
     const workspace = await Workspace.findById(id);

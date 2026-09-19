@@ -21,6 +21,7 @@ function MainRouter() {
   const handleLoginSuccess = (newToken, user) => {
     localStorage.setItem('ct-auth-token', newToken);
     localStorage.setItem('ct-auth-user', JSON.stringify(user));
+    localStorage.setItem('ct-active-tab', 'home');
   };
 
   return (

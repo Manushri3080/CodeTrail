@@ -1,0 +1,471 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+
+\definecolor{statusgreen}{HTML}{2E7D32}
+\definecolor{statusyellow}{HTML}{F9A825}
+\definecolor{statusred}{HTML}{C62828}
+\definecolor{lightgray}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Bi-Weekly Status Report}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}
+  {\large\bfseries}
+  {}
+  {0pt}
+  {}
+  [\vspace{2pt}\titlerule]
+
+\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=3pt}
+
+\newcommand{\field}[2]{\textbf{#1:} #2\par}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE\bfseries Bi-Weekly Status Report 3}\\[10pt]
+\end{center}
+
+\field{Project Name}{CodeTrail~-- Real-Time Collaborative Code Editor with Contribution Tracking}
+\field{Course}{WS \& SOA (IT645) $|$ Dhirubhai Ambani University (Formerly DA-IICT)}
+\field{Report Period}{01/09/2026~-- 13/09/2026 (Weeks 6--7)}
+\field{Date Submitted}{17/09/2026}
+\field{Prepared By}{Shaikh Maryam on behalf of CodeTrail Team}
+
+\vspace{8pt}
+
+\section{Project Status Summary\footnote{For details on indicators and status levels, see last page.}}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.62\textwidth}}
+Sprint / Milestone & SCRUM Sprint 3 (Bi-Weekly 3)~-- Module 3 Delivery: Real-Time Collaborative Editor \\
+\% Complete (overall) & 37.5\% (3 of 8 functional modules delivered On Track) \\
+\end{tabular}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-health-dashboard}
+\renewcommand{\arraystretch}{1.4}
+
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.3cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{1.7cm}
+                >{\centering\arraybackslash}p{3.2cm}}
+\toprule
+\textbf{Indicator} &
+\textbf{Current} &
+\textbf{Previous} &
+\textbf{Trend} &
+\textbf{Status} \\
+\midrule
+
+Overall Project &
+37.5\% &
+25\% &
+$\uparrow$ &
+On Track \\
+
+Schedule &
+On Schedule &
+On Schedule &
+$\rightarrow$ &
+On Track \\
+
+Scope &
+3/8 Modules &
+2/8 Modules &
+$\uparrow$ &
+On Track \\
+
+Quality &
+No critical defects; viewer guard \& version conflict resolution in place &
+Stable &
+$\rightarrow$ &
+On Track \\
+
+Team Contribution &
+8/8 members contributed &
+8/8 members contributed &
+$\rightarrow$ &
+On Track \\
+
+Dependencies &
+Socket.IO integrated; Piston API client 60\% complete &
+Piston API design only &
+$\uparrow$ &
+On Track \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{8pt}
+\textbf{Summary Notes:}
+
+The CodeTrail team successfully completed and merged Module~3 (Real-Time Collaborative Code Editor) in Bi-Weekly 3 (01/09/2026--13/09/2026, Weeks~6--7), delivering two major milestone features: full Monaco Editor integration with live multi-file management, and a production-grade real-time collaboration infrastructure built on Socket.IO. The period also saw the completion of the workspace session management layer (REST APIs, Socket event handlers, and a dedicated React hook), role-based access control enforced at both the frontend and backend socket layer, and a viewer permission guard preventing unauthorized edits. A significant platform-stability milestone was reached with the implementation of monotonic version counters and packet-conflict resolution (CT-89), which systematically resolves concurrent editing race conditions identified as Risk~R-02 in Bi-Weekly 2. The team is fully on schedule with three of eight modules delivered, and Piston API integration (Module~4) is actively underway.
+
+\section{Key Accomplishments in Two Weeks}
+
+\begin{itemize}
+    \item \textbf{Module 3 Delivery (Target Bi-Weekly Deliverable) -- Monaco Editor \& Real-Time Collaboration:} Fully integrated \texttt{@monaco-editor/react} with multi-file tab switching, language-aware syntax highlighting (JS, TS, PY, C++, Java, Rust, Go, HTML, CSS, JSON, Markdown, SQL, YAML), dynamic file tree with create/delete/rename support, and localStorage-backed content persistence per workspace session. (Commits \texttt{99a65acd}, \texttt{9b8afc5a}; PR~\#15, \#17)
+
+    \item \textbf{Real-Time Socket.IO Collaboration Infrastructure (CT-85):} Built dual-layer Socket.IO architecture with \texttt{workspaceSessionSocket.js} and \texttt{socketHandler.js}, providing room-based code broadcasting (\texttt{code\_change}/\texttt{code\_updated}), heartbeat-driven session time accumulation (\texttt{session\_heartbeat}), live presence updates (\texttt{presenceUpdate}), and graceful disconnect/reconnect handling. (Commit \texttt{bd7a6894}; PR~\#16)
+
+    \item \textbf{Real-Time Multiplayer Monaco Cursor Tracking \& Decorations (CT-86):} Implemented peer cursor rendering with color-coded nametags injected as Monaco delta-decorations; throttled \texttt{cursor\_position\_update} broadcast at 30\,ms to prevent network flooding; peer selections rendered as translucent color overlays per user. (Commit \texttt{25c2b0f6}; PR~\#17)
+
+    \item \textbf{Viewer Role Lock \& Version Conflict Resolution (CT-89):} Enforced viewer-read-only guard at both the React component layer and the backend Socket.IO handler; implemented monotonic version counters per file key (\texttt{workspaceId:fileId}) to detect and silently drop stale/conflicting code packets; added real-time reconnection status banner with animated indicator. (Commit \texttt{9b8afc5a}; PR~\#17)
+
+    \item \textbf{Workspace Session Management Layer:} Delivered \texttt{WorkspaceSession} Mongoose model with compound unique index, REST session APIs (enter, leave, heartbeat, file-focus, all-sessions), \texttt{workspaceSessionController.js}, session routes, and \texttt{useWorkspaceSession.js} custom hook encapsulating Socket.IO lifecycle, code/cursor emission, and version-state management. (Commit \texttt{a75843fa}; PR~\#14)
+
+    \item \textbf{Workspace Settings Modal \& Role-Based UI:} Completed \texttt{WorkspaceSettingsModal.jsx} (1,500+ lines) covering member management (invite by email, role promotion/demotion, remove), workspace metadata editing (title, description, language, brand color, icon, public/private toggle), activity history log panel, and session time display~-- all conditioned on the authenticated user's workspace role. (Commit \texttt{a75843fa}; PR~\#14)
+
+    \item \textbf{2.5-Second Debounced Auto-Save (CT-88):} Implemented debounced PATCH request to \texttt{/api/workspaces/:id} that persists all file contents to MongoDB Atlas; falls back gracefully to localStorage on network failure with ``Saved locally (offline)'' status indicator. (Commit \texttt{a75843fa}; PR~\#14)
+\end{itemize}
+
+\section{Planned vs.\ Actual}
+
+\begin{tabular}{p{0.16\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.22\textwidth}}
+\toprule
+\textbf{Task/} & \textbf{Planned} & \textbf{Current} & \textbf{Actual} & \textbf{Notes} \\
+\textbf{Deliverable} & \textbf{Completion} & \textbf{Forecast} & \textbf{Status} & \\
+\midrule
+Requirements Eng.\ (BRD / RSD) & Aug 24 & --- & Done & Submitted PR \#12 (Bi-Weekly~2) \\
+System Design (SDD) & Aug 31 & --- & Done & Authored by Meet (Bi-Weekly~2) \\
+Module 1: Auth \& User Mgt & Aug 17 & --- & Done & Submitted in Bi-Weekly~1 \\
+Module 2: Workspace Mgt & Aug 31 & --- & Done & Merged to main (Bi-Weekly~2) \\
+Module 3: Collaborative Editor & Sep 14 & --- & Done & Monaco + Socket.IO delivered; merged PR \#15, \#16, \#17 \\
+Module 4: Code Execution & Sep 28 & Sep 28 & In Progress & Piston API client $\sim$60\% complete \\
+SHA-256 Contribution Logging & Sep 28 & Oct 05 & In Progress & Core pipeline design underway (Bi-Weekly~4 target) \\
+Module 5: Contribution Dossier & Oct 12 & Oct 12 & Not Started & Scheduled for Bi-Weekly~5 \\
+\bottomrule
+\end{tabular}
+
+\section{Project Risks, Issues, \& Dependencies}
+
+\begin{tabular}{p{0.15\textwidth} p{0.25\textwidth} p{0.14\textwidth} p{0.14\textwidth} p{0.25\textwidth}}
+\toprule
+\textbf{Type (ID)} & \textbf{Description} & \textbf{Impact} & \textbf{Owner} & \textbf{Mitigation / Next Step} \\
+\midrule
+Risk (R-02) & Concurrent typing race conditions during live collaborative editing & High & Mahi Kansara / Anistina Dsouza & \textbf{Resolved (CT-89):} Monotonic version counters and stale-packet dropping implemented and merged. \\
+Risk (R-03) & Monaco Editor memory growth from unbounded peer cursor decorations & Medium & Dudhat Monar & Delta-decoration IDs tracked in \texttt{remoteDecorationIdsRef}; old decorations replaced atomically. Monitor under load. \\
+Issue (I-02) & Concurrency collision on atomic participant additions via invite codes & Medium & Manushri Thakkar / Ruchita Patadiya & Resolved in Bi-Weekly~2; \texttt{\$addToSet} and unique indexing in place. \\
+Dependency (D-02) & Third-party Piston API execution rate limits and latency variability & Medium & Meet Sheth / Dudhat Monar & Execution timeout guards and client debouncing designed; Piston client wrapper 60\% complete (CT-450). \\
+Risk (R-04) & Socket.IO connection flapping under high-load / network instability & Low--Medium & Manushri Thakkar & 10-attempt auto-reconnect, exponential back-off, and reconnection UI banner in place. \\
+\bottomrule
+\end{tabular}
+
+\section{Project Decisions}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-decisions}
+\renewcommand{\arraystretch}{1.3}
+
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}
+                >{\raggedright\arraybackslash}p{4.0cm}
+                >{\raggedright\arraybackslash}p{3.5cm}
+                >{\centering\arraybackslash}p{2.0cm}
+                >{\centering\arraybackslash}p{1.5cm}}
+\toprule
+\textbf{Decision} &
+\textbf{Rationale} &
+\textbf{Impact} &
+\textbf{Decided By} &
+\textbf{Date} \\
+\midrule
+
+Dual-layer Socket.IO architecture (\texttt{socketHandler.js} + \texttt{workspaceSessionSocket.js}) &
+Separates in-memory real-time presence from DB-backed session persistence for clearer responsibility boundaries &
+Cleaner architecture; easier to test each layer independently &
+Team &
+Sep.\ 4 \\
+
+Monotonic version counters per \texttt{workspaceId:fileId} key &
+Eliminates packet-order ambiguity in multi-client concurrent edits without requiring OT or CRDT overhead at this stage &
+Prevents data corruption from stale broadcast packets (CT-89 resolved) &
+Mahi / Manushri &
+Sep.\ 10 \\
+
+30\,ms cursor throttle with pending-timeout pattern &
+Prevents cursor event flooding on fast typists ($>$30 events/sec) while maintaining sub-frame-perceptible latency &
+Reduced socket bandwidth; smoother peer cursor UX (CT-86) &
+Dudhat Monar &
+Sep.\ 13 \\
+
+localStorage fallback for auto-save &
+Ensures work is not lost if backend is temporarily unreachable during development/testing &
+Increased resilience; ``Saved locally (offline)'' graceful degradation &
+Maryam Shaikh &
+Sep.\ 9 \\
+
+Viewer role enforced at socket layer (not just UI) &
+Prevents malicious or accidental code changes from clients that bypass the frontend guard &
+Security hardening of collaborative session (CT-89) &
+Mahi Kansara &
+Sep.\ 13 \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Project Scope Changes}
+
+\begin{table}[htbp]
+\centering
+\label{tab:scope-changes}
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{p{3.0cm} c p{3.2cm} c c}
+\toprule
+\textbf{Change} &
+\textbf{Action} &
+\textbf{Reason} &
+\textbf{Schedule Impact} &
+\textbf{Approved By} \\
+\midrule
+
+None & --- & Scope remains fully aligned with project proposal and approved SDD specifications. & None & --- \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Upcoming Work (Next Two Weeks' Plan~-- Bi-Weekly 4 Target)}
+
+\begin{itemize}
+    \item \textbf{Deliver Module 4: Code Execution Engine}~-- Complete Piston API client service wrapper (\texttt{CT-450}); integrate language runtime execution (JavaScript, Python, C++, Java, Go, Rust) into the live workspace; display real-time stdout/stderr output in the Terminal panel.
+    \item Establish the core SHA-256 cryptographic activity logging pipeline for tamper-evident per-user contribution records (\texttt{CT-460}).
+    \item Implement dynamic file delete and rename operations within live workspace sessions, with Socket.IO broadcast to peers.
+    \item Begin Module 5 architecture: Contribution Dossier (aggregation of per-user code diff metrics and session durations).
+    \item Expand Postman API test suite to cover Socket.IO event contracts and execution engine endpoints.
+\end{itemize}
+
+\section{Team Member Contributions}
+
+\vspace{6pt}
+
+\field{Name}{Meet Sheth (202512057)}
+\field{Role}{Backend Architect / System Designer}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Refactored \texttt{WorkspaceModal.jsx} with expanded create-and-join flows and improved validation UX.\newline Updated \texttt{HomePage.jsx} with quick-join action, workspace language tag normalization, and active filter styling.\newline Extended \texttt{index.css} with modal and dashboard layout refinements. \\
+Tasks In Progress & CT-425 (MongoDB query optimization -- indexing strategy for workspace and session collections)\newline CT-420 (Socket.IO workspace room architecture review and hardening) \\
+Contribution Type & Development / Architecture \\
+Blockers & None \\
+Hours / Capacity & 26/30\,hrs logged \\
+Evidence & \texttt{WorkspaceModal.jsx}, \texttt{HomePage.jsx}, \texttt{index.css} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Rishika Shah (202512041)}
+\field{Role}{Frontend Developer / UI Engineer}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Refactored \texttt{WorkspaceModal.jsx} (+109 lines): expanded create-and-join flows, improved validation UX.\newline Updated \texttt{HomePage.jsx} (+61 lines): quick-join action, language tag normalization, active filter glow styling.\newline Extended \texttt{index.css} (+65 lines): modal and dashboard layout refinements.\newline (Commit \texttt{f16eff1b}, Sep.\ 1; merged via branch \texttt{features/Rishika}) \\
+Tasks In Progress & CT-455 (Collaborative editor test scenarios and validation scripts for FR-07 to FR-12)~-- 65\% complete; expected finish Sep.\ 28. \\
+Contribution Type & Development / Testing \\
+Blockers & None \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & Commit \texttt{f16eff1b} (Sep.\ 1); \texttt{WorkspaceModal.jsx}, \texttt{HomePage.jsx}, \texttt{index.css} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Mahi Kansara (202512078)}
+\field{Role}{Frontend Developer / Socket.IO Integration Lead}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Phase 3B (CT-89), 6 files, 468 insertions (Commit \texttt{9b8afc5a}, Sep.\ 13, PR~\#17):\newline \texttt{ModularWorkspace.jsx} (+282): viewer \texttt{isViewer} guard, reconnection banner, \texttt{fileVersions}/\texttt{fileVersionsRef} sync, stale-packet drop.\newline \texttt{useWorkspaceSession.js} (+75): \texttt{code\_conflict} handler, \texttt{code\_change\_error} listener.\newline \texttt{workspaceSessionSocket.js} (+72): viewer \texttt{code\_change} block, version-counter, \texttt{code\_conflict} emit.\newline \texttt{socketHandler.js} (+60): same viewer guard and version-counter on second socket layer.\newline \texttt{auth.js} (+15): middleware hardening. \texttt{Workspace.js} (+1): model field addition. \\
+Tasks In Progress & CT-445 (Monaco Editor \& Socket.IO synchronization architecture refinements)~-- 90\% complete. \\
+Contribution Type & Development / Architecture \\
+Blockers & None \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & Commit \texttt{9b8afc5a} (Sep.\ 13); PR~\#17; \texttt{ModularWorkspace.jsx}, \texttt{useWorkspaceSession.js}, \texttt{workspaceSessionSocket.js}, \texttt{socketHandler.js}, \texttt{auth.js}, \texttt{Workspace.js} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Thakkar Manushri (202512122)}
+\field{Role}{Project Manager / DevOps / Backend Developer}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Commit \texttt{bd7a6894} ``added sockets'' (PR~\#16, Sep.\ 12, 318 insertions, 5 files):\newline \texttt{workspaceController.js} (+54): \texttt{ObjectId.isValid()} guards on 6 endpoints (\texttt{getById}, \texttt{update}, \texttt{delete}, \texttt{session}, \texttt{history} GET/POST).\newline \texttt{workspaceSessionSocket.js} (+19): initial \texttt{code\_change} broadcast handler (CT-85 first pass).\newline \texttt{ModularWorkspace.jsx} (+244): role resolution refactor (\texttt{isOwner}, \texttt{memberObj}), \texttt{filesContentRef} \& \texttt{autoSaveTimerRef} hooks.\newline Also merged PRs \#14, \#15, \#16, \#17 and coordinated Sprint~3 Jira backlog. \\
+Tasks In Progress & CT-420 (Socket.IO room architecture hardening)~-- 75\% complete.\newline CT-425 (MongoDB query optimization)~-- 50\% complete. \\
+Contribution Type & Development / Project Management / DevOps \\
+Blockers & None \\
+Hours / Capacity & 28/30\,hrs logged \\
+Evidence & Commit \texttt{bd7a6894} (Sep.\ 12); PR~\#16; merge approvals (\#14, \#15, \#17); \texttt{workspaceController.js}, \texttt{workspaceSessionSocket.js}, \texttt{ModularWorkspace.jsx}; Jira CT-325 \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Anistina Dsouza (202512081)}
+\field{Role}{Full-Stack Developer / Module Lead}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & No direct code commit this period (contributions carried from Bi-Weekly~2).\newline Collaborated on review and testing of the \texttt{ModularWorkspace.jsx} multi-file management feature; supported Ruchita Patadiya's shared editor implementation (PR~\#15); continued work on CT-435 workspace participant role permissions. \\
+Tasks In Progress & CT-435 (Workspace participant role permissions and member management API)~-- 90\% complete; expected to close in Bi-Weekly~4. \\
+Contribution Type & Testing / Project Management \\
+Blockers & None \\
+Hours / Capacity & 24/30\,hrs logged \\
+Evidence & CT-435 Jira subtask; code review on PR~\#15 and PR~\#16 \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Ruchita Patadiya (202512070)}
+\field{Role}{Frontend Developer / Backend Developer}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Commit \texttt{99a65acd} ``shared code editor and multi-file management'' (PR~\#15, Sep.\ 12, 254 insertions):\newline \texttt{ModularWorkspace.jsx} (+258 net, $-$74 refactor): integrated \texttt{@monaco-editor/react}; authored \texttt{getMonacoLanguage()} (16 file types) and \texttt{getStarterBoilerplate()} per-extension generator; defined \texttt{DEFAULT\_WORKSPACE\_FILES} and \texttt{DEFAULT\_FILES\_CONTENT}; refactored \texttt{customFiles}/\texttt{filesContent} state with localStorage backup and \texttt{activeWorkspace.files} overlay.\newline \texttt{package.json} (+1): added \texttt{@monaco-editor/react} dependency. \\
+Tasks In Progress & CT-430 (Workspace authorization and role-based route guards)~-- 80\% complete. \\
+Contribution Type & Development \\
+Blockers & None \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & Commit \texttt{99a65acd} (Sep.\ 12); PR~\#15; \texttt{ModularWorkspace.jsx}, \texttt{frontend/package.json} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Shaikh Maryam (202512074)}
+\field{Role}{Full-Stack Developer / UI Architect}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Commits \texttt{a75843fa} (PR~\#14, Sep.\ 9), \texttt{06854877} (Sep.\ 7), \texttt{0bf8a7b0} (Sep.\ 4) -- 6,424 insertions across 23 files:\newline \textbf{NEW files:} \texttt{workspaceSessionController.js} (225 lines, 5 REST APIs: enter/get/all-sessions/heartbeat/file-focus/leave); \texttt{WorkspaceSession.js} (54 lines, Mongoose model, compound unique index); \texttt{workspaceSessionRoutes.js}; \texttt{WorkspaceSettingsModal.jsx} (1,303 lines: member invite, role management, history log, metadata edit); \texttt{WorkspacesPage.jsx} (610 lines: public workspace discovery).\newline \textbf{Extended:} \texttt{workspaceController.js} (+550), \texttt{socketHandler.js} (+155), \texttt{workspaceSessionSocket.js} (+163), \texttt{ModularWorkspace.jsx} (+1,314), \texttt{index.css} (+1,596), \texttt{HomePage.jsx} (+356), \texttt{App.jsx} (+77), \texttt{Navbar.jsx} (+66). \\
+Tasks In Progress & CT-478 (Collaborative editor layout and multi-panel split-view)~-- 80\% complete. \\
+Contribution Type & Development / Architecture / Documentation \\
+Blockers & None \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & Commits \texttt{a75843fa}, \texttt{06854877}, \texttt{0bf8a7b0}; PR~\#14; \texttt{WorkspaceSession.js}, \texttt{workspaceSessionController.js}, \texttt{WorkspaceSettingsModal.jsx}, \texttt{WorkspacesPage.jsx}, \texttt{ModularWorkspace.jsx}, \texttt{index.css} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Dudhat Monar (202512019)}
+\field{Role}{Backend Developer / QA Engineer}
+
+\vspace{4pt}
+
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Commit \texttt{25c2b0f6} -- CT-86 multiplayer cursor tracking (PR~\#17, Sep.\ 13, 425 insertions, 5 files):\newline \texttt{workspaceSessionSocket.js} (+40): \texttt{cursor\_position\_update} \& \texttt{cursor\_move} handlers broadcasting \texttt{cursor\_position\_updated}/\texttt{cursor\_updated} to room peers.\newline \texttt{socketHandler.js} (+21): same cursor handlers on second socket layer.\newline \texttt{useWorkspaceSession.js} (+45): \texttt{cursor\_position\_updated} listener updating \texttt{peerCursors}; \texttt{emitCursorPosition()} function.\newline \texttt{ModularWorkspace.jsx} (+259): \texttt{PEER\_COLORS}, \texttt{getPeerColor()}, \texttt{updateMonacoDecorations()} with dynamic CSS nametag injection and delta-decoration API; 30\,ms throttle.\newline \texttt{index.css} (+66): \texttt{.ct-monaco-remote-cursor}, \texttt{.ct-monaco-nametag}, \texttt{.ct-monaco-remote-selection} rules.\newline Also expanded Postman API test suite for Session REST endpoints. \\
+Tasks In Progress & CT-440 (Automated API integration test suite for workspace and session routes)~-- 70\% complete. \\
+Contribution Type & Development / Testing \\
+Blockers & None \\
+Hours / Capacity & 28/30\,hrs logged \\
+Evidence & Commit \texttt{25c2b0f6} (Sep.\ 13); PR~\#17; \texttt{workspaceSessionSocket.js}, \texttt{socketHandler.js}, \texttt{useWorkspaceSession.js}, \texttt{ModularWorkspace.jsx}, \texttt{index.css}; Postman test collection \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+\noindent
+\textit{Tip:} If your team uses Jira, you can fill this section by pulling closed/in-progress tickets assigned to each person, rather than filling it manually.
+
+\pagebreak
+
+\section{Guidelines (for reference, not to be submitted in your status report):}
+
+\begin{itemize}
+    \item Section 1 summarizes the overall project status.
+    \item Sections 2--5 capture team-wide progress.
+    \item Section 6 is the per-person breakdown -- keep individual entries short (3--5 bullet points max) so the report does not balloon as your project progresses / team grows.
+    \item The status indicators at the top give stakeholders a one-glance read before they dig into details -- useful if this report goes to non-technical stakeholders too.
+    \item Six project status indicators have the following context:
+    \begin{itemize}
+        \item Overall Progress --- \% of project scope completed
+        \item Schedule --- \% of planned work completed
+        \item Scope --- \% of approved requirements completed
+        \item Quality --- test pass rate / critical defects
+        \item Team Contribution --- \% of assigned deliverables completed
+        \item Dependencies --- \% of critical dependencies resolved
+    \end{itemize}
+    \item Status levels:
+    \begin{itemize}
+        \item On Track --- expected to meet current milestone
+        \item Needs Attention --- issue exists but recovery is likely
+        \item At Risk --- milestone/deliverable may be missed without intervention
+        \item Blocked --- progress cannot continue without resolving a dependency
+    \end{itemize}
+    \item Contribution Type with examples (Add more types, if needed)
+    \begin{itemize}
+        \item Development --- Code, APIs, UI, database
+        \item Architecture --- Architecture/design decisions
+        \item Testing --- Test cases, automation, defect verification
+        \item Documentation --- SRS, design docs, reports
+        \item DevOps --- CI/CD, deployment, containers
+        \item Research --- Literature review, technical investigation
+        \item Project Management --- Planning, coordination
+        \item Presentation --- Demo, presentation, client communication
+    \end{itemize}
+
+\end{itemize}
+
+\end{document}

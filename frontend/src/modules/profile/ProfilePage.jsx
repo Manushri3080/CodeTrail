@@ -80,42 +80,24 @@ export const ProfilePage = ({ currentUser, setCurrentUser, onLogout, onBackToHom
           avatar: userObj.avatar || ''
         });
       } else {
+        const errorData = await res.json().catch(() => ({}));
         if (res.status === 401) {
           localStorage.removeItem('ct-auth-token');
+          setErrorMsg(errorData.message || 'Session expired. Please sign in again.');
+        } else {
+          setErrorMsg(errorData.message || 'Database connection error. Failed to retrieve profile.');
         }
-        // Fallback to local storage state
         const localUser = JSON.parse(localStorage.getItem('ct-auth-user')) || currentUser;
         if (localUser) {
-          const userObj = {
-            ...localUser,
-            updatedAt: localUser.updatedAt || localUser.createdAt || new Date().toISOString()
-          };
-          setProfile(userObj);
-          setFormData({
-            name: userObj.name || '',
-            username: userObj.username || (userObj.email ? userObj.email.split('@')[0] : ''),
-            role: userObj.role || 'learner',
-            bio: userObj.bio || '',
-            avatar: userObj.avatar || ''
-          });
+          setProfile(localUser);
         }
       }
     } catch (err) {
-      console.warn('Backend server offline or unreachable, using client state:', err);
+      console.error('Backend server offline or unreachable:', err);
+      setErrorMsg('Database connection is currently offline or unreachable. Please check your database connection.');
       const localUser = JSON.parse(localStorage.getItem('ct-auth-user')) || currentUser;
       if (localUser) {
-        const userObj = {
-          ...localUser,
-          updatedAt: localUser.updatedAt || localUser.createdAt || new Date().toISOString()
-        };
-        setProfile(userObj);
-        setFormData({
-          name: userObj.name || '',
-          username: userObj.username || (userObj.email ? userObj.email.split('@')[0] : ''),
-          role: userObj.role || 'learner',
-          bio: userObj.bio || '',
-          avatar: userObj.avatar || ''
-        });
+        setProfile(localUser);
       }
     } finally {
       setLoading(false);
