@@ -42,6 +42,7 @@ import {
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
+import { detectLanguage, getFileExtension } from '../../utils/languageDetection';
 
 // Map file extensions to Monaco language identifiers
 const getMonacoLanguage = (fileName = '') => {
@@ -241,6 +242,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
     } catch (e) {}
   }, [activeFile, wsId]);
+
+  const detectedActiveLanguage = detectLanguage(activeFile);
   
   // Helper to normalize file objects with full path and parent ID attributes
   const normalizeFileItem = (f) => {
@@ -256,6 +259,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       path,
       parentId,
       isFolder,
+      language: f.language,
       iconColor
     };
   };
@@ -1443,12 +1447,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       return;
     }
 
+    const detectedLanguage = detectLanguage(activeFile);
+    if (!detectedLanguage) {
+      const extension = getFileExtension(activeFile);
+      showToast(
+        extension ? `Unsupported programming language: ${extension}` : 'Unable to determine programming language.',
+        'warning'
+      );
+      return;
+    }
+
     setIsExecuting(true);
     showToast(`▶ Running ${activeFile}...`, 'info', 20000); // long-lived until resolved
 
     try {
       const codeToRun = getActiveFileContent();
-      const language = getMonacoLanguage(activeFile);
+      const language = detectedLanguage.language;
 
       if (!codeToRun || codeToRun.trim() === '') {
         setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
@@ -1457,7 +1471,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
 
       const response = await axios.post('http://localhost:5000/api/execute', {
+        fileId: activeFile,
+        sourceCode: codeToRun,
         language,
+        runtime: detectedLanguage.runtime,
         code: codeToRun,
         filename: activeFile
       });
@@ -3267,15 +3284,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
               {/* Automatic Programming Language Indicator Badge (Derived from File Extension) */}
               {(() => {
-                const langInfo = getLanguageInfo(activeFile);
+                const langInfo = detectedActiveLanguage || getLanguageInfo(activeFile);
                 return (
                   <div 
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono shrink-0 shadow-sm transition-all ml-2 ${langInfo.bg}`}
-                    title={`Language: ${langInfo.name} (derived from .${activeFile.split('.').pop()})`}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono shrink-0 shadow-sm transition-all ml-2 ${detectedActiveLanguage ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : langInfo.bg}`}
+                    title={detectedActiveLanguage ? `Language: ${detectedActiveLanguage.name} (${detectedActiveLanguage.extension})` : 'This file cannot be executed'}
                   >
-                    <Code2 size={14} className={langInfo.color} />
-                    <span className="font-bold">{langInfo.name}</span>
-                    <span className="text-[10px] opacity-75 font-mono font-normal">(.{activeFile.split('.').pop()})</span>
+                    <Code2 size={14} className={detectedActiveLanguage ? 'text-emerald-400' : langInfo.color} />
+                    <span className="font-bold">{detectedActiveLanguage ? detectedActiveLanguage.name : 'Unsupported file'}</span>
+                    <span className="text-[10px] opacity-75 font-mono font-normal">{detectedActiveLanguage?.extension || 'No runtime'}</span>
                   </div>
                 );
               })()}
@@ -3421,8 +3438,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       {/* ── Toast Notification Stack ──────────────────────────────────────── */}
       <div
         aria-live="polite"
-        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2.5 pointer-events-none"
-        style={{ maxWidth: '360px' }}
+        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none"
+        style={{ width: 'min(400px, calc(100vw - 32px))' }}
       >
         {toasts.map(toast => {
           const styles = {
@@ -3440,14 +3457,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           return (
             <div
               key={toast.id}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+              className={`flex items-start gap-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+              style={{ padding: '14px 16px', lineHeight: '1.5', minHeight: '52px' }}
             >
               {icons[toast.type] || icons.info}
-              <span className="flex-1 leading-relaxed">{toast.message}</span>
+              <span className="flex-1 min-w-0 break-words leading-relaxed">{toast.message}</span>
               <button
                 type="button"
                 onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-                className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 cursor-pointer"
+                className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 mt-0.5 cursor-pointer shrink-0"
               >
                 <X size={13} />
               </button>

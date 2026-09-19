@@ -203,9 +203,12 @@ MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mp9rgf1.mongodb.net/cod
 JWT_SECRET=your_super_secret_jwt_key
 EMAIL_USER=your_email@gmail.com
 EMAIL_PASS=your_gmail_app_password
+PISTON_API_URL=https://your-piston-host/api/v2/piston/execute
+PISTON_API_KEY=your_piston_api_key
 ```
 
 > **Note:** For `EMAIL_PASS`, use a [Gmail App Password](https://support.google.com/accounts/answer/185833), not your regular Gmail password.
+> Configure `PISTON_API_URL` and `PISTON_API_KEY` for the Piston deployment used by your team. The default public `emkc.org` endpoint may reject unauthenticated requests.
 
 ---
 
