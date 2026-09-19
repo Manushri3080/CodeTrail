@@ -18,6 +18,10 @@ const {
   updateWorkspaceMemberRole,
   removeWorkspaceMember
 } = require('../controllers/workspaceController');
+const {
+  getWorkspaceExecutions,
+  clearWorkspaceExecutions
+} = require('../controllers/executionController');
 
 // All workspace routes require valid JWT auth
 router.use(authMiddleware);
@@ -36,12 +40,17 @@ router.post('/:id/members', addWorkspaceMember);
 router.patch('/:id/members/:memberId', updateWorkspaceMemberRole);
 router.delete('/:id/members/:memberId', removeWorkspaceMember);
 
-// History endpoints
+// Activity History endpoints
 router.get('/:id/history', getWorkspaceHistory);
 router.post('/:id/history', addWorkspaceHistoryLog);
 router.delete('/:id/history', clearWorkspaceHistory);
+
+// Code Execution History endpoints
+router.get('/:id/executions', getWorkspaceExecutions);
+router.delete('/:id/executions', clearWorkspaceExecutions);
 
 router.post('/join', joinWorkspaceByCode);
 router.delete('/:id', deleteWorkspace);
 
 module.exports = router;
+

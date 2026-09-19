@@ -5,8 +5,8 @@ const os = require('os');
 const { exec, spawn } = require('child_process');
 
 const PORT = 2000;
-const COMPILE_TIMEOUT_MS = 10000;
-const RUN_TIMEOUT_MS = 3000;
+const COMPILE_TIMEOUT_MS = 15000;
+const RUN_TIMEOUT_MS = 5000;
 
 // Host compiler versions
 const RUNTIMES = [
@@ -31,6 +31,27 @@ const tempDir = path.join(os.tmpdir(), 'codetrail-piston');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
+
+// Helper to spawn process safely on Windows with retry for temporary file handle locks
+const spawnWithRetry = (cmd, args, options, maxRetries = 5) => {
+  return new Promise((resolve, reject) => {
+    let attempt = 0;
+    const trySpawn = () => {
+      attempt++;
+      try {
+        const child = spawn(cmd, args, options);
+        return resolve(child);
+      } catch (err) {
+        if (attempt < maxRetries && (err.code === 'UNKNOWN' || (err.message && err.message.includes('spawn UNKNOWN')))) {
+          setTimeout(trySpawn, 40 * attempt);
+        } else {
+          return reject(err);
+        }
+      }
+    };
+    trySpawn();
+  });
+};
 
 const server = http.createServer(async (req, res) => {
   // CORS
@@ -71,7 +92,7 @@ const server = http.createServer(async (req, res) => {
           fs.writeFileSync(srcFile, fileContent, 'utf8');
 
           // Compile Stage
-          exec(`g++ "${srcFile}" -o "${binFile}"`, { timeout: COMPILE_TIMEOUT_MS, cwd: workDir }, (compileErr, compileStdout, compileStderr) => {
+          exec(`g++ "${srcFile}" -o "${binFile}"`, { timeout: COMPILE_TIMEOUT_MS, cwd: workDir }, async (compileErr, compileStdout, compileStderr) => {
             if (compileErr) {
               const isCompileTimeout = compileErr.killed;
               const compileOutput = (compileStderr || compileStdout || compileErr.message || '').trim();
@@ -90,11 +111,28 @@ const server = http.createServer(async (req, res) => {
               }));
             }
 
-            // Run Stage
-            const child = spawn(binFile, [], { cwd: workDir, timeout: RUN_TIMEOUT_MS });
+            // Run Stage with retry for Windows filesystem file locks
+            let child;
             let runStdout = '';
             let runStderr = '';
             let timedOut = false;
+
+            try {
+              child = await spawnWithRetry(binFile, [], { cwd: workDir });
+            } catch (spawnErr) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                language: 'c++',
+                version: '6.3.0',
+                run: {
+                  stdout: '',
+                  stderr: spawnErr.message,
+                  output: `[Spawn Error]: ${spawnErr.message}`,
+                  code: 1,
+                  signal: null
+                }
+              }));
+            }
 
             const timer = setTimeout(() => {
               timedOut = true;
@@ -102,8 +140,10 @@ const server = http.createServer(async (req, res) => {
             }, RUN_TIMEOUT_MS);
 
             if (stdin) {
-              child.stdin.write(stdin);
-              child.stdin.end();
+              try {
+                child.stdin.write(stdin);
+                child.stdin.end();
+              } catch (stdinErr) {}
             }
 
             child.stdout.on('data', d => { runStdout += d.toString(); });
@@ -158,10 +198,27 @@ const server = http.createServer(async (req, res) => {
           const srcFile = path.join(workDir, 'main.py');
           fs.writeFileSync(srcFile, fileContent, 'utf8');
 
-          const child = spawn('python', ['-u', srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS });
+          let child;
           let runStdout = '';
           let runStderr = '';
           let timedOut = false;
+
+          try {
+            child = spawn('python', ['-u', srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS, windowsHide: true });
+          } catch (spawnErr) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              language: 'python',
+              version: '3.13.14',
+              run: {
+                stdout: '',
+                stderr: spawnErr.message,
+                output: spawnErr.message,
+                code: 1,
+                signal: null
+              }
+            }));
+          }
 
           const timer = setTimeout(() => {
             timedOut = true;
@@ -169,8 +226,10 @@ const server = http.createServer(async (req, res) => {
           }, RUN_TIMEOUT_MS);
 
           if (stdin) {
-            child.stdin.write(stdin);
-            child.stdin.end();
+            try {
+              child.stdin.write(stdin);
+              child.stdin.end();
+            } catch (stdinErr) {}
           }
 
           child.stdout.on('data', d => { runStdout += d.toString(); });
@@ -216,10 +275,27 @@ const server = http.createServer(async (req, res) => {
           const srcFile = path.join(workDir, 'main.js');
           fs.writeFileSync(srcFile, fileContent, 'utf8');
 
-          const child = spawn('node', [srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS });
+          let child;
           let runStdout = '';
           let runStderr = '';
           let timedOut = false;
+
+          try {
+            child = spawn('node', [srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS, windowsHide: true });
+          } catch (spawnErr) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              language: 'javascript',
+              version: '24.14.1',
+              run: {
+                stdout: '',
+                stderr: spawnErr.message,
+                output: spawnErr.message,
+                code: 1,
+                signal: null
+              }
+            }));
+          }
 
           const timer = setTimeout(() => {
             timedOut = true;
@@ -227,8 +303,10 @@ const server = http.createServer(async (req, res) => {
           }, RUN_TIMEOUT_MS);
 
           if (stdin) {
-            child.stdin.write(stdin);
-            child.stdin.end();
+            try {
+              child.stdin.write(stdin);
+              child.stdin.end();
+            } catch (stdinErr) {}
           }
 
           child.stdout.on('data', d => { runStdout += d.toString(); });
@@ -280,6 +358,14 @@ const server = http.createServer(async (req, res) => {
 
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Not Found' }));
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`Local Piston API Server v2 already running on http://localhost:${PORT}`);
+  } else {
+    console.error('Local Piston API Server error:', err.message);
+  }
 });
 
 server.listen(PORT, () => {

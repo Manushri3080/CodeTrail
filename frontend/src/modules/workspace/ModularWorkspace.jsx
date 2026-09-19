@@ -37,7 +37,8 @@ import {
   Terminal,
   Loader2,
   Trash2,
-  Edit2
+  Edit2,
+  History
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
@@ -1430,12 +1431,38 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     return visibleList;
   };
 
-  // Live Code Execution State
+  // Live Code Execution State & Custom Input / Execution History (CT-Task)
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStatus, setExecutionStatus] = useState('idle'); // 'idle' | 'running' | 'success' | 'error' | 'compile_error' | 'timeout'
   const [executionResult, setExecutionResult] = useState(null);
   const [isOutputPanelOpen, setIsOutputPanelOpen] = useState(false);
   const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
+
+  // Custom Input (stdin) & Output Console Tabbed Navigation State
+  const [customInput, setCustomInput] = useState('');
+  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history'
+  const [executionHistoryList, setExecutionHistoryList] = useState([]);
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
+  // Fetch Workspace Execution History on Load or Workspace ID Change
+  useEffect(() => {
+    if (!wsId || wsId === 'demo-workspace') return;
+    let isMounted = true;
+    const fetchExecutions = async () => {
+      try {
+        const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}/executions`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (isMounted && Array.isArray(res.data?.executions)) {
+          setExecutionHistoryList(res.data.executions);
+        }
+      } catch (err) {
+        console.warn('Workspace execution history fetch notice:', err.message);
+      }
+    };
+    fetchExecutions();
+    return () => { isMounted = false; };
+  }, [wsId, token]);
 
   const handleRunActiveCode = async () => {
     if (!activeFile || isExecuting) return;
@@ -1459,6 +1486,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setExecutionStatus('running');
     setIsOutputPanelOpen(true);
     setIsOutputPanelMinimized(false);
+    setOutputTab('output');
     setExecutionResult({
       stdout: '',
       stderr: '',
@@ -1467,14 +1495,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       executionTimeMs: null,
       filename: activeFile,
       language,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      stdin: customInput
     });
 
     try {
       const response = await axios.post('http://localhost:5000/api/execute', {
         language,
         code: codeToRun,
-        filename: activeFile
+        filename: activeFile,
+        stdin: customInput,
+        workspaceId: wsId !== 'demo-workspace' ? wsId : null
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
 
       const data = response.data;
@@ -1485,7 +1518,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       const compileOutput = data.compileOutput || '';
 
       setExecutionStatus(status);
-      setExecutionResult({
+      const resObj = {
         stdout,
         stderr,
         compileOutput,
@@ -1494,8 +1527,27 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         filename: activeFile,
         language,
         timestamp: data.timestamp || new Date().toISOString(),
-        isTimeout: data.isTimeout || false
-      });
+        isTimeout: data.isTimeout || false,
+        stdin: customInput
+      };
+      setExecutionResult(resObj);
+
+      // Record in local Execution History list
+      const newHistoryLog = {
+        _id: data.executionId || `exec-${Date.now()}`,
+        filename: activeFile,
+        language,
+        code: codeToRun,
+        stdin: customInput,
+        stdout,
+        stderr,
+        compileOutput,
+        status,
+        exitCode,
+        executionTimeMs: data.executionTimeMs ?? null,
+        timestamp: data.timestamp || new Date().toISOString()
+      };
+      setExecutionHistoryList(prev => [newHistoryLog, ...prev]);
 
       if (status === 'success') {
         const preview = stdout ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? '…' : ''}` : '';
@@ -1537,8 +1589,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         filename: activeFile,
         language,
         timestamp: new Date().toISOString(),
-        isSystemError: true
+        isSystemError: true,
+        stdin: customInput
       });
+
+      const errHistoryLog = {
+        _id: `exec-err-${Date.now()}`,
+        filename: activeFile,
+        language,
+        code: codeToRun,
+        stdin: customInput,
+        stdout: '',
+        stderr: errMsg,
+        compileOutput: '',
+        status: 'error',
+        exitCode: 1,
+        executionTimeMs: null,
+        timestamp: new Date().toISOString()
+      };
+      setExecutionHistoryList(prev => [errHistoryLog, ...prev]);
 
       showToast(`✗ ${errMsg}`, 'error', 7000);
       recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
@@ -3412,27 +3481,70 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               />
             </div>
 
-            {/* Integrated Execution Output Console Panel */}
+            {/* Integrated Execution Output & Custom Input Console Panel */}
             {isOutputPanelOpen && (
-              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-9' : 'h-52 md:h-64'}`}>
-                {/* Output Panel Header */}
+              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-9' : 'h-56 md:h-72'}`}>
+                {/* Output Panel Header & Tabs */}
                 <div className="h-9 bg-[#12131F] border-b border-white/10 px-4 flex items-center justify-between select-none shrink-0">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-gray-300 shrink-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {/* Console Tab Buttons */}
+                    <button
+                      type="button"
+                      onClick={() => setOutputTab('output')}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
+                        outputTab === 'output' 
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                    >
                       <Terminal size={13} className="text-purple-400" />
                       <span>Output</span>
-                    </div>
+                    </button>
 
-                    {/* Execution Status Badge */}
+                    <button
+                      type="button"
+                      onClick={() => setOutputTab('input')}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
+                        outputTab === 'input' 
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <FileText size={13} className="text-cyan-400" />
+                      <span>Input (stdin)</span>
+                      {customInput.trim() ? (
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" title="Custom input active" />
+                      ) : null}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setOutputTab('history')}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
+                        outputTab === 'history' 
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <History size={13} className="text-indigo-400" />
+                      <span>Execution History</span>
+                      {executionHistoryList.length > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
+                          {executionHistoryList.length}
+                        </span>
+                      )}
+                    </button>
+
+                    {/* Active Execution Status Badge */}
                     {executionStatus === 'running' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-mono font-semibold animate-pulse shrink-0">
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-mono font-semibold animate-pulse shrink-0 ml-2">
                         <Loader2 size={11} className="animate-spin text-blue-400" />
                         <span>Executing...</span>
                       </div>
                     )}
 
-                    {executionStatus === 'success' && executionResult && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-semibold shrink-0">
+                    {executionStatus === 'success' && executionResult && outputTab === 'output' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
                         <CheckCircle2 size={11} className="text-emerald-400" />
                         <span>Success (Exit 0)</span>
                         {executionResult.executionTimeMs !== null && (
@@ -3441,43 +3553,58 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </div>
                     )}
 
-                    {executionStatus === 'error' && executionResult && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-mono font-semibold shrink-0">
+                    {executionStatus === 'error' && executionResult && outputTab === 'output' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
                         <AlertTriangle size={11} className="text-red-400" />
                         <span>Runtime Error (Exit {executionResult.exitCode ?? 1})</span>
                       </div>
                     )}
 
-                    {executionStatus === 'compile_error' && executionResult && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0">
+                    {executionStatus === 'compile_error' && executionResult && outputTab === 'output' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
                         <AlertTriangle size={11} className="text-amber-400" />
                         <span>Compilation Error</span>
-                      </div>
-                    )}
-
-                    {executionStatus === 'timeout' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0">
-                        <Clock size={11} className="text-amber-400" />
-                        <span>Execution Timed Out</span>
                       </div>
                     )}
                   </div>
 
                   {/* Right Header Action Controls */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setExecutionResult(null)}
-                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
-                      title="Clear Output"
-                    >
-                      <Trash2 size={13} />
-                    </button>
+                    {outputTab === 'output' && (
+                      <button
+                        type="button"
+                        onClick={() => setExecutionResult(null)}
+                        className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Clear Output Console"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                    {outputTab === 'history' && executionHistoryList.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setExecutionHistoryList([]);
+                          if (wsId && wsId !== 'demo-workspace') {
+                            try {
+                              await axios.delete(`http://localhost:5000/api/workspaces/${wsId}/executions`, {
+                                headers: token ? { Authorization: `Bearer ${token}` } : {}
+                              });
+                            } catch (e) {}
+                          }
+                          showToast('🗑️ Execution history cleared', 'info');
+                        }}
+                        className="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                        title="Clear Execution History"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => setIsOutputPanelMinimized(prev => !prev)}
                       className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
-                      title={isOutputPanelMinimized ? "Expand Output Panel" : "Minimize Output Panel"}
+                      title={isOutputPanelMinimized ? "Expand Panel" : "Minimize Panel"}
                     >
                       {isOutputPanelMinimized ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                     </button>
@@ -3485,93 +3612,325 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => setIsOutputPanelOpen(false)}
                       className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
-                      title="Close Output Panel"
+                      title="Close Panel"
                     >
                       <X size={13} />
                     </button>
                   </div>
                 </div>
 
-                {/* Output Panel Body */}
+                {/* Output Panel Body Tabs */}
                 {!isOutputPanelMinimized && (
-                  <div className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed select-text space-y-2">
-                    {executionStatus === 'running' && !executionResult?.stdout && !executionResult?.stderr && (
-                      <div className="flex items-center gap-2 text-gray-400 py-1">
-                        <Loader2 size={13} className="animate-spin text-blue-400" />
-                        <span>Running {activeFile} ({getLanguageInfo(activeFile).name})...</span>
+                  <div className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed select-text">
+                    
+                    {/* TAB 1: EXECUTION OUTPUT CONSOLE */}
+                    {outputTab === 'output' && (
+                      <div className="space-y-2">
+                        {executionStatus === 'running' && !executionResult?.stdout && !executionResult?.stderr && (
+                          <div className="flex items-center gap-2 text-gray-400 py-1">
+                            <Loader2 size={13} className="animate-spin text-blue-400" />
+                            <span>Running {activeFile} ({getLanguageInfo(activeFile).name})...</span>
+                          </div>
+                        )}
+
+                        {executionResult && (
+                          <>
+                            {/* Metadata Header Line */}
+                            <div className="text-gray-500 text-[11px] pb-1 border-b border-white/5 flex items-center justify-between flex-wrap gap-2">
+                              <span>[Running {executionResult.filename} • {getLanguageInfo(executionResult.filename).name}]</span>
+                              <div className="flex items-center gap-2">
+                                {executionResult.stdin ? (
+                                  <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold">
+                                    stdin attached ({executionResult.stdin.split('\n').length} line{executionResult.stdin.split('\n').length > 1 ? 's' : ''})
+                                  </span>
+                                ) : null}
+                                <span>{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
+                              </div>
+                            </div>
+
+                            {/* Compiler Diagnostic Output */}
+                            {executionResult.compileOutput && (
+                              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
+                                <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
+                                  <AlertTriangle size={12} />
+                                  <span>Compiler Error:</span>
+                                </div>
+                                {executionResult.compileOutput}
+                              </div>
+                            )}
+
+                            {/* Standard Output (stdout) */}
+                            {executionResult.stdout && (
+                              <div className="text-gray-100 whitespace-pre-wrap font-mono">
+                                {executionResult.stdout}
+                              </div>
+                            )}
+
+                            {/* Standard Error (stderr) */}
+                            {executionResult.stderr && (
+                              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono text-xs">
+                                <div className="font-bold text-red-200 mb-1 flex items-center gap-1.5">
+                                  <AlertTriangle size={12} />
+                                  <span>Runtime Error / Stderr:</span>
+                                </div>
+                                {executionResult.stderr}
+                              </div>
+                            )}
+
+                            {/* Empty Output Scenario on Success */}
+                            {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
+                              <div className="text-gray-500 italic py-1">
+                                [Process exited with code 0 — no standard output produced]
+                              </div>
+                            )}
+
+                            {/* Timeout Scenario */}
+                            {executionStatus === 'timeout' && (
+                              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
+                                <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
+                                  <Clock size={12} />
+                                  <span>Execution Timeout</span>
+                                </div>
+                                The program execution timed out before completion.
+                              </div>
+                            )}
+
+                            {/* Process Completion Footer */}
+                            <div className="pt-2 text-[11px] text-gray-500 border-t border-white/5 flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span>Process finished with exit code <strong className={executionResult.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}>{executionResult.exitCode ?? 0}</strong></span>
+                                {executionResult.executionTimeMs !== null && (
+                                  <span>in {executionResult.executionTimeMs}ms</span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setOutputTab('input')}
+                                className="text-cyan-400 hover:text-cyan-300 text-[11px] flex items-center gap-1 cursor-pointer font-bold"
+                              >
+                                <FileText size={12} />
+                                <span>{customInput.trim() ? 'Edit Custom Input' : '+ Add Custom Input (stdin)'}</span>
+                              </button>
+                            </div>
+                          </>
+                        )}
+
+                        {!executionResult && executionStatus === 'idle' && (
+                          <div className="text-gray-500 italic py-2 flex items-center justify-between">
+                            <span>Click "Run Code" in the header to execute the active file. Output and errors will appear here.</span>
+                            <button
+                              type="button"
+                              onClick={() => setOutputTab('input')}
+                              className="text-cyan-400 hover:underline font-normal cursor-pointer"
+                            >
+                              Configure Custom Input $\rightarrow$
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {executionResult && (
-                      <>
-                        {/* Metadata Header Line */}
-                        <div className="text-gray-500 text-[11px] pb-1 border-b border-white/5 flex items-center justify-between">
-                          <span>[Running {executionResult.filename} • {getLanguageInfo(executionResult.filename).name}]</span>
-                          <span>{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
+                    {/* TAB 2: CUSTOM INPUT (STDIN) CONFIGURATION */}
+                    {outputTab === 'input' && (
+                      <div className="h-full flex flex-col justify-between space-y-3">
+                        <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                          <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
+                            <FileText size={14} className="text-cyan-400" />
+                            <span>Standard Input (stdin)</span>
+                            <span className="text-gray-400 text-[11px] font-normal font-mono">
+                              (Pass custom inputs for Python `input()`, C++ `cin`, C `scanf`, Java `Scanner`, etc.)
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {customInput && (
+                              <button
+                                type="button"
+                                onClick={() => setCustomInput('')}
+                                className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[11px] font-mono transition-all cursor-pointer"
+                              >
+                                Clear Input
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setCustomInput('42\nHello World\n10 20 30')}
+                              className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-mono transition-all cursor-pointer"
+                            >
+                              Sample Input
+                            </button>
+                          </div>
                         </div>
 
-                        {/* Compiler Diagnostic Output */}
-                        {executionResult.compileOutput && (
-                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
-                            <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
-                              <AlertTriangle size={12} />
-                              <span>Compiler Error:</span>
-                            </div>
-                            {executionResult.compileOutput}
-                          </div>
-                        )}
+                        <textarea
+                          value={customInput}
+                          onChange={(e) => setCustomInput(e.target.value)}
+                          placeholder="Type single-line or multiline standard input (stdin) here...&#10;Example:&#10;10&#10;20&#10;Alice"
+                          className="w-full h-32 md:h-36 bg-[#07080E] border border-cyan-500/30 focus:border-cyan-400 rounded-lg p-2.5 text-xs text-cyan-100 placeholder-gray-600 font-mono outline-none resize-y leading-relaxed focus:ring-1 focus:ring-cyan-400/40"
+                        />
 
-                        {/* Standard Output (stdout) */}
-                        {executionResult.stdout && (
-                          <div className="text-gray-100 whitespace-pre-wrap font-mono">
-                            {executionResult.stdout}
-                          </div>
-                        )}
-
-                        {/* Standard Error (stderr) */}
-                        {executionResult.stderr && (
-                          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono text-xs">
-                            <div className="font-bold text-red-200 mb-1 flex items-center gap-1.5">
-                              <AlertTriangle size={12} />
-                              <span>Runtime Error / Stderr:</span>
-                            </div>
-                            {executionResult.stderr}
-                          </div>
-                        )}
-
-                        {/* Empty Output Scenario on Success */}
-                        {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
-                          <div className="text-gray-500 italic py-1">
-                            [Process exited with code 0 — no standard output produced]
-                          </div>
-                        )}
-
-                        {/* Timeout Scenario */}
-                        {executionStatus === 'timeout' && (
-                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
-                            <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
-                              <Clock size={12} />
-                              <span>Execution Timeout</span>
-                            </div>
-                            The program execution timed out before completion.
-                          </div>
-                        )}
-
-                        {/* Process Completion Footer */}
-                        <div className="pt-2 text-[11px] text-gray-500 border-t border-white/5 flex items-center gap-2">
-                          <span>Process finished with exit code <strong className={executionResult.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}>{executionResult.exitCode ?? 0}</strong></span>
-                          {executionResult.executionTimeMs !== null && (
-                            <span>in {executionResult.executionTimeMs}ms</span>
-                          )}
+                        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[11px] text-gray-400">
+                          <span>
+                            {customInput ? (
+                              <span className="text-emerald-400 font-bold">
+                                ✓ Custom input is attached ({customInput.split('\n').length} line{customInput.split('\n').length > 1 ? 's' : ''}, {customInput.length} chars)
+                              </span>
+                            ) : (
+                              <span>No stdin specified (execution runs with empty input)</span>
+                            )}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleRunActiveCode}
+                            disabled={isExecuting || isViewer}
+                            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                          >
+                            {isExecuting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                            <span>Run Code with Input</span>
+                          </button>
                         </div>
-                      </>
-                    )}
-
-                    {!executionResult && executionStatus === 'idle' && (
-                      <div className="text-gray-500 italic py-2">
-                        Click "Run Code" in the header to execute the active file. Output and errors will appear here.
                       </div>
                     )}
+
+                    {/* TAB 3: EXECUTION HISTORY LOGS */}
+                    {outputTab === 'history' && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                          <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
+                            <History size={14} className="text-indigo-400" />
+                            <span>Execution History Log</span>
+                            <span className="text-gray-400 text-[11px] font-normal font-mono">
+                              ({executionHistoryList.length} past execution{executionHistoryList.length === 1 ? '' : 's'} recorded)
+                            </span>
+                          </div>
+                        </div>
+
+                        {executionHistoryList.length === 0 ? (
+                          <div className="text-gray-500 italic py-6 text-center">
+                            No past execution records found for this session. Run code to build history!
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-48 md:max-h-56 overflow-y-auto pr-1">
+                            {executionHistoryList.map((item, idx) => {
+                              const isSelected = selectedHistoryItem?._id === item._id;
+                              const isSuccess = item.status === 'success';
+                              const isCompileErr = item.status === 'compile_error';
+                              const isTimeout = item.status === 'timeout';
+
+                              const badgeColor = isSuccess 
+                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                : isCompileErr
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : isTimeout
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                : 'bg-red-500/20 text-red-300 border-red-500/40';
+
+                              return (
+                                <div 
+                                  key={item._id || idx}
+                                  className={`p-2.5 rounded-lg border transition-all ${
+                                    isSelected 
+                                      ? 'bg-purple-600/20 border-purple-500/60 ring-1 ring-purple-500/40' 
+                                      : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                                        {isSuccess ? 'Exit 0' : isCompileErr ? 'Compile Error' : isTimeout ? 'Timeout' : `Exit ${item.exitCode ?? 1}`}
+                                      </span>
+                                      <span className="font-bold text-gray-200 truncate">{item.filename}</span>
+                                      <span className="text-[10px] text-gray-400 font-mono">({item.language})</span>
+                                      {item.stdin ? (
+                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                          +stdin
+                                        </span>
+                                      ) : null}
+                                    </div>
+
+                                    <div className="flex items-center gap-3 shrink-0 text-[11px] text-gray-400">
+                                      {item.executionTimeMs !== null && item.executionTimeMs !== undefined && (
+                                        <span>{item.executionTimeMs}ms</span>
+                                      )}
+                                      <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedHistoryItem(isSelected ? null : item)}
+                                        className="text-purple-400 hover:text-purple-300 font-bold underline cursor-pointer"
+                                      >
+                                        {isSelected ? 'Hide Details' : 'Details'}
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Detailed View Panel when Selected */}
+                                  {isSelected && (
+                                    <div className="mt-2 pt-2 border-t border-white/10 text-[11px] space-y-2 animate-fadeIn bg-black/40 p-2.5 rounded-md">
+                                      {item.stdin && (
+                                        <div>
+                                          <div className="text-cyan-400 font-bold mb-0.5 flex items-center justify-between">
+                                            <span>Standard Input (stdin):</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setCustomInput(item.stdin);
+                                                showToast('📋 Loaded stdin into input editor', 'info');
+                                              }}
+                                              className="text-[10px] text-cyan-300 underline hover:text-white cursor-pointer"
+                                            >
+                                              Use This Input
+                                            </button>
+                                          </div>
+                                          <pre className="bg-[#05060A] p-2 rounded text-cyan-100 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                            {item.stdin}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {item.stdout && (
+                                        <div>
+                                          <div className="text-emerald-400 font-bold mb-0.5">Standard Output (stdout):</div>
+                                          <pre className="bg-[#05060A] p-2 rounded text-gray-100 whitespace-pre-wrap font-mono max-h-28 overflow-y-auto">
+                                            {item.stdout}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {item.compileOutput && (
+                                        <div>
+                                          <div className="text-amber-400 font-bold mb-0.5">Compiler Output:</div>
+                                          <pre className="bg-[#05060A] p-2 rounded text-amber-200 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                            {item.compileOutput}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {item.stderr && (
+                                        <div>
+                                          <div className="text-red-400 font-bold mb-0.5">Standard Error (stderr):</div>
+                                          <pre className="bg-[#05060A] p-2 rounded text-red-200 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                            {item.stderr}
+                                          </pre>
+                                        </div>
+                                      )}
+
+                                      {item.code && (
+                                        <div>
+                                          <div className="text-purple-300 font-bold mb-0.5">Code Snapshot:</div>
+                                          <pre className="bg-[#05060A] p-2 rounded text-gray-300 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                            {item.code}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   </div>
                 )}
               </div>

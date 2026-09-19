@@ -47,4 +47,41 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+/**
+ * Optional Authentication Middleware:
+ * Attaches req.user if valid token present, otherwise continues silently without throwing 401 error.
+ */
+const optionalAuthMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization || req.header('Authorization');
+    let token = null;
+
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else if (req.header('x-auth-token')) {
+      token = req.header('x-auth-token');
+    }
+
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, JWT_SECRET);
+        if (decoded && (decoded.id || decoded._id)) {
+          const userId = decoded.id || decoded._id;
+          const user = await User.findById(userId).select('-password');
+          if (user) {
+            req.user = user;
+          }
+        }
+      } catch (e) {
+        // Token invalid/expired - continue as guest
+      }
+    }
+    next();
+  } catch (err) {
+    next();
+  }
+};
+
 module.exports = authMiddleware;
+module.exports.optionalAuth = optionalAuthMiddleware;
+
