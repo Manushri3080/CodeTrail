@@ -1432,6 +1432,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Live Code Execution State
   const [isExecuting, setIsExecuting] = useState(false);
+  const [executionStatus, setExecutionStatus] = useState('idle'); // 'idle' | 'running' | 'success' | 'error' | 'compile_error' | 'timeout'
+  const [executionResult, setExecutionResult] = useState(null);
+  const [isOutputPanelOpen, setIsOutputPanelOpen] = useState(false);
+  const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
 
   const handleRunActiveCode = async () => {
     if (!activeFile || isExecuting) return;
@@ -1443,19 +1447,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       return;
     }
 
+    const codeToRun = getActiveFileContent();
+    const language = getMonacoLanguage(activeFile);
+
+    if (!codeToRun || codeToRun.trim() === '') {
+      showToast(`📄 ${activeFile} is empty — nothing to run.`, 'warning');
+      return;
+    }
+
     setIsExecuting(true);
-    showToast(`▶ Running ${activeFile}...`, 'info', 20000); // long-lived until resolved
+    setExecutionStatus('running');
+    setIsOutputPanelOpen(true);
+    setIsOutputPanelMinimized(false);
+    setExecutionResult({
+      stdout: '',
+      stderr: '',
+      compileOutput: '',
+      exitCode: null,
+      executionTimeMs: null,
+      filename: activeFile,
+      language,
+      timestamp: new Date().toISOString()
+    });
 
     try {
-      const codeToRun = getActiveFileContent();
-      const language = getMonacoLanguage(activeFile);
-
-      if (!codeToRun || codeToRun.trim() === '') {
-        setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
-        showToast(`📄 ${activeFile} is empty — nothing to run.`, 'warning');
-        return;
-      }
-
       const response = await axios.post('http://localhost:5000/api/execute', {
         language,
         code: codeToRun,
@@ -1463,29 +1478,44 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
 
       const data = response.data;
+      const status = data.status || (data.exitCode === 0 ? 'success' : (data.isCompileError ? 'compile_error' : 'error'));
       const exitCode = data.exitCode ?? 0;
-      const stdout = (data.stdout || '').trim();
-      const stderr = (data.stderr || '').trim();
+      const stdout = data.stdout || '';
+      const stderr = data.stderr || '';
+      const compileOutput = data.compileOutput || '';
 
-      setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
+      setExecutionStatus(status);
+      setExecutionResult({
+        stdout,
+        stderr,
+        compileOutput,
+        exitCode,
+        executionTimeMs: data.executionTimeMs ?? null,
+        filename: activeFile,
+        language,
+        timestamp: data.timestamp || new Date().toISOString(),
+        isTimeout: data.isTimeout || false
+      });
 
-      if (exitCode === 0) {
+      if (status === 'success') {
         const preview = stdout ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? '…' : ''}` : '';
-        showToast(`✅ ${activeFile} ran successfully (exit 0)${preview}`, 'success', 5000);
+        showToast(`✅ ${activeFile} ran successfully (exit 0)${preview}`, 'success', 4000);
+      } else if (status === 'compile_error') {
+        showToast(`⚠️ ${activeFile} compilation failed`, 'warning', 6000);
+      } else if (status === 'timeout') {
+        showToast(`⏱️ ${activeFile} execution timed out`, 'warning', 6000);
       } else {
         const errPreview = stderr
           ? stderr.split('\n')[0].substring(0, 100)
           : (stdout ? stdout.split('\n')[0].substring(0, 100) : `Exit code ${exitCode}`);
-        showToast(`⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`, 'error', 7000);
+        showToast(`⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`, 'error', 6000);
       }
 
-      recordHistoryLog('execution', `Code Executed: ${activeFile}`, `Ran ${activeFile} (${language}) — exit code ${exitCode}.`);
+      recordHistoryLog('execution', `Code Executed: ${activeFile}`, `Ran ${activeFile} (${language}) — status: ${status}, exit code ${exitCode}.`);
 
     } catch (err) {
       console.error('Execution Failed:', err);
-      setToasts(prev => prev.filter(t => !t.message.startsWith('▶ Running')));
 
-      // Build a clear, actionable error message
       let errMsg = '';
       if (!err.response) {
         errMsg = 'Cannot reach execution server. Make sure the backend is running on port 5000.';
@@ -1496,6 +1526,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       } else {
         errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown execution error.';
       }
+
+      setExecutionStatus('error');
+      setExecutionResult({
+        stdout: '',
+        stderr: errMsg,
+        compileOutput: '',
+        exitCode: 1,
+        executionTimeMs: null,
+        filename: activeFile,
+        language,
+        timestamp: new Date().toISOString(),
+        isSystemError: true
+      });
 
       showToast(`✗ ${errMsg}`, 'error', 7000);
       recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
@@ -3369,6 +3412,171 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               />
             </div>
 
+            {/* Integrated Execution Output Console Panel */}
+            {isOutputPanelOpen && (
+              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-9' : 'h-52 md:h-64'}`}>
+                {/* Output Panel Header */}
+                <div className="h-9 bg-[#12131F] border-b border-white/10 px-4 flex items-center justify-between select-none shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-gray-300 shrink-0">
+                      <Terminal size={13} className="text-purple-400" />
+                      <span>Output</span>
+                    </div>
+
+                    {/* Execution Status Badge */}
+                    {executionStatus === 'running' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-mono font-semibold animate-pulse shrink-0">
+                        <Loader2 size={11} className="animate-spin text-blue-400" />
+                        <span>Executing...</span>
+                      </div>
+                    )}
+
+                    {executionStatus === 'success' && executionResult && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-semibold shrink-0">
+                        <CheckCircle2 size={11} className="text-emerald-400" />
+                        <span>Success (Exit 0)</span>
+                        {executionResult.executionTimeMs !== null && (
+                          <span className="text-[10px] text-emerald-400/80">• {executionResult.executionTimeMs}ms</span>
+                        )}
+                      </div>
+                    )}
+
+                    {executionStatus === 'error' && executionResult && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-mono font-semibold shrink-0">
+                        <AlertTriangle size={11} className="text-red-400" />
+                        <span>Runtime Error (Exit {executionResult.exitCode ?? 1})</span>
+                      </div>
+                    )}
+
+                    {executionStatus === 'compile_error' && executionResult && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0">
+                        <AlertTriangle size={11} className="text-amber-400" />
+                        <span>Compilation Error</span>
+                      </div>
+                    )}
+
+                    {executionStatus === 'timeout' && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0">
+                        <Clock size={11} className="text-amber-400" />
+                        <span>Execution Timed Out</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right Header Action Controls */}
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setExecutionResult(null)}
+                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                      title="Clear Output"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsOutputPanelMinimized(prev => !prev)}
+                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                      title={isOutputPanelMinimized ? "Expand Output Panel" : "Minimize Output Panel"}
+                    >
+                      {isOutputPanelMinimized ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsOutputPanelOpen(false)}
+                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                      title="Close Output Panel"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Output Panel Body */}
+                {!isOutputPanelMinimized && (
+                  <div className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed select-text space-y-2">
+                    {executionStatus === 'running' && !executionResult?.stdout && !executionResult?.stderr && (
+                      <div className="flex items-center gap-2 text-gray-400 py-1">
+                        <Loader2 size={13} className="animate-spin text-blue-400" />
+                        <span>Running {activeFile} ({getLanguageInfo(activeFile).name})...</span>
+                      </div>
+                    )}
+
+                    {executionResult && (
+                      <>
+                        {/* Metadata Header Line */}
+                        <div className="text-gray-500 text-[11px] pb-1 border-b border-white/5 flex items-center justify-between">
+                          <span>[Running {executionResult.filename} • {getLanguageInfo(executionResult.filename).name}]</span>
+                          <span>{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
+                        </div>
+
+                        {/* Compiler Diagnostic Output */}
+                        {executionResult.compileOutput && (
+                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
+                            <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
+                              <AlertTriangle size={12} />
+                              <span>Compiler Error:</span>
+                            </div>
+                            {executionResult.compileOutput}
+                          </div>
+                        )}
+
+                        {/* Standard Output (stdout) */}
+                        {executionResult.stdout && (
+                          <div className="text-gray-100 whitespace-pre-wrap font-mono">
+                            {executionResult.stdout}
+                          </div>
+                        )}
+
+                        {/* Standard Error (stderr) */}
+                        {executionResult.stderr && (
+                          <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono text-xs">
+                            <div className="font-bold text-red-200 mb-1 flex items-center gap-1.5">
+                              <AlertTriangle size={12} />
+                              <span>Runtime Error / Stderr:</span>
+                            </div>
+                            {executionResult.stderr}
+                          </div>
+                        )}
+
+                        {/* Empty Output Scenario on Success */}
+                        {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
+                          <div className="text-gray-500 italic py-1">
+                            [Process exited with code 0 — no standard output produced]
+                          </div>
+                        )}
+
+                        {/* Timeout Scenario */}
+                        {executionStatus === 'timeout' && (
+                          <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
+                            <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
+                              <Clock size={12} />
+                              <span>Execution Timeout</span>
+                            </div>
+                            The program execution timed out before completion.
+                          </div>
+                        )}
+
+                        {/* Process Completion Footer */}
+                        <div className="pt-2 text-[11px] text-gray-500 border-t border-white/5 flex items-center gap-2">
+                          <span>Process finished with exit code <strong className={executionResult.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}>{executionResult.exitCode ?? 0}</strong></span>
+                          {executionResult.executionTimeMs !== null && (
+                            <span>in {executionResult.executionTimeMs}ms</span>
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {!executionResult && executionStatus === 'idle' && (
+                      <div className="text-gray-500 italic py-2">
+                        Click "Run Code" in the header to execute the active file. Output and errors will appear here.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* IDE Bottom Status Bar */}
             <div 
               className="border-t border-white/15 flex items-center justify-between text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 flex-wrap"
@@ -3390,6 +3598,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               </div>
 
               <div className="flex items-center gap-6">
+                {/* Quick Toggle for Execution Output Panel */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOutputPanelOpen(prev => !prev);
+                    setIsOutputPanelMinimized(false);
+                  }}
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${isOutputPanelOpen ? 'text-purple-300 font-semibold' : 'text-gray-400 hover:text-purple-300'}`}
+                  title="Toggle Output Panel"
+                >
+                  <Terminal size={14} className="text-purple-400 shrink-0" />
+                  <span>Output</span>
+                </button>
+
                 <div className="flex items-center gap-2">
                   <Zap size={14} className="text-yellow-400 shrink-0" />
                   <span>Sync Latency: <strong className="text-gray-200">12ms</strong></span>

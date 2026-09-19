@@ -27,6 +27,7 @@
 
 - [About](#-about)
 - [Features](#-features)
+- [Execution Output & Code Runner](#-execution-output--code-runner)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
 - [Getting Started](#-getting-started)
@@ -61,6 +62,82 @@ Whether you're pair-programming, running code snippets, or tracking your team's 
 | 📊 **Contribution Dossier** | Telemetry & contribution analytics for team members |
 | 💻 **Terminal Modal** | Interactive in-app terminal powered by a custom kernel |
 | 🌐 **Landing Page** | Public-facing hero section, module highlights, and feature grid |
+
+---
+
+## ⚡ Execution Output & Code Runner
+
+CodeTrail includes an integrated program execution and output display system within the collaborative workspace. Code is dispatched to an isolated execution sandbox, and stdout, stderr, compilation diagnostics, exit status, and execution duration are captured and displayed in real time.
+
+### 🔄 Execution Architecture Flow
+
+```text
+Run Code (Modular Workspace)
+        ↓
+Frontend HTTP POST /api/execute
+        ↓
+Backend executionController.js
+        ↓
+Local Piston Execution Service (http://localhost:2000/api/v2/execute)
+        ↓
+Execution Result (stdout, stderr, compileOutput, exitCode, status, duration)
+        ↓
+Workspace Output Console
+```
+
+### 📋 Verified Capabilities & Behavior
+
+- **1. Standard Output (`stdout`)**
+  - Standard program output is captured and displayed in the integrated Output Console.
+  - Multi-line outputs and formatting are preserved.
+  - Displayed in a clean monospace font for readability.
+
+- **2. Runtime Errors (`stderr`)**
+  - Runtime errors and unhandled exceptions are detected via the process exit code and stderr stream.
+  - Runtime errors and stack traces are visually separated from standard output and rendered in a dedicated container labeled **Runtime Error**.
+
+- **3. Compilation Errors**
+  - Compilation failures (for compiled languages such as C++) are evaluated separately from runtime errors via Piston's compile stage.
+  - Compiler diagnostics, including file and line-number references, are preserved and presented in a dedicated container labeled **Compilation Error**.
+
+- **4. Execution Lifecycle States**
+  - `idle` — Initial ready state before code execution.
+  - `running` — Active execution in progress with an animated loading spinner.
+  - `success` — Program executed successfully with exit code `0`.
+  - `error` — Execution failed with a non-zero exit code (runtime error).
+  - `compile_error` — Source code failed compilation.
+  - `timeout` — Execution exceeded the sandbox time limit, displayed as **Execution Timed Out**.
+
+- **5. Exit Code & Execution Duration**
+  - Surfaces the actual process exit code (`Exit 0`, `Exit 1`, etc.).
+  - Displays measured execution duration in milliseconds (e.g. `• 24ms`).
+
+- **6. Timeout Handling**
+  - Execution timeouts are detected and classified as `status: 'timeout'`.
+  - Displayed with an **Execution Timed Out** badge rather than a generic runtime error.
+
+- **7. Empty Output Handling**
+  - Successfully executed programs producing no output (e.g. variable assignments) show a success state (`Exit 0`) along with a clear notice: `[Process exited with code 0 — no standard output produced]`.
+
+- **8. Interactive Output Console**
+  - Automatically opens when code execution begins.
+  - Supports minimizing/expanding via the header toggle.
+  - Supports clearing logs via the clear button.
+  - Supports closing and reopening at any time via the **Output** toggle in the IDE bottom status bar.
+  - Cleanly separates standard output, runtime tracebacks, and compilation diagnostics.
+
+- **9. Local Piston Configuration**
+  - The backend connects to the execution engine via the environment variable:
+    ```env
+    PISTON_API_URL=http://localhost:2000/api/v2/execute
+    ```
+  - Execution configuration and credentials remain strictly on the backend.
+
+- **10. Key Implementation Files**
+  - `frontend/src/modules/workspace/ModularWorkspace.jsx` — Workspace execution handler, status lifecycle, and Output Console UI.
+  - `backend/controllers/executionController.js` — Execution controller, timeout detection, compile/runtime error parser.
+  - `backend/.env` — Piston API service URL configuration.
+  - `backend/utils/pistonServer.js` — Local Piston v2 API execution provider.
 
 ---
 
@@ -102,11 +179,13 @@ CodeTrail/
 │
 ├── backend/                          # Node.js + Express backend
 │   ├── controllers/
-│   │   └── authController.js         # Auth logic (register, login, OAuth, reset)
+│   │   ├── authController.js         # Auth logic (register, login, OAuth, reset)
+│   │   └── executionController.js    # Multi-language code execution handler
 │   ├── models/
 │   │   └── User.js                   # Mongoose User schema
 │   ├── utils/
-│   │   └── email.js                  # Nodemailer email utility
+│   │   ├── email.js                  # Nodemailer email utility
+│   │   └── pistonServer.js           # Local Piston execution service
 │   ├── .env.example                  # Environment variable template
 │   ├── index.js                      # App entry point
 │   └── package.json
@@ -129,7 +208,7 @@ CodeTrail/
 │   │   │   ├── home/
 │   │   │   │   └── HomePage.jsx      # Logged-in dashboard
 │   │   │   ├── workspace/
-│   │   │   │   └── ModularWorkspace.jsx  # Collaborative workspace
+│   │   │   │   └── ModularWorkspace.jsx  # Collaborative workspace & output console
 │   │   │   ├── execution/
 │   │   │   │   └── ExecutionEngine.jsx   # Code execution sandbox
 │   │   │   ├── telemetry/
@@ -203,6 +282,7 @@ MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.mp9rgf1.mongodb.net/cod
 JWT_SECRET=your_super_secret_jwt_key
 EMAIL_USER=your_email@gmail.com
 EMAIL_PASS=your_gmail_app_password
+PISTON_API_URL=http://localhost:2000/api/v2/execute
 ```
 
 > **Note:** For `EMAIL_PASS`, use a [Gmail App Password](https://support.google.com/accounts/answer/185833), not your regular Gmail password.
@@ -238,6 +318,7 @@ Base URL: `http://localhost:5000/api`
 | `POST` | `/auth/google` | Login / Register with Google OAuth |
 | `POST` | `/auth/forgot-password` | Send password reset email |
 | `POST` | `/auth/reset-password` | Reset password using token |
+| `POST` | `/execute` | Execute code in the isolated execution environment and return output, errors, execution status, exit code, and execution timing |
 
 ---
 
