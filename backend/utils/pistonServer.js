@@ -6,24 +6,30 @@ const { exec, spawn } = require('child_process');
 
 const PORT = 2000;
 const COMPILE_TIMEOUT_MS = 15000;
-const RUN_TIMEOUT_MS = 5000;
+const RUN_TIMEOUT_MS = 6000;
+const MAX_OUTPUT_BYTES = 128 * 1024; // 128 KB output limit
 
 // Host compiler versions
 const RUNTIMES = [
   {
     language: 'c++',
-    version: '6.3.0',
+    version: '14.2.0',
     aliases: ['cpp', 'g++', 'cxx', 'c']
   },
   {
     language: 'python',
-    version: '3.13.14',
+    version: '3.13.13',
     aliases: ['py', 'python3', 'py3']
   },
   {
     language: 'javascript',
-    version: '24.14.1',
+    version: '22.13.1',
     aliases: ['js', 'node', 'nodejs']
+  },
+  {
+    language: 'java',
+    version: '17.0.10',
+    aliases: ['java', 'openjdk']
   }
 ];
 
@@ -51,6 +57,14 @@ const spawnWithRetry = (cmd, args, options, maxRetries = 5) => {
     };
     trySpawn();
   });
+};
+
+const truncateOutput = (str) => {
+  if (!str) return '';
+  if (Buffer.byteLength(str, 'utf8') > MAX_OUTPUT_BYTES) {
+    return str.slice(0, 30000) + '\n... [Output truncated: exceeded output limit]';
+  }
+  return str;
 };
 
 const server = http.createServer(async (req, res) => {
@@ -86,23 +100,27 @@ const server = http.createServer(async (req, res) => {
         const workDir = path.join(tempDir, runId);
         fs.mkdirSync(workDir, { recursive: true });
 
-        if (lang === 'c++' || lang === 'cpp' || lang === 'c') {
-          const srcFile = path.join(workDir, 'main.cpp');
+        // C / C++
+        if (lang === 'c++' || lang === 'cpp' || lang === 'c' || lang === 'cxx' || lang === 'g++' || lang === 'gcc') {
+          const isC = lang === 'c' || lang === 'gcc';
+          const srcFile = path.join(workDir, isC ? 'main.c' : 'main.cpp');
           const binFile = path.join(workDir, 'main.exe');
           fs.writeFileSync(srcFile, fileContent, 'utf8');
 
+          const compilerCmd = isC ? `gcc "${srcFile}" -o "${binFile}"` : `g++ "${srcFile}" -o "${binFile}"`;
+
           // Compile Stage
-          exec(`g++ "${srcFile}" -o "${binFile}"`, { timeout: COMPILE_TIMEOUT_MS, cwd: workDir }, async (compileErr, compileStdout, compileStderr) => {
+          exec(compilerCmd, { timeout: COMPILE_TIMEOUT_MS, cwd: workDir }, async (compileErr, compileStdout, compileStderr) => {
             if (compileErr) {
               const isCompileTimeout = compileErr.killed;
-              const compileOutput = (compileStderr || compileStdout || compileErr.message || '').trim();
+              const compileOutput = truncateOutput((compileStderr || compileStdout || compileErr.message || '').trim());
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
-                language: 'c++',
-                version: '6.3.0',
+                language: isC ? 'c' : 'c++',
+                version: '14.2.0',
                 compile: {
-                  stdout: compileStdout || '',
-                  stderr: compileStderr || compileErr.message,
+                  stdout: truncateOutput(compileStdout || ''),
+                  stderr: truncateOutput(compileStderr || compileErr.message),
                   output: compileOutput,
                   code: isCompileTimeout ? 124 : (compileErr.code || 1),
                   signal: isCompileTimeout ? 'SIGKILL' : null,
@@ -122,12 +140,219 @@ const server = http.createServer(async (req, res) => {
             } catch (spawnErr) {
               res.writeHead(200, { 'Content-Type': 'application/json' });
               return res.end(JSON.stringify({
-                language: 'c++',
-                version: '6.3.0',
+                language: isC ? 'c' : 'c++',
+                version: '14.2.0',
                 run: {
                   stdout: '',
                   stderr: spawnErr.message,
                   output: `[Spawn Error]: ${spawnErr.message}`,
+                  code: 1,
+                  signal: null
+                }
+              }));
+            }
+
+            const timer = setTimeout(() => {
+              timedOut = true;
+              try { child.kill('SIGKILL'); } catch (e) {}
+            }, RUN_TIMEOUT_MS);
+
+            // Handle standard input (stdin) & always close stdin stream
+            if (stdin) {
+              try {
+                child.stdin.write(stdin);
+                child.stdin.end();
+              } catch (stdinErr) {}
+            } else {
+              try {
+                child.stdin.end();
+              } catch (e) {}
+            }
+
+            child.stdout.on('data', d => {
+              if (runStdout.length < MAX_OUTPUT_BYTES) {
+                runStdout += d.toString();
+              }
+            });
+            child.stderr.on('data', d => {
+              if (runStderr.length < MAX_OUTPUT_BYTES) {
+                runStderr += d.toString();
+              }
+            });
+
+            child.on('close', (code, signal) => {
+              clearTimeout(timer);
+              const output = truncateOutput((runStdout + runStderr).trim());
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                language: isC ? 'c' : 'c++',
+                version: '14.2.0',
+                compile: {
+                  stdout: compileStdout || '',
+                  stderr: compileStderr || '',
+                  output: (compileStdout + compileStderr).trim(),
+                  code: 0,
+                  signal: null
+                },
+                run: {
+                  stdout: truncateOutput(runStdout),
+                  stderr: truncateOutput(runStderr),
+                  output,
+                  code: timedOut ? 124 : (code ?? 0),
+                  signal: timedOut ? 'SIGKILL' : (signal || null),
+                  status: timedOut ? 'timeout' : null
+                }
+              }));
+
+              try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
+            });
+
+            child.on('error', (err) => {
+              clearTimeout(timer);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                language: isC ? 'c' : 'c++',
+                version: '14.2.0',
+                run: {
+                  stdout: '',
+                  stderr: err.message,
+                  output: err.message,
+                  code: 1,
+                  signal: null
+                }
+              }));
+            });
+          });
+
+        } else if (lang === 'python' || lang === 'py' || lang === 'python3') {
+          // Python
+          const srcFile = path.join(workDir, 'main.py');
+          fs.writeFileSync(srcFile, fileContent, 'utf8');
+
+          let child;
+          let runStdout = '';
+          let runStderr = '';
+          let timedOut = false;
+
+          try {
+            child = spawn('python', ['-u', srcFile], { cwd: workDir, windowsHide: true });
+          } catch (spawnErr) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({
+              language: 'python',
+              version: '3.13.13',
+              run: {
+                stdout: '',
+                stderr: spawnErr.message,
+                output: spawnErr.message,
+                code: 1,
+                signal: null
+              }
+            }));
+          }
+
+          const timer = setTimeout(() => {
+            timedOut = true;
+            try { child.kill('SIGKILL'); } catch (e) {}
+          }, RUN_TIMEOUT_MS);
+
+          if (stdin) {
+            try {
+              child.stdin.write(stdin);
+              child.stdin.end();
+            } catch (stdinErr) {}
+          } else {
+            try {
+              child.stdin.end();
+            } catch (e) {}
+          }
+
+          child.stdout.on('data', d => {
+            if (runStdout.length < MAX_OUTPUT_BYTES) {
+              runStdout += d.toString();
+            }
+          });
+          child.stderr.on('data', d => {
+            if (runStderr.length < MAX_OUTPUT_BYTES) {
+              runStderr += d.toString();
+            }
+          });
+
+          child.on('close', (code, signal) => {
+            clearTimeout(timer);
+            const output = truncateOutput((runStdout + runStderr).trim());
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              language: 'python',
+              version: '3.13.13',
+              run: {
+                stdout: truncateOutput(runStdout),
+                stderr: truncateOutput(runStderr),
+                output,
+                code: timedOut ? 124 : (code ?? 0),
+                signal: timedOut ? 'SIGKILL' : (signal || null),
+                status: timedOut ? 'timeout' : null
+              }
+            }));
+            try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
+          });
+
+          child.on('error', (err) => {
+            clearTimeout(timer);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              language: 'python',
+              version: '3.13.13',
+              run: {
+                stdout: '',
+                stderr: err.message,
+                output: err.message,
+                code: 1,
+                signal: null
+              }
+            }));
+          });
+
+        } else if (lang === 'java') {
+          // Java
+          const srcFile = path.join(workDir, 'Main.java');
+          fs.writeFileSync(srcFile, fileContent, 'utf8');
+
+          exec(`javac "Main.java"`, { timeout: COMPILE_TIMEOUT_MS, cwd: workDir }, async (compileErr, compileStdout, compileStderr) => {
+            if (compileErr) {
+              const isCompileTimeout = compileErr.killed;
+              const compileOutput = truncateOutput((compileStderr || compileStdout || compileErr.message || '').trim());
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                language: 'java',
+                version: '17.0.10',
+                compile: {
+                  stdout: truncateOutput(compileStdout || ''),
+                  stderr: truncateOutput(compileStderr || compileErr.message),
+                  output: compileOutput,
+                  code: isCompileTimeout ? 124 : (compileErr.code || 1),
+                  signal: isCompileTimeout ? 'SIGKILL' : null,
+                  status: isCompileTimeout ? 'timeout' : null
+                }
+              }));
+            }
+
+            let child;
+            let runStdout = '';
+            let runStderr = '';
+            let timedOut = false;
+
+            try {
+              child = spawn('java', ['-cp', '.', 'Main'], { cwd: workDir, windowsHide: true });
+            } catch (spawnErr) {
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({
+                language: 'java',
+                version: '17.0.10',
+                run: {
+                  stdout: '',
+                  stderr: spawnErr.message,
+                  output: spawnErr.message,
                   code: 1,
                   signal: null
                 }
@@ -144,18 +369,30 @@ const server = http.createServer(async (req, res) => {
                 child.stdin.write(stdin);
                 child.stdin.end();
               } catch (stdinErr) {}
+            } else {
+              try {
+                child.stdin.end();
+              } catch (e) {}
             }
 
-            child.stdout.on('data', d => { runStdout += d.toString(); });
-            child.stderr.on('data', d => { runStderr += d.toString(); });
+            child.stdout.on('data', d => {
+              if (runStdout.length < MAX_OUTPUT_BYTES) {
+                runStdout += d.toString();
+              }
+            });
+            child.stderr.on('data', d => {
+              if (runStderr.length < MAX_OUTPUT_BYTES) {
+                runStderr += d.toString();
+              }
+            });
 
             child.on('close', (code, signal) => {
               clearTimeout(timer);
-              const output = (runStdout + runStderr).trim();
+              const output = truncateOutput((runStdout + runStderr).trim());
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
-                language: 'c++',
-                version: '6.3.0',
+                language: 'java',
+                version: '17.0.10',
                 compile: {
                   stdout: compileStdout || '',
                   stderr: compileStderr || '',
@@ -164,16 +401,14 @@ const server = http.createServer(async (req, res) => {
                   signal: null
                 },
                 run: {
-                  stdout: runStdout,
-                  stderr: runStderr,
+                  stdout: truncateOutput(runStdout),
+                  stderr: truncateOutput(runStderr),
                   output,
                   code: timedOut ? 124 : (code ?? 0),
                   signal: timedOut ? 'SIGKILL' : (signal || null),
                   status: timedOut ? 'timeout' : null
                 }
               }));
-
-              // Cleanup
               try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
             });
 
@@ -181,8 +416,8 @@ const server = http.createServer(async (req, res) => {
               clearTimeout(timer);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
-                language: 'c++',
-                version: '6.3.0',
+                language: 'java',
+                version: '17.0.10',
                 run: {
                   stdout: '',
                   stderr: err.message,
@@ -192,82 +427,6 @@ const server = http.createServer(async (req, res) => {
                 }
               }));
             });
-          });
-
-        } else if (lang === 'python' || lang === 'py' || lang === 'python3') {
-          const srcFile = path.join(workDir, 'main.py');
-          fs.writeFileSync(srcFile, fileContent, 'utf8');
-
-          let child;
-          let runStdout = '';
-          let runStderr = '';
-          let timedOut = false;
-
-          try {
-            child = spawn('python', ['-u', srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS, windowsHide: true });
-          } catch (spawnErr) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            return res.end(JSON.stringify({
-              language: 'python',
-              version: '3.13.14',
-              run: {
-                stdout: '',
-                stderr: spawnErr.message,
-                output: spawnErr.message,
-                code: 1,
-                signal: null
-              }
-            }));
-          }
-
-          const timer = setTimeout(() => {
-            timedOut = true;
-            try { child.kill('SIGKILL'); } catch (e) {}
-          }, RUN_TIMEOUT_MS);
-
-          if (stdin) {
-            try {
-              child.stdin.write(stdin);
-              child.stdin.end();
-            } catch (stdinErr) {}
-          }
-
-          child.stdout.on('data', d => { runStdout += d.toString(); });
-          child.stderr.on('data', d => { runStderr += d.toString(); });
-
-          child.on('close', (code, signal) => {
-            clearTimeout(timer);
-            const output = (runStdout + runStderr).trim();
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              language: 'python',
-              version: '3.13.14',
-              run: {
-                stdout: runStdout,
-                stderr: runStderr,
-                output,
-                code: timedOut ? 124 : (code ?? 0),
-                signal: timedOut ? 'SIGKILL' : (signal || null),
-                status: timedOut ? 'timeout' : null
-              }
-            }));
-            try { fs.rmSync(workDir, { recursive: true, force: true }); } catch (e) {}
-          });
-
-          child.on('error', (err) => {
-            clearTimeout(timer);
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-              language: 'python',
-              version: '3.13.14',
-              run: {
-                stdout: '',
-                stderr: err.message,
-                output: err.message,
-                code: 1,
-                signal: null
-              }
-            }));
           });
 
         } else {
@@ -281,12 +440,12 @@ const server = http.createServer(async (req, res) => {
           let timedOut = false;
 
           try {
-            child = spawn('node', [srcFile], { cwd: workDir, timeout: RUN_TIMEOUT_MS, windowsHide: true });
+            child = spawn('node', [srcFile], { cwd: workDir, windowsHide: true });
           } catch (spawnErr) {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             return res.end(JSON.stringify({
               language: 'javascript',
-              version: '24.14.1',
+              version: '22.13.1',
               run: {
                 stdout: '',
                 stderr: spawnErr.message,
@@ -307,21 +466,33 @@ const server = http.createServer(async (req, res) => {
               child.stdin.write(stdin);
               child.stdin.end();
             } catch (stdinErr) {}
+          } else {
+            try {
+              child.stdin.end();
+            } catch (e) {}
           }
 
-          child.stdout.on('data', d => { runStdout += d.toString(); });
-          child.stderr.on('data', d => { runStderr += d.toString(); });
+          child.stdout.on('data', d => {
+            if (runStdout.length < MAX_OUTPUT_BYTES) {
+              runStdout += d.toString();
+            }
+          });
+          child.stderr.on('data', d => {
+            if (runStderr.length < MAX_OUTPUT_BYTES) {
+              runStderr += d.toString();
+            }
+          });
 
           child.on('close', (code, signal) => {
             clearTimeout(timer);
-            const output = (runStdout + runStderr).trim();
+            const output = truncateOutput((runStdout + runStderr).trim());
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
               language: 'javascript',
-              version: '24.14.1',
+              version: '22.13.1',
               run: {
-                stdout: runStdout,
-                stderr: runStderr,
+                stdout: truncateOutput(runStdout),
+                stderr: truncateOutput(runStderr),
                 output,
                 code: timedOut ? 124 : (code ?? 0),
                 signal: timedOut ? 'SIGKILL' : (signal || null),
@@ -336,7 +507,7 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({
               language: 'javascript',
-              version: '24.14.1',
+              version: '22.13.1',
               run: {
                 stdout: '',
                 stderr: err.message,

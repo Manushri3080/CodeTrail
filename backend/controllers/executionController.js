@@ -1,23 +1,56 @@
 const axios = require('axios');
+const path = require('path');
 const mongoose = require('mongoose');
 const Execution = require('../models/Execution');
 const Workspace = require('../models/Workspace');
 
+// Supported language aliases and Piston configurations
 const PISTON_LANGUAGE_MAP = {
-  javascript: { language: 'javascript', version: '24.14.1' },
-  typescript: { language: 'typescript', version: '5.0.3' },
-  python: { language: 'python', version: '3.13.14' },
-  cpp: { language: 'c++', version: '6.3.0' },
-  c: { language: 'c', version: '6.3.0' },
-  java: { language: 'java', version: '15.0.2' },
-  rust: { language: 'rust', version: '1.68.2' },
-  go: { language: 'go', version: '1.16.2' },
-  shell: { language: 'bash', version: '5.2.0' },
-  bash: { language: 'bash', version: '5.2.0' },
-  sql: { language: 'sqlite3', version: '3.36.0' }
+  javascript: { language: 'javascript', version: '22.13.1', ext: 'js' },
+  js: { language: 'javascript', version: '22.13.1', ext: 'js' },
+  node: { language: 'javascript', version: '22.13.1', ext: 'js' },
+  nodejs: { language: 'javascript', version: '22.13.1', ext: 'js' },
+  typescript: { language: 'typescript', version: '5.0.3', ext: 'ts' },
+  ts: { language: 'typescript', version: '5.0.3', ext: 'ts' },
+  python: { language: 'python', version: '3.13.13', ext: 'py' },
+  py: { language: 'python', version: '3.13.13', ext: 'py' },
+  python3: { language: 'python', version: '3.13.13', ext: 'py' },
+  cpp: { language: 'c++', version: '14.2.0', ext: 'cpp' },
+  'c++': { language: 'c++', version: '14.2.0', ext: 'cpp' },
+  cxx: { language: 'c++', version: '14.2.0', ext: 'cpp' },
+  'g++': { language: 'c++', version: '14.2.0', ext: 'cpp' },
+  c: { language: 'c', version: '14.2.0', ext: 'c' },
+  gcc: { language: 'c', version: '14.2.0', ext: 'c' },
+  java: { language: 'java', version: '17.0.10', ext: 'java' },
+  openjdk: { language: 'java', version: '17.0.10', ext: 'java' },
+  rust: { language: 'rust', version: '1.68.2', ext: 'rs' },
+  rs: { language: 'rust', version: '1.68.2', ext: 'rs' },
+  go: { language: 'go', version: '1.16.2', ext: 'go' },
+  golang: { language: 'go', version: '1.16.2', ext: 'go' },
+  shell: { language: 'bash', version: '5.2.0', ext: 'sh' },
+  bash: { language: 'bash', version: '5.2.0', ext: 'sh' },
+  sh: { language: 'bash', version: '5.2.0', ext: 'sh' },
+  sql: { language: 'sqlite3', version: '3.36.0', ext: 'sql' },
+  sqlite: { language: 'sqlite3', version: '3.36.0', ext: 'sql' },
+  sqlite3: { language: 'sqlite3', version: '3.36.0', ext: 'sql' }
 };
 
-const PISTON_API_URL = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute';
+const LOCAL_PISTON_URL = process.env.PISTON_LOCAL_URL || 'http://localhost:2000/api/v2/execute';
+const REMOTE_PISTON_URL = process.env.PISTON_API_URL || 'https://emkc.org/api/v2/piston/execute';
+
+const MAX_CODE_BYTES = 256 * 1024; // 256 KB max code size
+const MAX_STDIN_BYTES = 128 * 1024; // 128 KB max stdin size
+const MAX_OUTPUT_TRUNCATE_LEN = 64 * 1024; // 64 KB output truncate limit
+
+// Helper function to truncate strings safely
+const truncateSafe = (str, limit = MAX_OUTPUT_TRUNCATE_LEN) => {
+  if (!str) return '';
+  if (typeof str !== 'string') str = String(str);
+  if (str.length > limit) {
+    return str.slice(0, limit) + '\n... [Output truncated: exceeded 64KB limit]';
+  }
+  return str;
+};
 
 // Helper function to check workspace roles safely
 const checkWorkspaceAccess = (workspace, userId, allowedRoles = ['owner', 'admin', 'editor', 'viewer']) => {
@@ -31,48 +64,97 @@ const checkWorkspaceAccess = (workspace, userId, allowedRoles = ['owner', 'admin
 };
 
 /**
- * Multi-Language Code Execution Handler with Custom Input & Execution History Recording
+ * Multi-Language Code Execution Handler with Validation, Dual Sandbox Fallback & History Recording
  * POST /api/execute
  */
 exports.executeCode = async (req, res) => {
   const startTime = Date.now();
   try {
-    const { language = 'javascript', code, stdin = '', filename = 'main', workspaceId = null } = req.body;
+    const {
+      language = 'javascript',
+      code,
+      stdin = '',
+      filename = 'main',
+      workspaceId = null
+    } = req.body || {};
 
-    if (!code || !code.trim()) {
-      return res.status(400).json({ message: 'Source code is required for execution.' });
+    // 1. Validate Code Payload
+    if (code === undefined || code === null || typeof code !== 'string' || !code.trim()) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Source code is required for execution.',
+        error: 'VALIDATION_EMPTY_CODE'
+      });
     }
 
-    const pistonConfig = PISTON_LANGUAGE_MAP[language.toLowerCase()] || PISTON_LANGUAGE_MAP.javascript;
+    if (Buffer.byteLength(code, 'utf8') > MAX_CODE_BYTES) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Source code exceeds maximum allowed size (${MAX_CODE_BYTES / 1024} KB).`,
+        error: 'VALIDATION_CODE_TOO_LARGE'
+      });
+    }
+
+    // 2. Validate Standard Input (stdin)
+    const sanitizedStdin = typeof stdin === 'string' ? stdin : String(stdin || '');
+    if (Buffer.byteLength(sanitizedStdin, 'utf8') > MAX_STDIN_BYTES) {
+      return res.status(400).json({
+        status: 'error',
+        message: `Standard input exceeds maximum allowed size (${MAX_STDIN_BYTES / 1024} KB).`,
+        error: 'VALIDATION_STDIN_TOO_LARGE'
+      });
+    }
+
+    // 3. Resolve Language Configuration & Fallbacks
+    const normalizedLangKey = String(language).toLowerCase().trim();
+    const pistonConfig = PISTON_LANGUAGE_MAP[normalizedLangKey] || PISTON_LANGUAGE_MAP.javascript;
+
+    // 4. Sanitize Filename
+    let sanitizedFilename = path.basename(String(filename || 'main')).trim();
+    if (!sanitizedFilename || sanitizedFilename === '.') {
+      sanitizedFilename = `main.${pistonConfig.ext || 'txt'}`;
+    }
 
     const payload = {
       language: pistonConfig.language,
       version: pistonConfig.version,
       files: [
         {
-          name: filename,
+          name: sanitizedFilename,
           content: code
         }
       ],
-      stdin: stdin || ''
+      stdin: sanitizedStdin
     };
 
-    const response = await axios.post(PISTON_API_URL, payload, {
-      timeout: 15000
-    });
+    // 5. Dual Sandbox Execution Attempt: Local Fast Piston -> Remote EMKC Piston Fallback
+    let response = null;
+    let engineUsed = 'local';
+
+    try {
+      response = await axios.post(LOCAL_PISTON_URL, payload, { timeout: 10000 });
+      engineUsed = 'local';
+    } catch (localErr) {
+      // If local server is not reachable, or language is not installed locally, fallback to Remote Piston
+      try {
+        response = await axios.post(REMOTE_PISTON_URL, payload, { timeout: 15000 });
+        engineUsed = 'remote';
+      } catch (remoteErr) {
+        throw new Error(remoteErr.response?.data?.message || remoteErr.message || localErr.message);
+      }
+    }
 
     const runResult = response.data?.run || {};
     const compileResult = response.data?.compile || null;
     const executionTimeMs = Date.now() - startTime;
 
-    // Check if Piston terminated due to run/compile timeout
+    // 6. Detailed Status & Error Validation
     const isPistonTimeout = Boolean(
       runResult.signal === 'SIGKILL' || 
       runResult.status === 'timeout' || 
       (compileResult && (compileResult.signal === 'SIGKILL' || compileResult.status === 'timeout'))
     );
 
-    // Check if compilation failed (for languages like C++, Java, Rust, Go)
     const isCompileError = Boolean(!isPistonTimeout && compileResult && compileResult.code !== 0);
     const hasRuntimeError = Boolean(!isPistonTimeout && !isCompileError && runResult.code !== undefined && runResult.code !== 0);
     const exitCode = isCompileError
@@ -88,15 +170,16 @@ exports.executeCode = async (req, res) => {
       status = 'error';
     }
 
-    const stdout = (runResult.stdout || '').trimEnd();
-    const stderr = (runResult.stderr || '').trimEnd();
-    const compileOutput = (compileResult ? (compileResult.output || compileResult.stderr || compileResult.stdout || '') : '').trimEnd();
-    const rawOutput = (runResult.output || runResult.stdout || runResult.stderr || compileOutput || '').trimEnd();
+    const stdout = truncateSafe((runResult.stdout || '').trimEnd());
+    const stderr = truncateSafe((runResult.stderr || '').trimEnd());
+    const compileOutput = truncateSafe((compileResult ? (compileResult.output || compileResult.stderr || compileResult.stdout || '') : '').trimEnd());
+    const rawOutput = truncateSafe((runResult.output || runResult.stdout || runResult.stderr || compileOutput || '').trimEnd());
 
     const responseData = {
       status,
       language: pistonConfig.language,
       version: response.data?.version || pistonConfig.version,
+      engine: engineUsed,
       output: rawOutput || 'Execution completed with no output.',
       stdout,
       stderr,
@@ -107,11 +190,11 @@ exports.executeCode = async (req, res) => {
       signal: runResult.signal || (compileResult ? compileResult.signal : null) || null,
       executionTimeMs,
       timestamp: new Date().toISOString(),
-      stdin: stdin || '',
-      filename
+      stdin: sanitizedStdin,
+      filename: sanitizedFilename
     };
 
-    // Save Execution record to MongoDB if database is online
+    // 7. Persist Execution record to MongoDB if database is online
     if (mongoose.connection.readyState === 1) {
       try {
         let validWorkspaceId = null;
@@ -123,10 +206,10 @@ exports.executeCode = async (req, res) => {
           workspace: validWorkspaceId,
           user: req.user?._id || null,
           userName: req.user?.name || 'Developer',
-          filename,
+          filename: sanitizedFilename,
           language: pistonConfig.language,
           code,
-          stdin: stdin || '',
+          stdin: sanitizedStdin,
           stdout,
           stderr,
           compileOutput,
@@ -151,7 +234,7 @@ exports.executeCode = async (req, res) => {
     const executionTimeMs = Date.now() - startTime;
 
     const errorResponse = {
-      status: 'error',
+      status: isTimeout ? 'timeout' : 'error',
       message: 'Code execution service error',
       error: err.response?.data?.message || err.message,
       output: `[Execution Error]: ${err.response?.data?.message || err.message}`,
