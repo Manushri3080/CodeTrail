@@ -221,6 +221,24 @@ exports.executeCode = async (req, res) => {
 
         await executionDoc.save();
         responseData.executionId = executionDoc._id;
+
+        // Record execution event into Workspace Proof-of-Work Activity Chain
+        if (validWorkspaceId) {
+          try {
+            const { recordActivity } = require('./activityController');
+            await recordActivity({
+              workspaceId: validWorkspaceId,
+              user: req.user,
+              action: 'code_execution',
+              fileName: sanitizedFilename,
+              details: `Executed ${pistonConfig.language} code (${status}, exit ${exitCode}, ${executionTimeMs}ms)`,
+              executionId: executionDoc._id,
+              executionStatus: status
+            });
+          } catch (actErr) {
+            console.warn('Execution activity log warning:', actErr.message);
+          }
+        }
       } catch (dbErr) {
         console.warn('Execution history DB save notice:', dbErr.message);
       }
