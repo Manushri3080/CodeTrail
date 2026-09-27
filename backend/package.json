@@ -7,7 +7,7 @@
     "start": "node index.js",
     "dev": "node --watch index.js",
     "dev:nodemon": "node node_modules/nodemon/bin/nodemon.js index.js",
-    "test": "node tests/proofOfWork.test.js"
+    "test": "node tests/index.js"
   },
   "keywords": [],
   "author": "",
