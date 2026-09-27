@@ -147,7 +147,10 @@ function App({ defaultTab }) {
           </div>
         ) : activeTab === 'contribution-dossier' ? (
           <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
-            <ContributionDossier />
+            <ContributionDossier 
+              activeWorkspace={activeWorkspace} 
+              currentUser={currentUser} 
+            />
           </div>
         ) : (
           <HomePage

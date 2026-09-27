@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { 
@@ -38,11 +38,16 @@ import {
   Loader2,
   Trash2,
   Edit2,
-  History
+  History,
+  Hash,
+  Layers,
+  Download,
+  Activity
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
+import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
 
 // Map file extensions to Monaco language identifiers
 const getMonacoLanguage = (fileName = '') => {
@@ -1440,9 +1445,46 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Custom Input (stdin) & Output Console Tabbed Navigation State
   const [customInput, setCustomInput] = useState('');
-  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history'
+  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history' | 'telemetry'
   const [executionHistoryList, setExecutionHistoryList] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
+  // Telemetry & Proof-of-Work Audit State (CT-163 & CT-168)
+  const [telemetryData, setTelemetryData] = useState(null);
+  const [telemetryVerification, setTelemetryVerification] = useState(null);
+  const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
+  const [telemetryCopiedHash, setTelemetryCopiedHash] = useState(null);
+
+  const fetchWorkspaceTelemetry = useCallback(async () => {
+    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    setIsTelemetryLoading(true);
+    try {
+      const [contribRes, verifyRes] = await Promise.all([
+        axios.get(`http://localhost:5000/api/workspaces/${wsId}/contributions`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(err => {
+          console.warn('Contributions fetch notice:', err.message);
+          return null;
+        }),
+        axios.get(`http://localhost:5000/api/workspaces/${wsId}/proof-of-work/verify`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(err => {
+          console.warn('Verification fetch notice:', err.message);
+          return null;
+        })
+      ]);
+      if (contribRes?.data) setTelemetryData(contribRes.data);
+      if (verifyRes?.data) setTelemetryVerification(verifyRes.data);
+    } catch (err) {
+      console.error('Failed to fetch workspace telemetry:', err);
+    } finally {
+      setIsTelemetryLoading(false);
+    }
+  }, [wsId, token]);
+
+  useEffect(() => {
+    fetchWorkspaceTelemetry();
+  }, [fetchWorkspaceTelemetry]);
 
   // Fetch Workspace Execution History on Load or Workspace ID Change
   useEffect(() => {
@@ -1613,6 +1655,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
     } finally {
       setIsExecuting(false);
+      fetchWorkspaceTelemetry();
     }
   };
 
@@ -3535,6 +3578,27 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       )}
                     </button>
 
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOutputTab('telemetry');
+                        fetchWorkspaceTelemetry();
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
+                        outputTab === 'telemetry' 
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <ShieldCheck size={13} className="text-purple-400" />
+                      <span>Telemetry & Audit</span>
+                      {telemetryData?.summary?.totalBlocks ? (
+                        <span className="px-1.5 py-0.2 rounded-full bg-purple-500/30 text-purple-300 text-[10px] font-bold border border-purple-500/40 font-mono">
+                          {telemetryData.summary.totalBlocks} blk
+                        </span>
+                      ) : null}
+                    </button>
+
                     {/* Active Execution Status Badge */}
                     {executionStatus === 'running' && (
                       <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-mono font-semibold animate-pulse shrink-0 ml-2">
@@ -3931,6 +3995,182 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </div>
                     )}
 
+                    {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
+                    {outputTab === 'telemetry' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-white/10 flex-wrap gap-2">
+                          <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+                            <ShieldCheck size={15} className="text-purple-400" />
+                            <span>Proof-of-Work Contribution Telemetry & Audit</span>
+                            {telemetryVerification?.isValid ? (
+                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                                <CheckCircle2 size={11} /> 100% Cryptographically Verified
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-bold">
+                                <AlertTriangle size={11} /> Verification Discrepancy
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => fetchWorkspaceTelemetry()}
+                              disabled={isTelemetryLoading}
+                              className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Re-verify blockchain activity chain"
+                            >
+                              <RefreshCw size={11} className={isTelemetryLoading ? "animate-spin text-purple-400" : ""} />
+                              <span>Verify Chain</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fileName = exportAuditJson(currentWorkspace, telemetryData, telemetryVerification);
+                                showToast(`📄 Exported ${fileName}`, 'success');
+                              }}
+                              className="px-2.5 py-1 rounded bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer font-bold"
+                              title="Download JSON machine-verifiable audit manifest"
+                            >
+                              <Download size={11} />
+                              <span>Export Manifest (JSON)</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fileName = exportAuditMarkdown(currentWorkspace, telemetryData, telemetryVerification);
+                                showToast(`📋 Exported ${fileName}`, 'success');
+                              }}
+                              className="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Download formatted Markdown Certificate"
+                            >
+                              <FileText size={11} />
+                              <span>Export Report (.md)</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Top Summary Cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Activity size={11} className="text-emerald-400" />
+                              <span>TOTAL LINES SYNCED</span>
+                            </div>
+                            <div className="text-base font-bold text-white mt-1">
+                              {(telemetryData?.summary?.totalLinesChanged ?? 0).toLocaleString()}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Layers size={11} className="text-purple-400" />
+                              <span>BLOCKCHAIN BLOCKS</span>
+                            </div>
+                            <div className="text-base font-bold text-purple-300 mt-1">
+                              {telemetryData?.summary?.totalBlocks ?? 0}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Users size={11} className="text-sky-400" />
+                              <span>CONTRIBUTORS</span>
+                            </div>
+                            <div className="text-base font-bold text-sky-300 mt-1">
+                              {telemetryData?.contributors?.length ?? 0}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Hash size={11} className="text-amber-400" />
+                              <span>LATEST HASH</span>
+                            </div>
+                            <div className="text-xs font-mono text-amber-300 mt-1 truncate" title={telemetryData?.summary?.latestBlockHash}>
+                              {telemetryData?.summary?.latestBlockHash ? `${telemetryData.summary.latestBlockHash.slice(0, 6)}...${telemetryData.summary.latestBlockHash.slice(-4)}` : 'GENESIS'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Contributor Breakdown Table */}
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {(telemetryData?.contributors || []).length === 0 ? (
+                            <div className="text-gray-500 italic py-4 text-center">
+                              No contribution telemetry recorded yet. Code edits and executions will chain automatically!
+                            </div>
+                          ) : (
+                            telemetryData.contributors.map((c, idx) => {
+                              const shortHash = c.hash || (c.fullHash ? `${c.fullHash.slice(0, 4)}...${c.fullHash.slice(-4)}` : 'GENESIS');
+                              const fullHash = c.fullHash || c.hash || '';
+                              return (
+                                <div 
+                                  key={c.id || idx}
+                                  className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-2"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span 
+                                      className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
+                                      style={{ backgroundColor: `${c.color || '#8B5CF6'}30`, color: c.color || '#8B5CF6' }}
+                                    >
+                                      {c.name ? c.name[0] : 'U'}
+                                    </span>
+                                    <span className="font-bold text-gray-200 truncate">{c.name}</span>
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
+                                      {c.badge || c.role || 'Member'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-4 shrink-0 font-mono">
+                                    <div className="text-[11px] text-gray-300">
+                                      <strong>{c.lines?.toLocaleString() || 0}</strong> lines 
+                                      <span className="text-[10px] text-gray-500 ml-1">
+                                        (<span className="text-emerald-400">+{c.linesAdded || 0}</span>/<span className="text-rose-400">-{c.linesDeleted || 0}</span>)
+                                      </span>
+                                    </div>
+
+                                    <div className="w-20 hidden sm:flex items-center gap-1.5">
+                                      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                        <div 
+                                          className="h-full rounded-full" 
+                                          style={{ width: `${c.percent || 0}%`, backgroundColor: c.color || '#8B5CF6' }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] text-gray-400 w-7 text-right">{c.percent || 0}%</span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (fullHash) {
+                                          navigator.clipboard.writeText(fullHash);
+                                          setTelemetryCopiedHash(shortHash);
+                                          setTimeout(() => setTelemetryCopiedHash(null), 2000);
+                                        }
+                                      }}
+                                      className="flex items-center gap-1 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/20 transition-colors"
+                                      title={`Full SHA-256: ${fullHash}`}
+                                    >
+                                      <Hash size={10} className="text-purple-400" />
+                                      <span>{shortHash}</span>
+                                      {telemetryCopiedHash === shortHash ? (
+                                        <Check size={10} className="text-emerald-400" />
+                                      ) : (
+                                        <Copy size={9} className="opacity-60" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 )}
               </div>
@@ -3969,6 +4209,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 >
                   <Terminal size={14} className="text-purple-400 shrink-0" />
                   <span>Output</span>
+                </button>
+
+                {/* Quick Toggle for Telemetry & Audit */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutputTab('telemetry');
+                    setIsOutputPanelOpen(true);
+                    setIsOutputPanelMinimized(false);
+                    fetchWorkspaceTelemetry();
+                  }}
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${
+                    outputTab === 'telemetry' && isOutputPanelOpen 
+                      ? 'text-purple-300 font-semibold' 
+                      : 'text-gray-400 hover:text-purple-300'
+                  }`}
+                  title="View Proof-of-Work Contribution Telemetry"
+                >
+                  <ShieldCheck size={14} className={telemetryVerification?.isValid ? "text-emerald-400 shrink-0" : "text-purple-400 shrink-0"} />
+                  <span>PoW Audit: <strong className="text-gray-200">{telemetryData?.summary?.totalBlocks ? `${telemetryData.summary.totalBlocks} Blocks` : 'Active'}</strong></span>
                 </button>
 
                 <div className="flex items-center gap-2">
