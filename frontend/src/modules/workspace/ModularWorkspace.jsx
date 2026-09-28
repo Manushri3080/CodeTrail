@@ -33,7 +33,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   ShieldAlert,
-<<<<<<< HEAD
   Play,
   Terminal,
   Loader2,
@@ -43,23 +42,16 @@ import {
   Hash,
   Layers,
   Download,
-  Activity
-=======
-  Radio,
   Activity,
-  Hash
->>>>>>> feature/Mahi
+  Radio
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
-<<<<<<< HEAD
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
-=======
 import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
 import { formatActiveDuration } from '../../utils/timeUtils';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
->>>>>>> feature/Mahi
 
 // Map file extensions to Monaco language identifiers
 const getMonacoLanguage = (fileName = '') => {
