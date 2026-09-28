@@ -141,6 +141,11 @@ class TelemetryStore {
 
     contributor.name = userName;
     contributor.hash = displayHash;
+    if (rawEnvelope?.user?.color) contributor.color = rawEnvelope.user.color;
+    if (rawEnvelope?.user?.role) {
+      contributor.role = rawEnvelope.user.role === 'owner' ? 'Lead Architect' : (rawEnvelope.user.role === 'admin' ? 'Maintainer' : 'Contributor');
+      contributor.badge = rawEnvelope.user.role.charAt(0).toUpperCase() + rawEnvelope.user.role.slice(1);
+    }
     contributor.actionsCount = (contributor.actionsCount || 0) + 1;
 
     // Line modification tracking (CT-164)
