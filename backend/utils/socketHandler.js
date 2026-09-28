@@ -1,5 +1,6 @@
 const { Server } = require('socket.io');
 const Workspace = require('../models/Workspace');
+const telemetryStore = require('./telemetryStore');
 
 const AVATAR_COLORS = ['#EC4899', '#38BDF8', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
 
@@ -61,6 +62,7 @@ const setupSocketHandler = (server) => {
 
       const roomName = `workspace_${workspaceId}`;
       socket.join(roomName);
+      socket.join(`workspace:${workspaceId}`);
 
       if (!activeRoomSessions.has(workspaceId)) {
         activeRoomSessions.set(workspaceId, []);
@@ -95,10 +97,51 @@ const setupSocketHandler = (server) => {
         joinedUser: userSession
       });
 
+      // Send immediate dossier sync (CT-167)
+      const currentDossier = telemetryStore.getDossier(workspaceId);
+      socket.emit('telemetry:dossier_sync', currentDossier);
+      socket.emit('telemetry:dossier_update', currentDossier);
+
       console.log(`[Socket Session] ${userSession.name} (${socket.userRole}) joined workspace room: ${workspaceId} (${roomUsers.length} online)`);
     });
 
-    // 2. Real-time File/Code Changes with Viewer Guard & Version Tracking (CT-85, CT-89)
+    // 2. Real-time Telemetry Action Stream with Monotonic Sequence (CT-164 & CT-167)
+    socket.on('telemetry:action', (rawEnvelope) => {
+      const targetWorkspaceId = rawEnvelope?.workspaceId || currentWorkspaceId;
+      if (!targetWorkspaceId) return;
+
+      const { envelope, dossier } = telemetryStore.recordAction(targetWorkspaceId, rawEnvelope);
+
+      const room1 = `workspace_${targetWorkspaceId}`;
+      const room2 = `workspace:${targetWorkspaceId}`;
+
+      socket.to(room1).emit('telemetry:stream', envelope);
+      socket.to(room2).emit('telemetry:stream', envelope);
+
+      io.to(room1).emit('telemetry:dossier_sync', dossier);
+      io.to(room2).emit('telemetry:dossier_sync', dossier);
+      io.emit('telemetry:dossier_update', dossier);
+    });
+
+    socket.on('telemetry:request_dossier', ({ workspaceId }) => {
+      const targetId = workspaceId || currentWorkspaceId;
+      if (targetId) {
+        const dossier = telemetryStore.getDossier(targetId);
+        socket.emit('telemetry:dossier_sync', dossier);
+        socket.emit('telemetry:dossier_update', dossier);
+      }
+    });
+
+    socket.on('telemetry:heartbeat', ({ workspaceId, user, metrics }) => {
+      const targetId = workspaceId || currentWorkspaceId;
+      if (!targetId) return;
+
+      const dossier = telemetryStore.recordHeartbeat(targetId, user, metrics);
+      io.to(`workspace_${targetId}`).emit('telemetry:dossier_sync', dossier);
+      io.to(`workspace:${targetId}`).emit('telemetry:dossier_sync', dossier);
+    });
+
+    // 3. Real-time File/Code Changes with Viewer Guard & Version Tracking (CT-85, CT-89)
     socket.on('code_change', ({ workspaceId, fileId, content, version }) => {
       if (!workspaceId || !fileId) return;
 
@@ -132,6 +175,13 @@ const setupSocketHandler = (server) => {
         version: nextVer,
         updatedBy: currentUser?.name || 'Peer'
       });
+      socket.to(`workspace:${workspaceId}`).emit('code_updated', {
+        workspaceId,
+        fileId,
+        content,
+        version: nextVer,
+        updatedBy: currentUser?.name || 'Peer'
+      });
     });
 
     // Real-time Multiplayer Monaco Cursor Tracking & Broadcast (CT-86)
@@ -143,6 +193,8 @@ const setupSocketHandler = (server) => {
       };
       socket.to(`workspace_${data.workspaceId}`).emit('cursor_position_updated', payload);
       socket.to(`workspace_${data.workspaceId}`).emit('cursor_updated', payload);
+      socket.to(`workspace:${data.workspaceId}`).emit('cursor_position_updated', payload);
+      socket.to(`workspace:${data.workspaceId}`).emit('cursor_updated', payload);
     });
 
     socket.on('cursor_move', (data) => {
@@ -153,9 +205,11 @@ const setupSocketHandler = (server) => {
       };
       socket.to(`workspace_${data.workspaceId}`).emit('cursor_position_updated', payload);
       socket.to(`workspace_${data.workspaceId}`).emit('cursor_updated', payload);
+      socket.to(`workspace:${data.workspaceId}`).emit('cursor_position_updated', payload);
+      socket.to(`workspace:${data.workspaceId}`).emit('cursor_updated', payload);
     });
 
-    // 3. Switch Active File
+    // Switch Active File
     socket.on('active_file_change', ({ workspaceId, activeFile }) => {
       if (!workspaceId) return;
       const roomUsers = activeRoomSessions.get(workspaceId);
@@ -170,7 +224,7 @@ const setupSocketHandler = (server) => {
       }
     });
 
-    // 4. Session Heartbeat & Duration Sync (Called periodically from frontend)
+    // Session Heartbeat & Duration Sync (Called periodically from frontend)
     socket.on('session_heartbeat', async ({ workspaceId, durationSeconds = 30 }) => {
       if (!workspaceId) return;
 
@@ -186,13 +240,17 @@ const setupSocketHandler = (server) => {
             timeSpent: workspace.timeSpent,
             totalActiveSeconds: workspace.totalActiveSeconds
           });
+          io.to(`workspace:${workspaceId}`).emit('session_time_updated', {
+            timeSpent: workspace.timeSpent,
+            totalActiveSeconds: workspace.totalActiveSeconds
+          });
         }
       } catch (err) {
         console.error('[Socket Heartbeat Error]:', err.message);
       }
     });
 
-    // 5. Handle Disconnect or Leave Session
+    // Handle Disconnect or Leave Session
     const handleLeave = () => {
       if (!currentWorkspaceId) return;
 
@@ -208,6 +266,10 @@ const setupSocketHandler = (server) => {
         io.to(`workspace_${currentWorkspaceId}`).emit('active_users_update', {
           activeUsers: updatedUsers,
           leftUser: currentUser
+        });
+        io.to(`workspace:${currentWorkspaceId}`).emit('userLeft', {
+          userId: currentUser?._id || currentUser?.id || socket.id,
+          leftAt: new Date()
         });
 
         console.log(`[Socket Session] User left workspace room: ${currentWorkspaceId} (${updatedUsers.length} online remaining)`);

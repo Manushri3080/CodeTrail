@@ -1,25 +1,42 @@
 const WorkspaceSession = require('../models/WorkspaceSession');
 const Workspace = require('../models/Workspace');
+const telemetryStore = require('../utils/telemetryStore');
 
 // In-memory version tracking: fileVersionMap[`${workspaceId}:${fileId}`] = currentVersionNumber
 const fileVersionMap = new Map();
+
+/**
+ * Format total seconds into human readable time string like "1h 24m" or "45m"
+ */
+const formatTimeSpent = (totalSeconds) => {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  return `${minutes}m`;
+};
 
 const initWorkspaceSessionSocket = (io) => {
   io.on('connection', (socket) => {
     console.log(`[Socket] New client connected: ${socket.id}`);
 
-    // Join Workspace Room
-    socket.on('joinWorkspace', async ({ workspaceId, user, currentFileId, role }) => {
+    // Join Workspace Room (Supports both joinWorkspace and join_workspace_session)
+    const handleJoin = async ({ workspaceId, user, currentFileId, activeFile, role }) => {
       try {
         if (!workspaceId) return;
 
-        const roomName = `workspace:${workspaceId}`;
-        socket.join(roomName);
+        const fileId = currentFileId || activeFile || 'index.js';
+        const roomName1 = `workspace:${workspaceId}`;
+        const roomName2 = `workspace_${workspaceId}`;
+        
+        socket.join(roomName1);
+        socket.join(roomName2);
         socket.workspaceId = workspaceId;
         socket.userId = user?.id || user?._id;
         socket.userRole = role || user?.role || 'editor';
 
-        console.log(`[Socket] Client ${socket.id} (User ${socket.userId || 'Guest'}, Role ${socket.userRole}) joined ${roomName}`);
+        console.log(`[Socket] Client ${socket.id} (User ${socket.userId || 'Guest'}, Role ${socket.userRole}) joined ${roomName1}`);
 
         if (socket.userId) {
           // Verify actual member role against Workspace document if available
@@ -47,13 +64,13 @@ const initWorkspaceSessionSocket = (io) => {
               role: socket.userRole,
               lastActiveAt: new Date(),
               leftAt: null,
-              ...(currentFileId ? { currentFileId } : {})
+              ...(fileId ? { currentFileId: fileId } : {})
             },
             { upsert: true }
           );
 
           // Broadcast user joined to other members in the workspace room
-          socket.to(roomName).emit('userJoined', {
+          socket.to(roomName1).emit('userJoined', {
             userId: socket.userId,
             user: { ...(user || {}), role: socket.userRole },
             joinedAt: new Date()
@@ -65,10 +82,75 @@ const initWorkspaceSessionSocket = (io) => {
           .populate('userId', 'name email role')
           .sort({ lastActiveAt: -1 });
 
-        io.to(roomName).emit('presenceUpdate', { workspaceId, sessions: activeSessions });
+        io.to(roomName1).emit('presenceUpdate', { workspaceId, sessions: activeSessions });
+        io.to(roomName2).emit('active_users_update', {
+          activeUsers: activeSessions.map(s => ({
+            socketId: s.socketId,
+            userId: s.userId?._id || s.userId,
+            name: s.userId?.name || 'Developer',
+            role: s.role,
+            activeFile: s.currentFileId
+          }))
+        });
+
+        // Immediately send initial Telemetry Dossier state (CT-167)
+        const currentDossier = telemetryStore.getDossier(workspaceId);
+        socket.emit('telemetry:dossier_sync', currentDossier);
+        socket.emit('telemetry:dossier_update', currentDossier);
       } catch (err) {
         console.error('[Socket] Error in joinWorkspace:', err);
       }
+    };
+
+    socket.on('joinWorkspace', handleJoin);
+    socket.on('join_workspace_session', handleJoin);
+
+    // ==========================================
+    // CT-164 & CT-167: REAL-TIME TELEMETRY ENGINE
+    // ==========================================
+
+    // Handle Intercepted Telemetry Action with Monotonic Sequence Counter (CT-164 & CT-167)
+    socket.on('telemetry:action', async (rawEnvelope) => {
+      try {
+        const targetWorkspaceId = rawEnvelope?.workspaceId || socket.workspaceId;
+        if (!targetWorkspaceId) return;
+
+        const { envelope, dossier } = telemetryStore.recordAction(targetWorkspaceId, rawEnvelope);
+
+        const room1 = `workspace:${targetWorkspaceId}`;
+        const room2 = `workspace_${targetWorkspaceId}`;
+
+        // Broadcast action envelope to peers in room with high-precision timestamp & sequence
+        socket.to(room1).emit('telemetry:stream', envelope);
+        socket.to(room2).emit('telemetry:stream', envelope);
+
+        // Broadcast live updated dossier stats so peer dossier numbers update live (CT-167)
+        io.to(room1).emit('telemetry:dossier_sync', dossier);
+        io.to(room2).emit('telemetry:dossier_sync', dossier);
+        io.emit('telemetry:dossier_update', dossier);
+      } catch (err) {
+        console.error('[Socket Telemetry] Error processing action:', err);
+      }
+    });
+
+    // Request full dossier sync
+    socket.on('telemetry:request_dossier', ({ workspaceId }) => {
+      const targetId = workspaceId || socket.workspaceId;
+      if (targetId) {
+        const dossier = telemetryStore.getDossier(targetId);
+        socket.emit('telemetry:dossier_sync', dossier);
+        socket.emit('telemetry:dossier_update', dossier);
+      }
+    });
+
+    // Sync active contribution time and session duration (CT-164)
+    socket.on('telemetry:heartbeat', ({ workspaceId, user, metrics }) => {
+      const targetId = workspaceId || socket.workspaceId;
+      if (!targetId) return;
+
+      const dossier = telemetryStore.recordHeartbeat(targetId, user, metrics);
+      io.to(`workspace:${targetId}`).emit('telemetry:dossier_sync', dossier);
+      io.to(`workspace_${targetId}`).emit('telemetry:dossier_sync', dossier);
     });
 
     // Activity Heartbeat Event
@@ -162,9 +244,18 @@ const initWorkspaceSessionSocket = (io) => {
         const newVersion = Math.max(currentServerVersion + 1, clientVersion);
         fileVersionMap.set(versionKey, newVersion);
 
-        const roomName = `workspace:${targetWorkspaceId}`;
+        const roomName1 = `workspace:${targetWorkspaceId}`;
+        const roomName2 = `workspace_${targetWorkspaceId}`;
+        
         // Broadcast to all other users in this workspace room with monotonic version counter
-        socket.to(roomName).emit('code_updated', {
+        socket.to(roomName1).emit('code_updated', {
+          workspaceId: targetWorkspaceId,
+          fileId,
+          content,
+          version: newVersion,
+          updatedBy: socket.userId
+        });
+        socket.to(roomName2).emit('code_updated', {
           workspaceId: targetWorkspaceId,
           fileId,
           content,
@@ -182,16 +273,16 @@ const initWorkspaceSessionSocket = (io) => {
         const targetWorkspaceId = data?.workspaceId || socket.workspaceId;
         if (!targetWorkspaceId) return;
 
-        const roomName = `workspace:${targetWorkspaceId}`;
         const payload = {
           ...data,
           workspaceId: targetWorkspaceId,
           userId: socket.userId || data?.user?.id || data?.user?._id || socket.id
         };
 
-        // Broadcast live cursor and selection coordinates to other peers in room
-        socket.to(roomName).emit('cursor_position_updated', payload);
-        socket.to(roomName).emit('cursor_updated', payload);
+        socket.to(`workspace:${targetWorkspaceId}`).emit('cursor_position_updated', payload);
+        socket.to(`workspace:${targetWorkspaceId}`).emit('cursor_updated', payload);
+        socket.to(`workspace_${targetWorkspaceId}`).emit('cursor_position_updated', payload);
+        socket.to(`workspace_${targetWorkspaceId}`).emit('cursor_updated', payload);
       } catch (err) {
         console.error('[Socket] Error in cursor_position_update:', err);
       }
@@ -202,31 +293,63 @@ const initWorkspaceSessionSocket = (io) => {
         const targetWorkspaceId = data?.workspaceId || socket.workspaceId;
         if (!targetWorkspaceId) return;
 
-        const roomName = `workspace:${targetWorkspaceId}`;
         const payload = {
           ...data,
           workspaceId: targetWorkspaceId,
           userId: socket.userId || data?.user?.id || data?.user?._id || socket.id
         };
 
-        socket.to(roomName).emit('cursor_position_updated', payload);
-        socket.to(roomName).emit('cursor_updated', payload);
+        socket.to(`workspace:${targetWorkspaceId}`).emit('cursor_position_updated', payload);
+        socket.to(`workspace:${targetWorkspaceId}`).emit('cursor_updated', payload);
+        socket.to(`workspace_${targetWorkspaceId}`).emit('cursor_position_updated', payload);
+        socket.to(`workspace_${targetWorkspaceId}`).emit('cursor_updated', payload);
       } catch (err) {
         console.error('[Socket] Error in cursor_move:', err);
       }
     });
 
-    // Leave Workspace Explicitly
-    socket.on('leaveWorkspace', async ({ workspaceId, userId }) => {
+    // Session Heartbeat & Duration Sync (CT-164)
+    socket.on('session_heartbeat', async ({ workspaceId, durationSeconds = 30 }) => {
+      const targetWorkspaceId = workspaceId || socket.workspaceId;
+      if (!targetWorkspaceId) return;
+
       try {
-        if (!workspaceId) return;
+        const workspace = await Workspace.findById(targetWorkspaceId);
+        if (workspace) {
+          workspace.totalActiveSeconds = (workspace.totalActiveSeconds || 0) + durationSeconds;
+          workspace.timeSpent = formatTimeSpent(workspace.totalActiveSeconds);
+          workspace.lastActiveAt = new Date();
+          await workspace.save();
 
-        const roomName = `workspace:${workspaceId}`;
-        socket.leave(roomName);
+          io.to(`workspace:${targetWorkspaceId}`).emit('session_time_updated', {
+            timeSpent: workspace.timeSpent,
+            totalActiveSeconds: workspace.totalActiveSeconds
+          });
+          io.to(`workspace_${targetWorkspaceId}`).emit('session_time_updated', {
+            timeSpent: workspace.timeSpent,
+            totalActiveSeconds: workspace.totalActiveSeconds
+          });
+        }
+      } catch (err) {
+        console.error('[Socket Heartbeat Error]:', err.message);
+      }
+    });
 
-        if (userId) {
+    // Leave Workspace Explicitly
+    const handleLeaveWorkspace = async (data = {}) => {
+      try {
+        const targetWorkspaceId = data?.workspaceId || socket.workspaceId;
+        const uid = data?.userId || socket.userId;
+        if (!targetWorkspaceId) return;
+
+        const room1 = `workspace:${targetWorkspaceId}`;
+        const room2 = `workspace_${targetWorkspaceId}`;
+        socket.leave(room1);
+        socket.leave(room2);
+
+        if (uid) {
           await WorkspaceSession.findOneAndUpdate(
-            { userId, workspaceId },
+            { userId: uid, workspaceId: targetWorkspaceId },
             {
               status: 'offline',
               leftAt: new Date(),
@@ -234,18 +357,22 @@ const initWorkspaceSessionSocket = (io) => {
             }
           );
 
-          socket.to(roomName).emit('userLeft', { userId, leftAt: new Date() });
+          socket.to(room1).emit('userLeft', { userId: uid, leftAt: new Date() });
+          socket.to(room2).emit('userLeft', { userId: uid, leftAt: new Date() });
         }
 
-        const activeSessions = await WorkspaceSession.find({ workspaceId })
+        const activeSessions = await WorkspaceSession.find({ workspaceId: targetWorkspaceId })
           .populate('userId', 'name email role')
           .sort({ lastActiveAt: -1 });
 
-        io.to(roomName).emit('presenceUpdate', { workspaceId, sessions: activeSessions });
+        io.to(room1).emit('presenceUpdate', { workspaceId: targetWorkspaceId, sessions: activeSessions });
       } catch (err) {
         console.error('[Socket] Error in leaveWorkspace:', err);
       }
-    });
+    };
+
+    socket.on('leaveWorkspace', handleLeaveWorkspace);
+    socket.on('leave_workspace_session', handleLeaveWorkspace);
 
     // Handle Client Disconnect (Window closed, tab crash, network loss)
     socket.on('disconnect', async () => {
@@ -263,14 +390,16 @@ const initWorkspaceSessionSocket = (io) => {
         );
 
         if (session) {
-          const roomName = `workspace:${session.workspaceId}`;
-          socket.to(roomName).emit('userLeft', { userId: session.userId, leftAt: new Date() });
+          const roomName1 = `workspace:${session.workspaceId}`;
+          const roomName2 = `workspace_${session.workspaceId}`;
+          socket.to(roomName1).emit('userLeft', { userId: session.userId, leftAt: new Date() });
+          socket.to(roomName2).emit('userLeft', { userId: session.userId, leftAt: new Date() });
 
           const activeSessions = await WorkspaceSession.find({ workspaceId: session.workspaceId })
             .populate('userId', 'name email role')
             .sort({ lastActiveAt: -1 });
 
-          io.to(roomName).emit('presenceUpdate', { workspaceId: session.workspaceId, sessions: activeSessions });
+          io.to(roomName1).emit('presenceUpdate', { workspaceId: session.workspaceId, sessions: activeSessions });
         }
       } catch (err) {
         console.error('[Socket] Error in disconnect:', err);
