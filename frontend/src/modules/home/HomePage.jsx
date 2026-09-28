@@ -110,7 +110,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        if (res.data && Array.isArray(res.data.workspaces)) {
+        if (res.data && Array.isArray(res.data.workspaces) && res.data.workspaces.length > 0) {
           setWorkspaces(res.data.workspaces);
         } else {
           setWorkspaces([]);

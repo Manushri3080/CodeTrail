@@ -33,6 +33,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   ShieldAlert,
+<<<<<<< HEAD
   Play,
   Terminal,
   Loader2,
@@ -43,11 +44,22 @@ import {
   Layers,
   Download,
   Activity
+=======
+  Radio,
+  Activity,
+  Hash
+>>>>>>> feature/Mahi
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
+<<<<<<< HEAD
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
+=======
+import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
+import { formatActiveDuration } from '../../utils/timeUtils';
+import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
+>>>>>>> feature/Mahi
 
 // Map file extensions to Monaco language identifiers
 const getMonacoLanguage = (fileName = '') => {
@@ -200,8 +212,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     || memberObj?.role 
     || (currentUser?.role ? currentUser.role : null)
     || 'editor';
-  const isViewer = workspaceRole === 'viewer';
-  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole) && !isViewer;
+  const isViewer = String(workspaceRole).toLowerCase() === 'viewer';
+  const canEditFiles = !isViewer;
   const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
 
   // Real-time Connection Status State & Reconnect Tracking (CT-89)
@@ -393,6 +405,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const monacoRef = useRef(null);
   const activeFileRef = useRef(activeFile);
   const isRemoteUpdateRef = useRef(false);
+  const prevLineCountRef = useRef({}); // Track previous line count per file for accurate line delta (CT-164)
 
   // Multiplayer Peer Cursors & Selection State (CT-86)
   const [peerCursors, setPeerCursors] = useState({});
@@ -510,6 +523,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Handle Local Cursor Movement & Emit over Socket.IO (CT-86)
   const handleLocalCursorChange = (position, selection) => {
+    if (trackerRef.current) {
+      trackerRef.current.recordActivity();
+    }
     if (!position || !socketRef.current || !socketRef.current.connected) return;
 
     const send = () => {
@@ -788,6 +804,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         version: nextVer
       });
     }
+
+    // 4b. Intercept code edit telemetry action with monotonic sequence counter (CT-164)
+    // Calculate actual line delta: only count new lines when Enter is pressed, not on every keystroke
+    const newLineCount = content.split('\n').length;
+    const oldLineCount = prevLineCountRef.current[activeFile] || newLineCount;
+    const actualLinesAdded = Math.max(0, newLineCount - oldLineCount);
+    const actualLinesDeleted = Math.max(0, oldLineCount - newLineCount);
+    prevLineCountRef.current[activeFile] = newLineCount;
+
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.CODE_EDIT, `Edited ${activeFile} (v${nextVer})`, {
+      linesAdded: actualLinesAdded,
+      linesDeleted: actualLinesDeleted,
+      totalLines: newLineCount
+    });
 
     // 5. 2.5-second Debounced Auto-save (CT-88 Requirement 1, 2, 3, 10, 11)
     setAutoSaveStatus('Unsaved changes...');
@@ -1798,6 +1828,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const [autoSaveStatus, setAutoSaveStatus] = useState('Auto-saved just now');
   const [copiedCode, setCopiedCode] = useState(false);
 
+  // CT-164 & CT-167: Telemetry & Active Duration State
+  const [dossierContributors, setDossierContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
+  const [dossierSummary, setDossierSummary] = useState(TELEMETRY_SUMMARY_CONFIG);
+  const [telemetryEvents, setTelemetryEvents] = useState([]);
+  const [showTelemetryDrawer, setShowTelemetryDrawer] = useState(false);
+  const [activeContributionSecs, setActiveContributionSecs] = useState(0);
+  const [isUserActive, setIsUserActive] = useState(true);
+  const trackerRef = useRef(null);
+
   // Workspace Session Management State
   const [mySession, setMySession] = useState(null);
   const [activeSessions, setActiveSessions] = useState([
@@ -1849,6 +1888,60 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }, 1000);
     return () => clearInterval(timer);
   }, [isSessionRunning, wsId]);
+
+  // 1b. Active Contribution Time Tracker (CT-164)
+  useEffect(() => {
+    if (!wsId) return;
+
+    const tracker = new ActiveContributionTracker({
+      workspaceId: wsId,
+      user: currentUser,
+      idleThresholdMs: 45000,
+      onTick: (metrics) => {
+        setActiveContributionSecs(metrics.activeContributionSeconds);
+        setIsUserActive(metrics.isActive);
+      },
+      onStateChange: ({ isActive }) => {
+        setIsUserActive(isActive);
+      }
+    });
+
+    trackerRef.current = tracker;
+    tracker.start();
+
+    return () => {
+      tracker.stop();
+    };
+  }, [wsId]);
+
+  // Intercept & Broadcast Workspace Telemetry Action (CT-164 + CT-167)
+  const interceptTelemetry = useCallback((actionType, details = '', metrics = {}) => {
+    if (trackerRef.current) {
+      trackerRef.current.recordActivity();
+    }
+
+    const envelope = createTelemetryEnvelope({
+      actionType,
+      workspaceId: wsId,
+      user: {
+        id: currentUserId,
+        name: currentUser.name || 'Maryam Shaikh',
+        role: workspaceRole,
+        color: myPeerColor
+      },
+      fileId: activeFileRef.current,
+      details,
+      metrics
+    });
+
+    setTelemetryEvents(prev => [envelope, ...prev.slice(0, 24)]);
+
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('telemetry:action', envelope);
+    }
+
+    return envelope;
+  }, [wsId, currentUserId, currentUser, workspaceRole, myPeerColor]);
 
   const formatSessionTime = (totalSec) => {
     const hrs = Math.floor(totalSec / 3600);
@@ -2010,6 +2103,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           role: workspaceRole
         });
 
+        // Immediately request initial telemetry dossier on connect (CT-167)
+        socket.emit('telemetry:request_dossier', { workspaceId: wsId });
+
         if (wasDisconnectedRef.current) {
           setConnectionStatus('reconnected');
           syncWorkspaceState();
@@ -2045,6 +2141,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       socket.io.on('reconnect_failed', () => {
         wasDisconnectedRef.current = true;
         setConnectionStatus('disconnected');
+      });
+
+      // CT-167: Socket Telemetry Dossier Sync & Live Action Stream
+      socket.on('telemetry:dossier_sync', (data) => {
+        if (data?.contributors && Array.isArray(data.contributors)) {
+          setDossierContributors(data.contributors);
+        }
+        if (data?.summary) {
+          setDossierSummary(prev => ({ ...prev, ...data.summary }));
+        }
+      });
+
+      socket.on('telemetry:stream', (event) => {
+        if (!event) return;
+        setTelemetryEvents(prev => [event, ...prev.slice(0, 24)]);
       });
 
       socket.on('code_change_error', ({ message }) => {
@@ -2521,27 +2632,50 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           </button>
         </div>
 
-        {/* Center Info: Session Clock & Auto-Save */}
-        <div className="hidden lg:flex items-center flex-wrap" style={{ gap: '16px' }}>
-          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 16px', gap: '8px' }}>
+        {/* Center Info: Session Clock, Active Contribution & Auto-Save */}
+        <div className="hidden lg:flex items-center flex-wrap" style={{ gap: '12px' }}>
+          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
             <Clock size={14} className="text-purple-400" />
-            <span>Session Time: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
+            <span>Session: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
           </div>
 
-          <div className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 16px', gap: '8px' }}>
+          {/* Active Contribution Time (CT-164) */}
+          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }} title="Active Contribution Time (Typing, Running & Interacting)">
+            <Activity size={14} className={isUserActive ? "text-emerald-400 animate-pulse" : "text-gray-400"} />
+            <span>Active: <strong className="text-emerald-300 font-bold">{formatActiveDuration(activeContributionSecs)}</strong></span>
+          </div>
+
+          {/* Live Telemetry Drawer Toggle Button (CT-167) */}
+          <button
+            type="button"
+            onClick={() => setShowTelemetryDrawer(prev => !prev)}
+            className={`flex items-center text-xs font-mono font-semibold rounded-xl transition-all cursor-pointer shadow-sm border ${showTelemetryDrawer ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]' : 'bg-white/[0.08] hover:bg-white/[0.12] border-white/15 text-gray-200'}`}
+            style={{ padding: '8px 14px', gap: '8px' }}
+            title="Toggle Live Telemetry & Contribution Dossier"
+          >
+            <Radio size={14} className="text-cyan-400 animate-pulse" />
+            <span>Telemetry</span>
+            {dossierSummary?.currentSequence && (
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                #{dossierSummary.currentSequence}
+              </span>
+            )}
+          </button>
+
+          <div className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
             <Save size={14} className="text-emerald-400" />
             <span>{autoSaveStatus}</span>
           </div>
 
           {currentWorkspace?.settings?.isPublic ? (
-            <span className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 14px', gap: '6px' }}><Globe size={14} /> Public</span>
+            <span className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Globe size={14} /> Public</span>
           ) : (
-            <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 14px', gap: '6px' }}><Lock size={14} /> Private</span>
+            <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Lock size={14} /> Private</span>
           )}
 
           {/* Viewer Mode Badge (CT-89) */}
           {isViewer && (
-            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse" style={{ padding: '8px 14px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
+            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse" style={{ padding: '8px 12px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
               <Lock size={14} className="text-amber-400" />
               <span>Viewer (Read-Only)</span>
             </div>
@@ -3515,8 +3649,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   wordWrap: 'on',
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
-                  readOnly: !canEditFiles || isViewer,
-                  domReadOnly: !canEditFiles || isViewer,
+                  readOnly: isViewer,
+                  domReadOnly: isViewer,
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
                   padding: { top: 14, bottom: 14 }
@@ -4244,10 +4378,215 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
           </div>
 
+          {/* RIGHT DOCKED SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
+          {showTelemetryDrawer && (
+            <div className="w-[390px] xl:w-[440px] shrink-0 border-l border-white/15 bg-[#0A0B14] flex flex-col h-full z-10 transition-all duration-300 overflow-hidden">
+              {/* Panel Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-purple-500/20 bg-gradient-to-r from-purple-950/40 via-[#090A12] to-cyan-950/30 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.25)]">
+                    <ShieldCheck className="text-purple-400" size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-[13px] font-bold text-white tracking-wide">
+                        Live Telemetry & Sync
+                      </h4>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-semibold border border-emerald-500/30 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        CT-167
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-mono mt-0.5">
+                      <span>{dossierSummary.sessionId}</span>
+                      <span>•</span>
+                      <span className="text-cyan-400 font-bold">Seq #{dossierSummary.currentSequence || 100}</span>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowTelemetryDrawer(false)}
+                  className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-all cursor-pointer border border-transparent hover:border-white/10"
+                  title="Collapse Telemetry Panel"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Panel Metrics Summary */}
+              <div className="grid grid-cols-2 gap-3 px-5 py-4 bg-white/[0.02] border-b border-white/5 shrink-0">
+                <div className="bg-gradient-to-br from-white/[0.05] to-white/[0.02] border border-white/10 rounded-xl p-3.5 shadow-sm">
+                  <div className="flex items-center justify-between text-gray-400 mb-1">
+                    <span className="text-[9px] font-mono uppercase tracking-wider font-semibold">Total Session Time</span>
+                    <Clock size={12} className="text-purple-400" />
+                  </div>
+                  <span className="text-lg font-black font-mono text-white tracking-tight block">
+                    {formatSessionTime(sessionSeconds)}
+                  </span>
+                  <span className="text-[9px] text-gray-500 font-mono block mt-0.5">Wall-clock elapsed</span>
+                </div>
+
+                <div className="bg-gradient-to-br from-emerald-500/15 via-emerald-500/5 to-transparent border border-emerald-500/30 rounded-xl p-3.5 shadow-sm">
+                  <div className="flex items-center justify-between text-emerald-400 mb-1">
+                    <span className="text-[9px] font-mono uppercase tracking-wider font-semibold">Active Contribution</span>
+                    <Activity size={12} className="text-emerald-400 animate-pulse" />
+                  </div>
+                  <span className="text-lg font-black font-mono text-emerald-300 tracking-tight block">
+                    {formatActiveDuration(activeContributionSecs)}
+                  </span>
+                  <span className="text-[9px] text-emerald-400/80 font-mono flex items-center gap-1.5 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${isUserActive ? 'bg-emerald-400 animate-ping' : 'bg-gray-500'}`} />
+                    {isUserActive ? 'Active Typing' : 'Idle (<45s)'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Quick Telemetry Broadcast Action */}
+              <div className="px-5 py-3 bg-purple-500/[0.06] border-b border-purple-500/15 flex items-center justify-between shrink-0">
+                <span className="text-[10px] font-mono text-purple-300 flex items-center gap-2">
+                  <Radio size={12} className="text-purple-400 animate-pulse" />
+                  <span>Action Stream</span>
+                </span>
+                <button
+                  onClick={() => {
+                    interceptTelemetry(TELEMETRY_ACTION_TYPES.HEARTBEAT, `Activity Ping from ${currentUser.name || 'Developer'}`, {
+                      linesAdded: 0,
+                      totalLines: 15
+                    });
+                  }}
+                  className="text-[10px] font-mono font-semibold px-3 py-1 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/40 transition-all cursor-pointer shadow-sm hover:scale-[1.02] flex items-center gap-1.5"
+                >
+                  <Zap size={11} className="text-yellow-400" />
+                  <span>Broadcast Ping</span>
+                </button>
+              </div>
+
+              {/* Scrollable Content: Team Breakdown + Live Action Stream */}
+              <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                {/* Team Breakdown */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-[11px] font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                      <Users size={13} className="text-purple-400" />
+                      <span>Team Contribution</span>
+                    </h5>
+                    <span className="text-cyan-400 font-mono text-[10px] font-bold px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20">
+                      {dossierSummary.totalLines || '4,470 lines'}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {dossierContributors.map((user, uIdx) => (
+                      <div key={user.id || uIdx} className="bg-gradient-to-r from-white/[0.04] to-white/[0.02] border border-white/10 hover:border-purple-500/30 rounded-xl p-3.5 transition-all">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <span 
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-extrabold border shadow-sm"
+                              style={{ backgroundColor: `${user.color || '#38BDF8'}20`, color: user.color || '#38BDF8', borderColor: `${user.color || '#38BDF8'}50` }}
+                            >
+                              {(user.name || 'Dev').charAt(0)}
+                            </span>
+                            <div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-bold text-gray-100">{user.name}</span>
+                                <span className="text-[8px] px-1 py-0.2 rounded font-mono font-semibold" style={{ color: user.color, backgroundColor: `${user.color}15`, border: `1px solid ${user.color}30` }}>
+                                  {user.badge || 'Contributor'}
+                                </span>
+                              </div>
+                              <span className="text-[9px] text-gray-400 block font-mono">{user.role}</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs font-mono font-black text-purple-300 block">
+                              {(user.lines || 0).toLocaleString()} lines
+                            </span>
+                            <span className="text-[9px] text-gray-400 font-mono font-bold">
+                              {user.percent || 0}% share
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Progress Fill */}
+                        <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden border border-white/5">
+                          <div 
+                            className="h-full rounded-full transition-all duration-700 ease-out shadow-sm"
+                            style={{ width: `${user.percent || 0}%`, backgroundColor: user.color || '#38BDF8' }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Live Action Log (CT-164) */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-[11px] font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                      <Radio size={12} className="text-emerald-400 animate-pulse" />
+                      <span>Live Action Log (ISO-8601)</span>
+                    </h5>
+                    <span className="text-[9px] text-gray-400 font-mono">
+                      {telemetryEvents.length} events
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {telemetryEvents.length === 0 ? (
+                      <div className="text-center py-6 text-xs text-gray-400 font-mono border border-dashed border-purple-500/20 bg-purple-500/[0.03] rounded-xl">
+                        <p className="font-semibold text-gray-300">No actions recorded yet</p>
+                        <p className="text-[9px] text-gray-500 mt-0.5">Type in editor or click 'Broadcast Ping'</p>
+                      </div>
+                    ) : (
+                      telemetryEvents.map((evt, eIdx) => (
+                        <div key={evt.eventId || eIdx} className="bg-gradient-to-r from-white/[0.03] to-white/[0.01] border border-white/10 hover:border-purple-500/30 rounded-lg p-3 text-[10px] font-mono transition-all">
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                                #{evt.seq}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[8px] bg-purple-500/20 text-purple-300 uppercase font-sans font-bold">
+                                {evt.actionType}
+                              </span>
+                              <span className="text-gray-200 font-sans font-semibold truncate max-w-[100px]">
+                                {evt.user?.name || 'Developer'}
+                              </span>
+                            </div>
+                            <span className="text-[8px] font-mono text-purple-300 flex items-center gap-0.5">
+                              <CheckCircle2 size={9} className="text-emerald-400" />
+                              #{evt.verificationHash}
+                            </span>
+                          </div>
+                          <div className="text-gray-300 text-[9px] font-sans truncate">
+                            {evt.details || `Modified ${evt.fileId}`}
+                          </div>
+                          <div className="text-[8px] text-gray-500 mt-1 flex items-center justify-between border-t border-white/5 pt-1">
+                            <span className="font-mono text-gray-400 flex items-center gap-1">
+                              <Clock size={8} className="text-gray-500" />
+                              {evt.timestamp}
+                            </span>
+                            {evt.fileId && <span className="text-cyan-400/80">[{evt.fileId}]</span>}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Panel Footer */}
+              <div className="px-5 py-3.5 border-t border-purple-500/20 bg-[#080910] flex items-center justify-between text-[11px] font-mono text-gray-400 shrink-0">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                  <CheckCircle2 size={13} className="text-emerald-400" />
+                  <span>Socket.IO Sync Active</span>
+                </div>
+                <span className="text-[10px] text-gray-500">CodeTrail v2.0</span>
+              </div>
+            </div>
+          )}
+
         </div>
 
       </section>
-
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
         isOpen={isSettingsModalOpen}

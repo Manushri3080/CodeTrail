@@ -13,15 +13,18 @@ import {
   Check, 
   FileText, 
   ChevronDown,
-  Lock,
+  Radio,
+  Clock,
   Layers
 } from 'lucide-react';
+import { io } from 'socket.io-client';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
+import { formatActiveDuration } from '../../utils/timeUtils';
 
 const API_BASE = 'http://localhost:5000/api';
 
-export const ContributionDossier = ({ activeWorkspace = null, currentUser = null }) => {
+export const ContributionDossier = ({ activeWorkspace = null, currentUser = null, liveSocket = null }) => {
   const [workspaces, setWorkspaces] = useState([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState(activeWorkspace);
   const [telemetry, setTelemetry] = useState(null);
@@ -32,6 +35,11 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [exportMessage, setExportMessage] = useState(null);
 
+  // Live Socket.IO Telemetry State (CT-164 & CT-167)
+  const [liveContributors, setLiveContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
+  const [liveEvents, setLiveEvents] = useState([]);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+
   const token = typeof window !== 'undefined' ? localStorage.getItem('ct-auth-token') : null;
 
   // Sync selected workspace when prop changes
@@ -41,7 +49,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
     }
   }, [activeWorkspace]);
 
-  // Load user's workspaces if logged in and none is selected
+  // Load user's workspaces if logged in
   useEffect(() => {
     if (!token) return;
 
@@ -56,7 +64,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
         const list = Array.isArray(res.data) ? res.data : (res.data?.workspaces || []);
         setWorkspaces(list);
 
-        // If no workspace currently chosen, select the active one or the first in list
         if (!selectedWorkspace && list.length > 0) {
           const savedActive = localStorage.getItem('ct-active-workspace-session');
           if (savedActive) {
@@ -78,12 +85,70 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
     return () => { isMounted = false; };
   }, [token]);
 
+  // Socket.IO live sync setup (CT-167)
+  useEffect(() => {
+    let socket = liveSocket;
+    let localSocketCreated = false;
+
+    if (!socket) {
+      try {
+        socket = io('http://localhost:5000', {
+          transports: ['websocket', 'polling'],
+          reconnection: true
+        });
+        localSocketCreated = true;
+      } catch (e) {
+        console.warn('Socket connection unavailable for dossier:', e);
+      }
+    }
+
+    if (socket) {
+      const wsId = selectedWorkspace?._id || selectedWorkspace?.id || 'demo-workspace';
+
+      socket.on('connect', () => {
+        setIsLiveConnected(true);
+        socket.emit('telemetry:request_dossier', { workspaceId: wsId });
+      });
+
+      socket.on('disconnect', () => {
+        setIsLiveConnected(false);
+      });
+
+      const handleDossierSync = (data) => {
+        if (data?.contributors && Array.isArray(data.contributors)) {
+          setLiveContributors(data.contributors);
+        }
+      };
+
+      const handleTelemetryStream = (event) => {
+        if (!event) return;
+        setLiveEvents(prev => [event, ...prev.slice(0, 7)]);
+      };
+
+      socket.on('telemetry:dossier_sync', handleDossierSync);
+      socket.on('telemetry:dossier_update', handleDossierSync);
+      socket.on('telemetry:stream', handleTelemetryStream);
+
+      if (socket.connected) {
+        setIsLiveConnected(true);
+        socket.emit('telemetry:request_dossier', { workspaceId: wsId });
+      }
+
+      return () => {
+        socket.off('telemetry:dossier_sync', handleDossierSync);
+        socket.off('telemetry:dossier_update', handleDossierSync);
+        socket.off('telemetry:stream', handleTelemetryStream);
+        if (localSocketCreated) {
+          socket.disconnect();
+        }
+      };
+    }
+  }, [selectedWorkspace, liveSocket]);
+
   // Fetch telemetry & proof-of-work verification from backend
   const fetchTelemetry = useCallback(async (isRefresh = false) => {
     const wsId = selectedWorkspace?._id || selectedWorkspace?.id;
-    if (!wsId || !token) {
-      return;
-    }
+    if (!wsId || !token) return;
 
     if (isRefresh) setVerifying(true);
     else setLoading(true);
@@ -92,24 +157,14 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
       const [contribRes, verifyRes] = await Promise.all([
         axios.get(`${API_BASE}/workspaces/${wsId}/contributions`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(err => {
-          console.warn('Contributions endpoint notice:', err.response?.data?.message || err.message);
-          return null;
-        }),
+        }).catch(() => null),
         axios.get(`${API_BASE}/workspaces/${wsId}/proof-of-work/verify`, {
           headers: { Authorization: `Bearer ${token}` }
-        }).catch(err => {
-          console.warn('PoW verify endpoint notice:', err.response?.data?.message || err.message);
-          return null;
-        })
+        }).catch(() => null)
       ]);
 
-      if (contribRes?.data) {
-        setTelemetry(contribRes.data);
-      }
-      if (verifyRes?.data) {
-        setVerification(verifyRes.data);
-      }
+      if (contribRes?.data) setTelemetry(contribRes.data);
+      if (verifyRes?.data) setVerification(verifyRes.data);
     } catch (err) {
       console.error('Failed to load live telemetry:', err);
     } finally {
@@ -122,7 +177,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
     fetchTelemetry();
   }, [fetchTelemetry]);
 
-  // Copy full SHA-256 hash to clipboard
   const handleCopyHash = (fullHash, shortHash) => {
     if (!fullHash) return;
     navigator.clipboard.writeText(fullHash);
@@ -130,7 +184,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
     setTimeout(() => setCopiedHash(null), 2000);
   };
 
-  // Export handlers
   const handleExportJSON = () => {
     setShowExportMenu(false);
     const fileName = exportAuditJson(selectedWorkspace, telemetry, verification);
@@ -145,10 +198,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
     setTimeout(() => setExportMessage(null), 3500);
   };
 
-  // Derived state or fallback to initial mock data for public landing preview
   const isLive = Boolean(telemetry && telemetry.contributors && telemetry.contributors.length > 0);
-  const contributors = isLive ? telemetry.contributors : INITIAL_TEAM_CONTRIBUTIONS;
-  
+  const contributors = isLive ? telemetry.contributors : liveContributors;
   const totalLines = isLive 
     ? (telemetry.summary?.totalLinesChanged?.toLocaleString() + ' lines') 
     : TELEMETRY_SUMMARY_CONFIG.totalLines;
@@ -170,10 +221,18 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
         
         {/* Section Header */}
         <div className="ct-section-header">
-          <span className="ct-demo-badge">PROOF-OF-WORK AUDIT</span>
+          <div className="inline-flex items-center gap-2 mb-2">
+            <span className="ct-demo-badge">PROOF-OF-WORK AUDIT</span>
+            {isLiveConnected && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                LIVE SOCKET SYNC (CT-167)
+              </span>
+            )}
+          </div>
           <h2 className="ct-section-title">Contribution Telemetry</h2>
           <p className="ct-section-subtitle">
-            Automated activity telemetry with SHA-256 proof-of-work chaining providing tamper-evident collaboration analytics.
+            Automated activity telemetry providing high-precision ISO-8601 timestamping, monotonic event sequencing, and tamper-evident SHA-256 analytics.
           </p>
         </div>
 
@@ -189,7 +248,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
             </div>
 
             <div className="ct-dossier-meta-pills">
-              {/* Workspace Selector Dropdown (when multiple workspaces available) */}
               {token && workspaces.length > 1 && (
                 <div className="relative inline-block text-left">
                   <select
@@ -268,7 +326,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                 </div>
               )}
 
-              {/* Export Menu Dropdown */}
               <div className="relative">
                 <button 
                   className="ct-btn-download"
@@ -336,7 +393,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
                 return (
                   <div key={user.id || idx} className="ct-table-row">
-                    {/* Contributor Column */}
                     <div className="ct-user-col">
                       <span 
                         className="ct-user-avatar" 
@@ -345,7 +401,14 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                         {user.name ? user.name.split(' ').map(n => n[0]).join('').slice(0, 2) : 'CT'}
                       </span>
                       <div className="ct-user-info">
-                        <span className="ct-user-name">{user.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="ct-user-name">{user.name}</span>
+                          {user.activeSeconds > 0 && (
+                            <span className="text-[10px] text-gray-400 font-mono hidden md:inline">
+                              ({formatActiveDuration(user.activeSeconds)})
+                            </span>
+                          )}
+                        </div>
                         <span 
                           className="ct-user-badge" 
                           style={{ color: userColor, borderColor: `${userColor}40`, backgroundColor: `${userColor}15` }}
@@ -355,10 +418,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                       </div>
                     </div>
 
-                    {/* Role / Responsibility */}
                     <div className="ct-user-role">{user.role}</div>
 
-                    {/* Lines Synced (+ / - breakdown) */}
                     <div className="ct-user-lines">
                       <span className="font-semibold text-gray-200">{Number(user.lines || 0).toLocaleString()} lines</span>
                       {(user.linesAdded !== undefined || user.linesDeleted !== undefined) && (
@@ -369,7 +430,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                       )}
                     </div>
 
-                    {/* Participation Ratio */}
                     <div className="ct-user-percent">
                       <div className="ct-progress-bar">
                         <div 
@@ -380,7 +440,6 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                       <span className="ct-percent-text">{user.percent || 0}%</span>
                     </div>
 
-                    {/* SHA-256 Verification Hash Pill with Click to Copy */}
                     <div className="ct-user-hash">
                       <button
                         onClick={() => handleCopyHash(fullHash, shortHash)}
@@ -402,6 +461,42 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               })}
             </div>
           </div>
+
+          {/* Live Action Stream Ticker (CT-164: Timestamp Recording & Monotonic Sequencing) */}
+          {liveEvents.length > 0 && (
+            <div className="border-t border-purple-500/10 bg-black/40 px-5 py-3 rounded-b-xl">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-gray-300">
+                  <Radio size={13} className="text-emerald-400 animate-pulse" />
+                  <span>Real-time Intercepted Action Telemetry</span>
+                  <span className="text-[10px] text-gray-500 font-mono">ISO-8601 High-Precision Stream</span>
+                </div>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {liveEvents.length} events buffered
+                </span>
+              </div>
+
+              <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                {liveEvents.map((evt, eIdx) => (
+                  <div key={evt.eventId || eIdx} className="flex items-center justify-between text-[11px] font-mono bg-white/[0.02] border border-white/5 rounded px-2.5 py-1 text-gray-300">
+                    <div className="flex items-center gap-2">
+                      <span className="text-cyan-400 font-bold">Seq #{evt.seq}</span>
+                      <span className="px-1.5 py-0.2 rounded text-[9px] bg-purple-500/20 text-purple-300 uppercase font-sans font-semibold">
+                        {evt.actionType}
+                      </span>
+                      <span className="text-gray-200 font-sans">{evt.user?.name || 'Developer'}</span>
+                      {evt.fileId && <span className="text-gray-400">[{evt.fileId}]</span>}
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                      <Clock size={10} className="text-gray-500" />
+                      <span>{evt.timestamp}</span>
+                      <span className="text-purple-400 text-[9px]">#{evt.verificationHash}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
         </div>
 
