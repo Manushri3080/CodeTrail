@@ -6,7 +6,9 @@ const {
   GENESIS_HASH,
   computeActivityHash,
   verifySingleActivityHash,
-  verifyActivityChain
+  verifyActivityChain,
+  auditActivityChainIntegrity,
+  simulateTamper
 } = require('../utils/cryptoProof');
 
 /**
@@ -372,7 +374,7 @@ const getWorkspaceContributions = async (req, res) => {
 };
 
 /**
- * 4. Verify Proof-of-Work Hash Chain Integrity
+ * 4. Verify Proof-of-Work Hash Chain Integrity (Fast Status Check)
  * GET /api/workspaces/:workspaceId/proof-of-work/verify
  */
 const verifyProofOfWork = async (req, res) => {
@@ -390,7 +392,7 @@ const verifyProofOfWork = async (req, res) => {
       .sort({ sequenceNumber: 1 })
       .lean();
 
-    const verificationResult = verifyActivityChain(activities);
+    const verificationResult = auditActivityChainIntegrity(activities, { includeLedger: false });
 
     res.json({
       workspaceId,
@@ -404,7 +406,97 @@ const verifyProofOfWork = async (req, res) => {
 };
 
 /**
- * 5. Get Individual Activity Block by ID (with cryptographic verification breakdown)
+ * 5. Comprehensive Chain Integrity Forensic Audit (CT-166)
+ * GET /api/workspaces/:workspaceId/activities/audit
+ */
+const auditWorkspaceChainIntegrity = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+      return res.status(400).json({ message: 'Invalid workspace ID format.' });
+    }
+
+    const wsObjectId = new mongoose.Types.ObjectId(workspaceId);
+
+    const activities = await ActivityLog.find({ workspaceId: wsObjectId })
+      .populate('userId', 'name email avatar')
+      .sort({ sequenceNumber: 1 })
+      .lean();
+
+    const auditReport = auditActivityChainIntegrity(activities, { includeLedger: true });
+
+    res.json({
+      workspaceId,
+      auditedAt: new Date().toISOString(),
+      ...auditReport
+    });
+  } catch (err) {
+    console.error('Audit Workspace Chain Error:', err);
+    res.status(500).json({ message: 'Failed to perform cryptographic audit', error: err.message });
+  }
+};
+
+/**
+ * 6. Tamper-Detection Simulation Engine (CT-166 QA & Verification)
+ * POST /api/workspaces/:workspaceId/activities/simulate-tamper
+ */
+const simulateTamperDetection = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const { 
+      tamperType = 'modify_payload_lines', 
+      targetIndex = 0 
+    } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+      return res.status(400).json({ message: 'Invalid workspace ID format.' });
+    }
+
+    const wsObjectId = new mongoose.Types.ObjectId(workspaceId);
+
+    const activities = await ActivityLog.find({ workspaceId: wsObjectId })
+      .populate('userId', 'name email avatar')
+      .sort({ sequenceNumber: 1 })
+      .lean();
+
+    if (activities.length === 0) {
+      return res.status(400).json({ 
+        message: 'No activities exist in this workspace to simulate tampering. Create some file edits or code executions first.' 
+      });
+    }
+
+    // 1. Audit Original Clean Chain
+    const originalAudit = auditActivityChainIntegrity(activities, { includeLedger: false });
+
+    // 2. Inject Controlled Tamper in Memory
+    const tamperedActivities = simulateTamper(activities, tamperType, targetIndex);
+
+    // 3. Re-run Chain Integrity Auditor on Tampered Chain
+    const tamperedAudit = auditActivityChainIntegrity(tamperedActivities, { includeLedger: true });
+
+    res.json({
+      simulation: {
+        workspaceId,
+        simulatedAt: new Date().toISOString(),
+        tamperType,
+        targetIndex: Math.min(Math.max(0, targetIndex), activities.length - 1),
+        targetBlockSequence: tamperedActivities[Math.min(Math.max(0, targetIndex), activities.length - 1)]?.sequenceNumber,
+        originalChainStatus: originalAudit.status,
+        tamperedChainStatus: tamperedAudit.status,
+        tamperDetected: !tamperedAudit.isValid,
+        detectionSpeedMs: tamperedAudit.auditDurationMs
+      },
+      tamperedAuditReport: tamperedAudit
+    });
+  } catch (err) {
+    console.error('Simulate Tamper Detection Error:', err);
+    res.status(500).json({ message: 'Failed to run tamper simulation', error: err.message });
+  }
+};
+
+/**
+ * 7. Get Individual Activity Block by ID (with cryptographic verification breakdown)
  * GET /api/workspaces/:workspaceId/activities/:activityId
  */
 const getActivityById = async (req, res) => {
@@ -457,5 +549,7 @@ module.exports = {
   getWorkspaceActivities,
   getWorkspaceContributions,
   verifyProofOfWork,
+  auditWorkspaceChainIntegrity,
+  simulateTamperDetection,
   getActivityById
 };

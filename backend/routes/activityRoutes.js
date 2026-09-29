@@ -6,6 +6,8 @@ const {
   getWorkspaceActivities,
   getWorkspaceContributions,
   verifyProofOfWork,
+  auditWorkspaceChainIntegrity,
+  simulateTamperDetection,
   getActivityById
 } = require('../controllers/activityController');
 
@@ -15,6 +17,12 @@ router.use(auth);
 // Activity logs endpoints
 router.post('/activities', createActivityLog);
 router.get('/activities', getWorkspaceActivities);
+
+// Chain integrity forensic audit & tamper simulation endpoints (CT-166)
+router.get('/activities/audit', auditWorkspaceChainIntegrity);
+router.post('/activities/simulate-tamper', simulateTamperDetection);
+
+// Single block lookup with verification breakdown
 router.get('/activities/:activityId', getActivityById);
 
 // Aggregated contribution telemetry endpoint
