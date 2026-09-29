@@ -4191,12 +4191,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             <ShieldCheck size={15} className="text-purple-400" />
                             <span>Proof-of-Work Contribution Telemetry & Audit</span>
                             {telemetryVerification?.isValid ? (
-                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold">
+                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                 <CheckCircle2 size={11} /> 100% Cryptographically Verified
                               </span>
                             ) : (
-                              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-bold">
-                                <AlertTriangle size={11} /> Verification Discrepancy
+                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
+                                <AlertTriangle size={11} className="text-rose-400" /> Tamper Warning
                               </span>
                             )}
                           </div>
@@ -4240,6 +4241,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             </button>
                           </div>
                         </div>
+
+                        {/* Tamper Diagnostic Banner in Output Tab */}
+                        {telemetryVerification && !telemetryVerification.isValid && (
+                          <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-2.5">
+                            <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <div className="font-bold text-rose-300">
+                                Cryptographic Tamper Warning Detected
+                              </div>
+                              <div className="text-[11px] text-gray-300 mt-0.5">
+                                {telemetryVerification.tamperDiagnostics?.details || telemetryVerification.error || telemetryVerification.message || 'Stored hash mismatch detected.'}
+                              </div>
+                            </div>
+                          </div>
+                        )}
 
                         {/* Top Summary Cards */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
@@ -4451,6 +4467,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                         CT-167
                       </span>
+                      {telemetryVerification && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border flex items-center gap-1 ${
+                          telemetryVerification.isValid 
+                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' 
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                        }`}>
+                          {telemetryVerification.isValid ? '100% Verified' : 'Tamper Warning'}
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 text-[11px] text-gray-400 font-mono mt-0.5">
                       <span>{dossierSummary.sessionId}</span>
