@@ -1,4 +1,10 @@
 require('dotenv').config();
+// Auto-start local Piston code execution server v2 on port 2000
+try {
+  require('./utils/pistonServer');
+} catch (pistonErr) {
+  console.warn('Local Piston Server startup notice:', pistonErr.message);
+}
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -19,6 +25,7 @@ if (dns.setDefaultResultOrder) {
 const { verifyGoogleToken, registerUser, loginUser, forgotPassword, resetPassword, getProfile, updateProfile, changePassword } = require('./controllers/authController');
 const { executeCode } = require('./controllers/executionController');
 const auth = require('./middleware/auth');
+const { optionalAuth } = require('./middleware/auth');
 const workspaceRoutes = require('./routes/workspaceRoutes');
 const workspaceSessionRoutes = require('./routes/workspaceSessionRoutes');
 const initWorkspaceSessionSocket = require('./sockets/workspaceSessionSocket');
@@ -43,8 +50,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Multi-Language Code Execution Sandbox Endpoint (Bypasses DB check so code runner works offline)
-app.post('/api/execute', executeCode);
+// Multi-Language Code Execution Sandbox Endpoint (Supports optional auth & works offline)
+app.post('/api/execute', optionalAuth, executeCode);
+
 
 // Middleware to verify database connectivity for API endpoints
 const checkDbConnection = (req, res, next) => {
