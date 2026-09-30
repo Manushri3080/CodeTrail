@@ -28,6 +28,7 @@ const auth = require('./middleware/auth');
 const { optionalAuth } = require('./middleware/auth');
 const workspaceRoutes = require('./routes/workspaceRoutes');
 const workspaceSessionRoutes = require('./routes/workspaceSessionRoutes');
+const activityRoutes = require('./routes/activityRoutes');
 const initWorkspaceSessionSocket = require('./sockets/workspaceSessionSocket');
 
 // Disable Mongoose command buffering so queries fail immediately when DB is offline instead of hanging
@@ -82,6 +83,7 @@ app.put('/api/auth/change-password', auth, changePassword);
 // Workspace & Collaboration Routes
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/workspaces/:workspaceId/session', workspaceSessionRoutes);
+app.use('/api/workspaces/:workspaceId', activityRoutes);
 
 // Initialize Real-time Socket.IO Presence Engine
 initWorkspaceSessionSocket(io);

@@ -339,7 +339,28 @@ exports.updateWorkspace = async (req, res) => {
     if (icon) workspace.icon = icon;
     if (status && role === 'owner') workspace.status = status;
     if (settings) workspace.settings = { ...workspace.settings, ...settings };
-    if (files && Array.isArray(files)) workspace.files = files;
+    if (files && Array.isArray(files)) {
+      workspace.files = files;
+      try {
+        const { recordActivity } = require('./activityController');
+        let totalLines = 0;
+        files.forEach(f => {
+          if (f && typeof f.content === 'string') {
+            totalLines += f.content.split('\n').length;
+          }
+        });
+        await recordActivity({
+          workspaceId: id,
+          user: req.user,
+          action: 'code_edit',
+          details: `Synchronized ${files.length} workspace file(s) (${totalLines} total lines)`,
+          linesAdded: Math.max(1, files.length),
+          timestamp: new Date()
+        });
+      } catch (actErr) {
+        console.warn('Proof-of-work file sync warning:', actErr.message);
+      }
+    }
 
     workspace.lastActiveAt = new Date();
     await workspace.save();
@@ -571,6 +592,30 @@ exports.addWorkspaceHistoryLog = async (req, res) => {
 
     workspace.activityLogs = [newLog, ...(workspace.activityLogs || [])];
     await workspace.save();
+
+    // Automatically record into the cryptographic Proof-of-Work activity chain
+    try {
+      const { recordActivity } = require('./activityController');
+      const actionMap = {
+        session: 'session_start',
+        'session-end': 'session_end',
+        file: 'code_edit',
+        member: 'member_join',
+        settings: 'settings_update',
+        code: 'code_edit',
+        execution: 'code_execution',
+        language: 'settings_update'
+      };
+      await recordActivity({
+        workspaceId: id,
+        user: req.user,
+        action: actionMap[type] || 'general',
+        details: `${title.trim()}: ${details.trim()}`,
+        timestamp: newLog.timestamp
+      });
+    } catch (actErr) {
+      console.warn('Proof-of-work auto-record warning:', actErr.message);
+    }
 
     res.status(201).json({
       message: 'History log recorded',

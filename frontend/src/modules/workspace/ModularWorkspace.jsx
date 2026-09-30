@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import {
@@ -39,13 +39,19 @@ import {
   Trash2,
   Edit2,
   History,
-  Sparkles
+  Hash,
+  Layers,
+  Download,
+  Activity,
+  Radio
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
 import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
-import { ScaffoldProjectModal } from '../../components/workspace/ScaffoldProjectModal';
-import { detectLanguage, getFileExtension } from '../../utils/languageDetection';
+import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
+import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
+import { formatActiveDuration } from '../../utils/timeUtils';
+import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
 
 // Map file extensions to Monaco language identifiers
 const getMonacoLanguage = (fileName = '') => {
@@ -198,8 +204,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     || memberObj?.role
     || (currentUser?.role ? currentUser.role : null)
     || 'editor';
-  const isViewer = workspaceRole === 'viewer';
-  const canEditFiles = ['owner', 'admin', 'editor'].includes(workspaceRole) && !isViewer;
+  const isViewer = String(workspaceRole).toLowerCase() === 'viewer';
+  const canEditFiles = !isViewer;
   const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
 
   // Real-time Connection Status State & Reconnect Tracking (CT-89)
@@ -389,6 +395,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const monacoRef = useRef(null);
   const activeFileRef = useRef(activeFile);
   const isRemoteUpdateRef = useRef(false);
+  const prevLineCountRef = useRef({}); // Track previous line count per file for accurate line delta (CT-164)
 
   // Multiplayer Peer Cursors & Selection State (CT-86)
   const [peerCursors, setPeerCursors] = useState({});
@@ -506,6 +513,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Handle Local Cursor Movement & Emit over Socket.IO (CT-86)
   const handleLocalCursorChange = (position, selection) => {
+    if (trackerRef.current) {
+      trackerRef.current.recordActivity();
+    }
     if (!position || !socketRef.current || !socketRef.current.connected) return;
 
     const send = () => {
@@ -683,7 +693,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       filesContentRef.current = next;
       try {
         localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
-      } catch (e) {}
+      } catch (e) { }
       return next;
     });
 
@@ -938,6 +948,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
     }
 
+    // 4b. Intercept code edit telemetry action with monotonic sequence counter (CT-164)
+    // Calculate actual line delta: only count new lines when Enter is pressed, not on every keystroke
+    const newLineCount = content.split('\n').length;
+    const oldLineCount = prevLineCountRef.current[activeFile] || newLineCount;
+    const actualLinesAdded = Math.max(0, newLineCount - oldLineCount);
+    const actualLinesDeleted = Math.max(0, oldLineCount - newLineCount);
+    prevLineCountRef.current[activeFile] = newLineCount;
+
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.CODE_EDIT, `Edited ${activeFile} (v${nextVer})`, {
+      linesAdded: actualLinesAdded,
+      linesDeleted: actualLinesDeleted,
+      totalLines: newLineCount
+    });
+
     // 5. 2.5-second Debounced Auto-save (CT-88 Requirement 1, 2, 3, 10, 11)
     setAutoSaveStatus('Unsaved changes...');
     if (autoSaveTimerRef.current) {
@@ -1150,6 +1174,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
     }
 
+    // Intercept File Creation Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Created file "${cleanName}"`, {
+      fileId: fullPath,
+      linesAdded: boilerplate.split('\n').length,
+      totalLines: boilerplate.split('\n').length
+    });
+
     showToast(`📄 Created ${cleanName}`, 'success');
     triggerAutoSave();
     recordHistoryLog('file', `File Created: ${cleanName}`, `Created workspace file ${fullPath}.`);
@@ -1196,6 +1227,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (socketRef.current) {
       socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
     }
+
+    // Intercept Folder Creation Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Created folder "${cleanName}"`, {
+      fileId: fullPath
+    });
 
     showToast(`📁 Created folder ${cleanName}`, 'success');
     triggerAutoSave();
@@ -1282,6 +1318,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
       }
 
+      // Intercept Folder Rename Action (CT-164 & CT-167)
+      interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Renamed folder ${itemToRename.name} → ${cleanName}`, {
+        fileId: newPath
+      });
+
       showToast(`📁 Renamed folder ${itemToRename.name} → ${cleanName}`, 'success');
     } else {
       const iconColor = getLanguageInfo(cleanName).color;
@@ -1303,6 +1344,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         socketRef.current.emit('file_renamed', { workspaceId: wsId, oldFileId: oldId, newFileId: newPath });
         socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
       }
+
+      // Intercept File Rename Action (CT-164 & CT-167)
+      interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Renamed ${itemToRename.name} → ${cleanName}`, {
+        fileId: newPath
+      });
 
       showToast(`✏️ Renamed ${itemToRename.name} → ${cleanName}`, 'success');
     }
@@ -1358,6 +1404,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
     }
 
+    // Intercept File/Folder Deletion Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_DELETE, `Deleted ${itemToDelete.isFolder ? 'folder' : 'file'} "${itemToDelete.name}"`, {
+      fileId: targetId
+    });
+
     showToast(`🗑 Deleted "${itemToDelete.name}"`, 'warning');
     triggerAutoSave();
     recordHistoryLog('file', `Deleted: ${itemToDelete.name}`, `Removed ${targetId} from workspace.`);
@@ -1412,6 +1463,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       socketRef.current.emit('file_created', { workspaceId: wsId, file: newFileObj });
       socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
     }
+
+    // Intercept File Duplication Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Duplicated "${fileItem.name}" → "${newName}"`, {
+      fileId: newPath,
+      linesAdded: existingContent.split('\n').length,
+      totalLines: existingContent.split('\n').length
+    });
 
     showToast(`📋 Duplicated ${fileItem.name} → ${newName}`, 'success');
     triggerAutoSave();
@@ -1594,9 +1652,46 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Custom Input (stdin) & Output Console Tabbed Navigation State
   const [customInput, setCustomInput] = useState('');
-  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history'
+  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history' | 'telemetry'
   const [executionHistoryList, setExecutionHistoryList] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
+  // Telemetry & Proof-of-Work Audit State (CT-163 & CT-168)
+  const [telemetryData, setTelemetryData] = useState(null);
+  const [telemetryVerification, setTelemetryVerification] = useState(null);
+  const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
+  const [telemetryCopiedHash, setTelemetryCopiedHash] = useState(null);
+
+  const fetchWorkspaceTelemetry = useCallback(async () => {
+    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    setIsTelemetryLoading(true);
+    try {
+      const [contribRes, verifyRes] = await Promise.all([
+        axios.get(`http://localhost:5000/api/workspaces/${wsId}/contributions`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(err => {
+          console.warn('Contributions fetch notice:', err.message);
+          return null;
+        }),
+        axios.get(`http://localhost:5000/api/workspaces/${wsId}/proof-of-work/verify`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }).catch(err => {
+          console.warn('Verification fetch notice:', err.message);
+          return null;
+        })
+      ]);
+      if (contribRes?.data) setTelemetryData(contribRes.data);
+      if (verifyRes?.data) setTelemetryVerification(verifyRes.data);
+    } catch (err) {
+      console.error('Failed to fetch workspace telemetry:', err);
+    } finally {
+      setIsTelemetryLoading(false);
+    }
+  }, [wsId, token]);
+
+  useEffect(() => {
+    fetchWorkspaceTelemetry();
+  }, [fetchWorkspaceTelemetry]);
 
   // Fetch Workspace Execution History on Load or Workspace ID Change
   useEffect(() => {
@@ -1661,6 +1756,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       language,
       timestamp: new Date().toISOString(),
       stdin: customInput
+    });
+
+    // Intercept Code Run Telemetry Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.RUN_CODE, `Executed ${activeFile} (${getLanguageInfo(activeFile).name})`, {
+      fileId: activeFile,
+      totalLines: codeToRun.split('\n').length
     });
 
     try {
@@ -1780,6 +1881,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
     } finally {
       setIsExecuting(false);
+      fetchWorkspaceTelemetry();
     }
   };
 
@@ -1922,6 +2024,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const [autoSaveStatus, setAutoSaveStatus] = useState('Auto-saved just now');
   const [copiedCode, setCopiedCode] = useState(false);
 
+  // CT-164 & CT-167: Telemetry & Active Duration State
+  const [dossierContributors, setDossierContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
+  const [dossierSummary, setDossierSummary] = useState(TELEMETRY_SUMMARY_CONFIG);
+  const [telemetryEvents, setTelemetryEvents] = useState([]);
+  const [showTelemetryDrawer, setShowTelemetryDrawer] = useState(false);
+  const [telemetryDrawerTab, setTelemetryDrawerTab] = useState('contributors'); // 'contributors' | 'stream'
+  const [activeContributionSecs, setActiveContributionSecs] = useState(0);
+  const [isUserActive, setIsUserActive] = useState(true);
+  const trackerRef = useRef(null);
+
   // Workspace Session Management State
   const [mySession, setMySession] = useState(null);
   const [activeSessions, setActiveSessions] = useState([
@@ -1973,6 +2085,60 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }, 1000);
     return () => clearInterval(timer);
   }, [isSessionRunning, wsId]);
+
+  // 1b. Active Contribution Time Tracker (CT-164)
+  useEffect(() => {
+    if (!wsId) return;
+
+    const tracker = new ActiveContributionTracker({
+      workspaceId: wsId,
+      user: currentUser,
+      idleThresholdMs: 45000,
+      onTick: (metrics) => {
+        setActiveContributionSecs(metrics.activeContributionSeconds);
+        setIsUserActive(metrics.isActive);
+      },
+      onStateChange: ({ isActive }) => {
+        setIsUserActive(isActive);
+      }
+    });
+
+    trackerRef.current = tracker;
+    tracker.start();
+
+    return () => {
+      tracker.stop();
+    };
+  }, [wsId]);
+
+  // Intercept & Broadcast Workspace Telemetry Action (CT-164 + CT-167)
+  const interceptTelemetry = useCallback((actionType, details = '', metrics = {}) => {
+    if (trackerRef.current) {
+      trackerRef.current.recordActivity();
+    }
+
+    const envelope = createTelemetryEnvelope({
+      actionType,
+      workspaceId: wsId,
+      user: {
+        id: currentUserId,
+        name: currentUser.name || 'Maryam Shaikh',
+        role: workspaceRole,
+        color: myPeerColor
+      },
+      fileId: activeFileRef.current,
+      details,
+      metrics
+    });
+
+    setTelemetryEvents(prev => [envelope, ...prev.slice(0, 24)]);
+
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('telemetry:action', envelope);
+    }
+
+    return envelope;
+  }, [wsId, currentUserId, currentUser, workspaceRole, myPeerColor]);
 
   const formatSessionTime = (totalSec) => {
     const hrs = Math.floor(totalSec / 3600);
@@ -2134,6 +2300,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           role: workspaceRole
         });
 
+        // Immediately request initial telemetry dossier on connect (CT-167)
+        socket.emit('telemetry:request_dossier', { workspaceId: wsId });
+
         if (wasDisconnectedRef.current) {
           setConnectionStatus('reconnected');
           syncWorkspaceState();
@@ -2169,6 +2338,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       socket.io.on('reconnect_failed', () => {
         wasDisconnectedRef.current = true;
         setConnectionStatus('disconnected');
+      });
+
+      // CT-167: Socket Telemetry Dossier Sync & Live Action Stream
+      socket.on('telemetry:dossier_sync', (data) => {
+        if (data?.contributors && Array.isArray(data.contributors)) {
+          setDossierContributors(data.contributors);
+        }
+        if (data?.summary) {
+          setDossierSummary(prev => ({ ...prev, ...data.summary }));
+        }
+      });
+
+      socket.on('telemetry:stream', (event) => {
+        if (!event) return;
+        setTelemetryEvents(prev => [event, ...prev.slice(0, 24)]);
       });
 
       socket.on('code_change_error', ({ message }) => {
@@ -2447,6 +2631,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             workspaceId: wsId,
             userId: currentUser.id || currentUser._id
           });
+
+          // Heartbeat to Sync Session Duration & Active Contribution Time (CT-164 & CT-167)
+          if (trackerRef.current) {
+            const metrics = trackerRef.current.getMetrics();
+            socketRef.current.emit('telemetry:heartbeat', {
+              workspaceId: wsId,
+              user: {
+                id: currentUserId,
+                name: currentUser.name || 'Developer',
+                role: workspaceRole,
+                color: myPeerColor
+              },
+              metrics
+            });
+          }
         }
       } catch (err) {
         console.warn('Heartbeat ping failed:', err.message);
@@ -2508,6 +2707,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
 
     setActiveFile(fileId);
+
+    // Intercept Active File Switch Telemetry Action (CT-164 & CT-167)
+    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Switched active editor tab to "${fileId}"`, {
+      fileId
+    });
+
     if (!token) return;
 
     try {
@@ -2645,27 +2850,50 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           </button>
         </div>
 
-        {/* Center Info: Session Clock & Auto-Save */}
-        <div className="hidden lg:flex items-center flex-wrap" style={{ gap: '16px' }}>
-          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-full" style={{ padding: '8px 18px', gap: '8px' }}>
+        {/* Center Info: Session Clock, Active Contribution & Auto-Save */}
+        <div className="hidden lg:flex items-center flex-wrap" style={{ gap: '12px' }}>
+          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
             <Clock size={14} className="text-purple-400" />
-            <span>Session Time: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
+            <span>Session: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
           </div>
 
-          <div className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-full" style={{ padding: '8px 18px', gap: '8px' }}>
+          {/* Active Contribution Time (CT-164) */}
+          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }} title="Active Contribution Time (Typing, Running & Interacting)">
+            <Activity size={14} className={isUserActive ? "text-emerald-400 animate-pulse" : "text-gray-400"} />
+            <span>Active: <strong className="text-emerald-300 font-bold">{formatActiveDuration(activeContributionSecs)}</strong></span>
+          </div>
+
+          {/* Live Telemetry Drawer Toggle Button (CT-167) */}
+          <button
+            type="button"
+            onClick={() => setShowTelemetryDrawer(prev => !prev)}
+            className={`flex items-center text-xs font-mono font-semibold rounded-xl transition-all cursor-pointer shadow-sm border ${showTelemetryDrawer ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]' : 'bg-white/[0.08] hover:bg-white/[0.12] border-white/15 text-gray-200'}`}
+            style={{ padding: '8px 14px', gap: '8px' }}
+            title="Toggle Live Telemetry & Contribution Dossier"
+          >
+            <Radio size={14} className="text-cyan-400 animate-pulse" />
+            <span>Telemetry</span>
+            {dossierSummary?.currentSequence && (
+              <span className="px-1.5 py-0.2 rounded text-[10px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                #{dossierSummary.currentSequence}
+              </span>
+            )}
+          </button>
+
+          <div className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
             <Save size={14} className="text-emerald-400" />
             <span>{autoSaveStatus}</span>
           </div>
 
           {currentWorkspace?.settings?.isPublic ? (
-            <span className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-full flex items-center" style={{ padding: '8px 18px', gap: '6px' }}><Globe size={14} /> Public</span>
+            <span className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Globe size={14} /> Public</span>
           ) : (
-            <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-full flex items-center" style={{ padding: '8px 18px', gap: '6px' }}><Lock size={14} /> Private</span>
+            <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Lock size={14} /> Private</span>
           )}
 
           {/* Viewer Mode Badge (CT-89) */}
           {isViewer && (
-            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-full animate-pulse" style={{ padding: '8px 18px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
+            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse" style={{ padding: '8px 12px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
               <Lock size={14} className="text-amber-400" />
               <span>Viewer (Read-Only)</span>
             </div>
@@ -2727,10 +2955,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             onClick={handleRunActiveCode}
             disabled={isExecuting || isViewer}
             className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer ${isExecuting
-                ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 cursor-wait'
-                : isViewer
-                  ? 'bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50'
-                  : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white'
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 cursor-wait'
+              : isViewer
+                ? 'bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50'
+                : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white'
               }`}
             style={{ padding: '10px 22px', gap: '10px' }}
             title={isViewer ? 'Viewers cannot run code' : `Run ${activeFile} (${getLanguageInfo(activeFile).name})`}
@@ -3020,10 +3248,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                           }
                         }}
                         className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${isDragOver
-                            ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50'
-                            : isSelected
-                              ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md'
-                              : 'text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent'
+                          ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50'
+                          : isSelected
+                            ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md'
+                            : 'text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent'
                           }`}
                         style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '12px', paddingTop: '9px', paddingBottom: '9px' }}
                       >
@@ -3649,8 +3877,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   wordWrap: 'on',
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
-                  readOnly: !canEditFiles || isViewer,
-                  domReadOnly: !canEditFiles || isViewer,
+                  readOnly: isViewer,
+                  domReadOnly: isViewer,
                   lineNumbers: 'on',
                   renderLineHighlight: 'all',
                   padding: { top: 14, bottom: 14 }
@@ -3669,8 +3897,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => setOutputTab('output')}
                       className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'output'
-                          ? 'bg-purple-500/20 text-purple-200 border border-purple-500/60'
-                          : 'bg-white/5 hover:bg-purple-500/15 text-gray-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40'
+                        ? 'bg-purple-500/20 text-purple-200 border border-purple-500/60'
+                        : 'bg-white/5 hover:bg-purple-500/15 text-gray-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40'
                         }`}
                       style={{ padding: '8px 22px', gap: '10px' }}
                     >
@@ -3683,8 +3911,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => setOutputTab('input')}
                       className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'input'
-                          ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/60'
-                          : 'bg-white/5 hover:bg-cyan-500/15 text-gray-300 hover:text-cyan-200 border border-white/10 hover:border-cyan-500/40'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/60'
+                        : 'bg-white/5 hover:bg-cyan-500/15 text-gray-300 hover:text-cyan-200 border border-white/10 hover:border-cyan-500/40'
                         }`}
                       style={{ padding: '8px 22px', gap: '10px' }}
                     >
@@ -3700,8 +3928,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => setOutputTab('history')}
                       className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'history'
-                          ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/60'
-                          : 'bg-white/5 hover:bg-indigo-500/15 text-gray-300 hover:text-indigo-200 border border-white/10 hover:border-indigo-500/40'
+                        ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/60'
+                        : 'bg-white/5 hover:bg-indigo-500/15 text-gray-300 hover:text-indigo-200 border border-white/10 hover:border-indigo-500/40'
                         }`}
                       style={{ padding: '8px 22px', gap: '10px' }}
                     >
@@ -3714,19 +3942,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       )}
                     </button>
 
-                    {/* Console Tab 4: Interactive CLI Terminal */}
                     <button
                       type="button"
-                      onClick={() => setOutputTab('terminal')}
-                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'terminal'
-                          ? 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/60'
-                          : 'bg-white/5 hover:bg-emerald-500/15 text-gray-300 hover:text-emerald-200 border border-white/10 hover:border-emerald-500/40'
+                      onClick={() => {
+                        setOutputTab('telemetry');
+                        fetchWorkspaceTelemetry();
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${outputTab === 'telemetry'
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50'
+                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
                         }`}
-                      style={{ padding: '8px 22px', gap: '10px' }}
                     >
-                      <Terminal size={15} className={outputTab === 'terminal' ? 'text-emerald-300' : 'text-emerald-400'} />
-                      <span>Terminal</span>
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Interactive Terminal Active" />
+                      <ShieldCheck size={13} className="text-purple-400" />
+                      <span>Telemetry & Audit</span>
+                      {telemetryData?.summary?.totalBlocks ? (
+                        <span className="px-1.5 py-0.2 rounded-full bg-purple-500/30 text-purple-300 text-[10px] font-bold border border-purple-500/40 font-mono">
+                          {telemetryData.summary.totalBlocks} blk
+                        </span>
+                      ) : null}
                     </button>
 
                     {/* Active Execution Status Badge */}
@@ -3900,11 +4133,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                 <div className="flex items-center gap-3 font-mono">
                                   <span className="flex items-center gap-2.5">
                                     <span className="font-bold text-gray-200">Process finished with exit code</span>
-                                    <strong className={`px-4 py-1.5 rounded-full font-extrabold text-xs ${
-                                      executionResult.exitCode === 0
+                                    <strong className={`px-4 py-1.5 rounded-full font-extrabold text-xs ${executionResult.exitCode === 0
                                         ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-500/50'
                                         : 'text-red-300 bg-red-500/20 border border-red-500/50'
-                                    }`}>
+                                      }`}>
                                       {executionResult.exitCode ?? 0}
                                     </strong>
                                   </span>
@@ -4046,8 +4278,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                 <div
                                   key={item._id || idx}
                                   className={`p-3.5 rounded-xl border transition-all ${isSelected
-                                      ? 'bg-purple-600/20 border-purple-500/60'
-                                      : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
+                                    ? 'bg-purple-600/20 border-purple-500/60'
+                                    : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
                                     }`}
                                 >
                                   <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -4149,79 +4381,195 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </div>
                     )}
 
-                    {/* TAB 4: INTERACTIVE CLI TERMINAL */}
-                    {outputTab === 'terminal' && (
-                      <div className="h-full flex flex-col justify-between space-y-4 font-mono text-xs">
-                        {/* Terminal Header Bar & Quick Actions */}
-                        <div className="flex items-center justify-between pb-4 border-b border-white/10 flex-wrap gap-3">
-                          <div className="flex items-center gap-2 font-bold text-emerald-400">
-                            <Terminal size={16} className="text-emerald-400 shrink-0" />
-                            <span>CodeTrail Interactive Terminal</span>
-                            <span className="text-gray-400 text-[11px] font-normal hidden sm:inline">(zsh / bash CLI emulator)</span>
+                    {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
+                    {outputTab === 'telemetry' && (
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-white/10 flex-wrap gap-2">
+                          <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+                            <ShieldCheck size={15} className="text-purple-400" />
+                            <span>Proof-of-Work Contribution Telemetry & Audit</span>
+                            {telemetryVerification?.isValid ? (
+                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                <CheckCircle2 size={11} /> 100% Cryptographically Verified
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
+                                <AlertTriangle size={11} className="text-rose-400" /> Tamper Warning
+                              </span>
+                            )}
                           </div>
 
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => setIsScaffoldModalOpen(true)}
-                              className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-semibold transition-all cursor-pointer"
-                              style={{ padding: '6px 16px', gap: '6px' }}
+                              onClick={() => fetchWorkspaceTelemetry()}
+                              disabled={isTelemetryLoading}
+                              className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Re-verify blockchain activity chain"
                             >
-                              <Sparkles size={14} className="text-cyan-400" />
-                              <span>Scaffold Project</span>
+                              <RefreshCw size={11} className={isTelemetryLoading ? "animate-spin text-purple-400" : ""} />
+                              <span>Verify Chain</span>
                             </button>
 
                             <button
                               type="button"
-                              onClick={() => setTerminalEntries([])}
-                              className="flex items-center rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-gray-300 hover:text-white text-xs font-mono font-semibold transition-all cursor-pointer"
-                              style={{ padding: '6px 16px', gap: '6px' }}
+                              onClick={() => {
+                                const fileName = exportAuditJson(currentWorkspace, telemetryData, telemetryVerification);
+                                showToast(`📄 Exported ${fileName}`, 'success');
+                              }}
+                              className="px-2.5 py-1 rounded bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer font-bold"
+                              title="Download JSON machine-verifiable audit manifest"
                             >
-                              <Trash2 size={14} />
-                              <span>Clear Output</span>
+                              <Download size={11} />
+                              <span>Export Manifest (JSON)</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const fileName = exportAuditMarkdown(currentWorkspace, telemetryData, telemetryVerification);
+                                showToast(`📋 Exported ${fileName}`, 'success');
+                              }}
+                              className="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              title="Download formatted Markdown Certificate"
+                            >
+                              <FileText size={11} />
+                              <span>Export Report (.md)</span>
                             </button>
                           </div>
                         </div>
 
-                        {/* Terminal CLI Output Stream Container */}
-                        <div className="flex-1 min-h-[160px] max-h-[220px] bg-[#05060A] border border-emerald-500/30 rounded-2xl overflow-y-auto space-y-2.5 select-text font-mono text-xs leading-[1.9] shadow-inner" style={{ padding: '20px 24px' }}>
-                          {terminalEntries.map((entry) => {
-                            const styles = {
-                              system: 'text-purple-300 font-bold',
-                              cmd: 'text-cyan-300 font-bold',
-                              info: 'text-sky-300',
-                              success: 'text-emerald-400 font-bold',
-                              error: 'text-red-400 font-bold',
-                              output: 'text-gray-200'
-                            };
-                            return (
-                              <div key={entry.id} className={`whitespace-pre-wrap ${styles[entry.type] || styles.output}`}>
-                                {entry.text}
+                        {/* Tamper Diagnostic Banner in Output Tab */}
+                        {telemetryVerification && !telemetryVerification.isValid && (
+                          <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-2.5">
+                            <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                              <div className="font-bold text-rose-300">
+                                Cryptographic Tamper Warning Detected
                               </div>
-                            );
-                          })}
+                              <div className="text-[11px] text-gray-300 mt-0.5">
+                                {telemetryVerification.tamperDiagnostics?.details || telemetryVerification.error || telemetryVerification.message || 'Stored hash mismatch detected.'}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Top Summary Cards */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Activity size={11} className="text-emerald-400" />
+                              <span>TOTAL LINES SYNCED</span>
+                            </div>
+                            <div className="text-base font-bold text-white mt-1">
+                              {(telemetryData?.summary?.totalLinesChanged ?? 0).toLocaleString()}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Layers size={11} className="text-purple-400" />
+                              <span>BLOCKCHAIN BLOCKS</span>
+                            </div>
+                            <div className="text-base font-bold text-purple-300 mt-1">
+                              {telemetryData?.summary?.totalBlocks ?? 0}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Users size={11} className="text-sky-400" />
+                              <span>CONTRIBUTORS</span>
+                            </div>
+                            <div className="text-base font-bold text-sky-300 mt-1">
+                              {telemetryData?.contributors?.length ?? 0}
+                            </div>
+                          </div>
+
+                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                              <Hash size={11} className="text-amber-400" />
+                              <span>LATEST HASH</span>
+                            </div>
+                            <div className="text-xs font-mono text-amber-300 mt-1 truncate" title={telemetryData?.summary?.latestBlockHash}>
+                              {telemetryData?.summary?.latestBlockHash ? `${telemetryData.summary.latestBlockHash.slice(0, 6)}...${telemetryData.summary.latestBlockHash.slice(-4)}` : 'GENESIS'}
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Terminal CLI Input Line */}
-                        <form onSubmit={handleTerminalSubmit} className="flex items-center gap-3 pt-2">
-                          <span className="text-emerald-400 font-bold font-mono text-xs shrink-0 flex items-center gap-1.5">
-                            <span className="text-purple-400">developer@codetrail</span>:<span className="text-cyan-400">~$</span>
-                          </span>
-                          <input
-                            type="text"
-                            value={terminalInput}
-                            onChange={(e) => setTerminalInput(e.target.value)}
-                            placeholder="Type command ('help', 'scaffold react', 'ls', 'cat main.py', 'clear')..."
-                            className="flex-1 bg-[#06070C] border border-emerald-500/30 focus:border-emerald-400 rounded-xl text-xs text-emerald-100 placeholder-gray-500 font-mono outline-none leading-normal transition-all" style={{ padding: '10px 18px' }}
-                          />
-                          <button
-                            type="submit"
-                            className="flex items-center rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/60 text-emerald-300 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
-                            style={{ padding: '8px 20px', gap: '8px' }}
-                          >
-                            <span>Send</span>
-                          </button>
-                        </form>
+                        {/* Contributor Breakdown Table */}
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {(telemetryData?.contributors || []).length === 0 ? (
+                            <div className="text-gray-500 italic py-4 text-center">
+                              No contribution telemetry recorded yet. Code edits and executions will chain automatically!
+                            </div>
+                          ) : (
+                            telemetryData.contributors.map((c, idx) => {
+                              const shortHash = c.hash || (c.fullHash ? `${c.fullHash.slice(0, 4)}...${c.fullHash.slice(-4)}` : 'GENESIS');
+                              const fullHash = c.fullHash || c.hash || '';
+                              return (
+                                <div
+                                  key={c.id || idx}
+                                  className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-2"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
+                                      style={{ backgroundColor: `${c.color || '#8B5CF6'}30`, color: c.color || '#8B5CF6' }}
+                                    >
+                                      {c.name ? c.name[0] : 'U'}
+                                    </span>
+                                    <span className="font-bold text-gray-200 truncate">{c.name}</span>
+                                    <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
+                                      {c.badge || c.role || 'Member'}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-4 shrink-0 font-mono">
+                                    <div className="text-[11px] text-gray-300">
+                                      <strong>{c.lines?.toLocaleString() || 0}</strong> lines
+                                      <span className="text-[10px] text-gray-500 ml-1">
+                                        (<span className="text-emerald-400">+{c.linesAdded || 0}</span>/<span className="text-rose-400">-{c.linesDeleted || 0}</span>)
+                                      </span>
+                                    </div>
+
+                                    <div className="w-20 hidden sm:flex items-center gap-1.5">
+                                      <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                        <div
+                                          className="h-full rounded-full"
+                                          style={{ width: `${c.percent || 0}%`, backgroundColor: c.color || '#8B5CF6' }}
+                                        />
+                                      </div>
+                                      <span className="text-[10px] text-gray-400 w-7 text-right">{c.percent || 0}%</span>
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (fullHash) {
+                                          navigator.clipboard.writeText(fullHash);
+                                          setTelemetryCopiedHash(shortHash);
+                                          setTimeout(() => setTelemetryCopiedHash(null), 2000);
+                                        }
+                                      }}
+                                      className="flex items-center gap-1 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/20 transition-colors"
+                                      title={`Full SHA-256: ${fullHash}`}
+                                    >
+                                      <Hash size={10} className="text-purple-400" />
+                                      <span>{shortHash}</span>
+                                      {telemetryCopiedHash === shortHash ? (
+                                        <Check size={10} className="text-emerald-400" />
+                                      ) : (
+                                        <Copy size={9} className="opacity-60" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
                       </div>
                     )}
 
@@ -4265,6 +4613,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   <span>Output</span>
                 </button>
 
+                {/* Quick Toggle for Telemetry & Audit */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOutputTab('telemetry');
+                    setIsOutputPanelOpen(true);
+                    setIsOutputPanelMinimized(false);
+                    fetchWorkspaceTelemetry();
+                  }}
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${outputTab === 'telemetry' && isOutputPanelOpen
+                      ? 'text-purple-300 font-semibold'
+                      : 'text-gray-400 hover:text-purple-300'
+                    }`}
+                  title="View Proof-of-Work Contribution Telemetry"
+                >
+                  <ShieldCheck size={14} className={telemetryVerification?.isValid ? "text-emerald-400 shrink-0" : "text-purple-400 shrink-0"} />
+                  <span>PoW Audit: <strong className="text-gray-200">{telemetryData?.summary?.totalBlocks ? `${telemetryData.summary.totalBlocks} Blocks` : 'Active'}</strong></span>
+                </button>
+
                 <div className="flex items-center gap-2">
                   <Zap size={14} className="text-yellow-400 shrink-0" />
                   <span>Sync Latency: <strong className="text-gray-200">12ms</strong></span>
@@ -4278,10 +4645,294 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
           </div>
 
+          {/* RIGHT DOCKED SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
+          {showTelemetryDrawer && (
+            <div className="w-[410px] 2xl:w-[440px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-20 transition-all duration-300 shadow-2xl font-sans">
+
+              {/* 1. Panel Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-[#0B0C16] to-cyan-950/30 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
+                    <ShieldCheck className="text-purple-400" size={17} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white tracking-wide">
+                        Live Telemetry & Sync
+                      </h4>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-bold border border-emerald-500/30 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        CT-167
+                      </span>
+                      {telemetryVerification && (
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border flex items-center gap-1 ${telemetryVerification.isValid
+                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+                            : 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                          }`}>
+                          {telemetryVerification.isValid ? '100% Verified' : 'Tamper Warning'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] text-gray-400 font-mono mt-0.5">
+                      <span>{dossierSummary.sessionId}</span>
+                      <span className="text-gray-600">•</span>
+                      <span className="text-cyan-400 font-bold">Seq #{dossierSummary.currentSequence || 100}</span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTelemetryDrawer(false)}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/10"
+                  title="Close Telemetry Drawer"
+                >
+                  <X size={17} />
+                </button>
+              </div>
+
+              {/* 2. Compact Session Status Strip */}
+              <div className="px-5 py-3 bg-white/[0.02] border-b border-white/5 flex items-center justify-between shrink-0 text-xs font-mono">
+                <div className="flex items-center gap-2 text-gray-300">
+                  <Clock size={13} className="text-purple-400 shrink-0" />
+                  <span>Session: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isUserActive ? 'bg-emerald-400 animate-ping' : 'bg-gray-500'}`} />
+                  <span>Active: <strong className="text-emerald-300 font-bold">{formatActiveDuration(activeContributionSecs)}</strong></span>
+                </div>
+              </div>
+
+              {/* 3. Segmented Tab Switcher */}
+              <div className="p-3 bg-[#080913] border-b border-white/5 shrink-0">
+                <div className="grid grid-cols-2 gap-1.5 bg-[#121422] p-1 rounded-xl border border-white/10">
+                  <button
+                    type="button"
+                    onClick={() => setTelemetryDrawerTab('contributors')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'contributors'
+                        ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                  >
+                    <Users size={13} />
+                    <span>Team Share</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-semibold ${telemetryDrawerTab === 'contributors' ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'}`}>
+                      {dossierContributors.length}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setTelemetryDrawerTab('stream')}
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'stream'
+                        ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                      }`}
+                  >
+                    <Radio size={13} className={telemetryDrawerTab === 'stream' ? 'animate-pulse' : ''} />
+                    <span>Live Stream</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-semibold ${telemetryDrawerTab === 'stream' ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'}`}>
+                      {telemetryEvents.length}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 4. Tab Content Area */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+
+                {/* TAB 1: CONTRIBUTORS & DOSSIER SHARE */}
+                {telemetryDrawerTab === 'contributors' && (
+                  <div className="space-y-4 animate-fadeIn">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                        Active Contributors Breakdown
+                      </span>
+                      <span className="text-cyan-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25">
+                        {dossierSummary.totalLines || '4,470 lines'} total
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      {dossierContributors.map((user, uIdx) => (
+                        <div
+                          key={user.id || uIdx}
+                          className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-4 transition-all shadow-sm group hover:bg-[#151829]"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-3">
+                              <span
+                                className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black border shadow-sm shrink-0"
+                                style={{
+                                  backgroundColor: `${user.color || '#38BDF8'}20`,
+                                  color: user.color || '#38BDF8',
+                                  borderColor: `${user.color || '#38BDF8'}50`
+                                }}
+                              >
+                                {(user.name || 'Dev').charAt(0).toUpperCase()}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs font-bold text-gray-100 group-hover:text-white truncate">
+                                    {user.name}
+                                  </span>
+                                  <span
+                                    className="text-[9px] px-1.5 py-0.2 rounded font-mono font-semibold"
+                                    style={{
+                                      color: user.color || '#38BDF8',
+                                      backgroundColor: `${user.color || '#38BDF8'}15`,
+                                      border: `1px solid ${user.color || '#38BDF8'}35`
+                                    }}
+                                  >
+                                    {user.badge || 'Contributor'}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-gray-400 block font-mono truncate mt-0.5">
+                                  {user.role}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <span className="text-xs font-mono font-black text-purple-200 block">
+                                {(user.lines || 0).toLocaleString()} lines
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-mono font-bold">
+                                {user.percent || 0}% share
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Animated Progress Fill */}
+                          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden border border-white/5">
+                            <div
+                              className="h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.2)]"
+                              style={{
+                                width: `${Math.max(2, user.percent || 0)}%`,
+                                backgroundColor: user.color || '#38BDF8'
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Proof of Work Verified Banner */}
+                    <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-xl flex items-center justify-between text-[11px] font-mono text-purple-300">
+                      <span className="flex items-center gap-2">
+                        <CheckCircle2 size={13} className="text-emerald-400" />
+                        <span>SHA-256 Proof-of-Work Validated</span>
+                      </span>
+                      <span className="text-emerald-400 font-bold">100% Verified</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: LIVE ACTION STREAM */}
+                {telemetryDrawerTab === 'stream' && (
+                  <div className="space-y-3.5 animate-fadeIn">
+                    {/* Stream Action Toolbar */}
+                    <div className="p-3 bg-gradient-to-r from-purple-950/40 via-[#101222] to-cyan-950/30 border border-purple-500/20 rounded-xl flex items-center justify-between">
+                      <span className="text-xs font-mono text-purple-200 font-semibold flex items-center gap-2">
+                        <Radio size={13} className="text-purple-400 animate-pulse" />
+                        <span>Real-Time Broadcast</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          interceptTelemetry(TELEMETRY_ACTION_TYPES.HEARTBEAT, `Activity Ping from ${currentUser.name || 'Developer'}`, {
+                            linesAdded: 0,
+                            totalLines: 15
+                          });
+                        }}
+                        className="text-xs font-mono font-bold px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] flex items-center gap-1.5"
+                      >
+                        <Zap size={13} className="text-yellow-300" />
+                        <span>Broadcast Ping</span>
+                      </button>
+                    </div>
+
+                    {/* Events List */}
+                    <div className="space-y-2.5">
+                      {telemetryEvents.length === 0 ? (
+                        <div className="text-center py-10 text-xs text-gray-400 font-mono border border-dashed border-purple-500/25 bg-purple-500/[0.03] rounded-xl p-6">
+                          <p className="font-semibold text-gray-300">No actions recorded yet</p>
+                          <p className="text-[10px] text-gray-500 mt-1">Start typing in Monaco editor or click 'Broadcast Ping'</p>
+                        </div>
+                      ) : (
+                        telemetryEvents.map((evt, eIdx) => {
+                          const actionColors = {
+                            CODE_EDIT: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
+                            RUN_CODE: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+                            FILE_CREATE: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+                            FILE_DELETE: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+                            FILE_SWITCH: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+                            SAVE: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+                            HEARTBEAT: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                          };
+                          const badgeStyle = actionColors[evt.actionType] || 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+
+                          return (
+                            <div
+                              key={evt.eventId || eIdx}
+                              className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-3.5 text-xs font-mono transition-all hover:bg-[#151829] shadow-sm"
+                            >
+                              <div className="flex items-center justify-between mb-2 gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold shrink-0">
+                                    #{evt.seq}
+                                  </span>
+                                  <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-sans font-bold border shrink-0 ${badgeStyle}`}>
+                                    {evt.actionType}
+                                  </span>
+                                  <span className="text-gray-200 font-sans font-semibold text-[11px] truncate max-w-[120px]">
+                                    {evt.user?.name || 'Developer'}
+                                  </span>
+                                </div>
+                                <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-1 shrink-0 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-bold">
+                                  <CheckCircle2 size={10} className="text-emerald-400" />
+                                  <span>#{evt.verificationHash || 'verified'}</span>
+                                </span>
+                              </div>
+
+                              <div className="text-gray-300 text-[11px] font-sans truncate my-1">
+                                {evt.details || `Modified ${evt.fileId}`}
+                              </div>
+
+                              <div className="text-[9px] text-gray-500 mt-2 flex items-center justify-between border-t border-white/5 pt-1.5">
+                                <span className="font-mono text-gray-400 flex items-center gap-1">
+                                  <Clock size={10} className="text-gray-500 shrink-0" />
+                                  <span>{evt.timestamp}</span>
+                                </span>
+                                {evt.fileId && (
+                                  <span className="text-cyan-400/90 font-mono font-semibold">
+                                    [{evt.fileId}]
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              </div>
+
+              {/* 5. Panel Footer */}
+              <div className="px-5 py-3 border-t border-white/10 bg-[#06070D] flex items-center justify-between text-xs font-mono text-gray-400 shrink-0">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-[11px]">
+                  <CheckCircle2 size={13} className="text-emerald-400" />
+                  <span>Socket.IO Sync Active</span>
+                </div>
+                <span className="text-[10px] text-gray-500">CodeTrail v2.0</span>
+              </div>
+
+            </div>
+          )}
+
         </div>
 
       </section>
-
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
         isOpen={isSettingsModalOpen}
