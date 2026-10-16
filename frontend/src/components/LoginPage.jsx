@@ -4,6 +4,32 @@ import { Mail, Lock, Eye, EyeOff, ShieldCheck, Activity, Cpu, Terminal, ArrowLef
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
+const getAuthenticationErrorMessage = (error, { isSignUp = false, isGoogle = false } = {}) => {
+  const backendMessage = error.response?.data?.message;
+
+  if (isGoogle) {
+    return backendMessage || 'We could not complete Google sign-in. Please try again.';
+  }
+
+  if (!error.response) {
+    return 'We could not reach CodeTrail. Please check your connection and try again.';
+  }
+
+  if (backendMessage === 'Invalid credentials') {
+    return 'We could not sign you in. Please check your email and password, then try again.';
+  }
+
+  if (backendMessage === 'Internal Server Error') {
+    return 'We could not complete your request right now. Please try again shortly.';
+  }
+
+  return backendMessage || (
+    isSignUp
+      ? 'We could not create your account. Please review your details and try again.'
+      : 'We could not sign you in. Please check your email and password, then try again.'
+  );
+};
+
 export function LoginPage({ onLoginSuccess }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -32,7 +58,7 @@ export function LoginPage({ onLoginSuccess }) {
       onLoginSuccess(data.token, data.user);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'Authentication failed. Please check your credentials.');
+      setError(getAuthenticationErrorMessage(err, { isSignUp }));
     } finally {
       setLoading(false);
     }
@@ -48,7 +74,7 @@ export function LoginPage({ onLoginSuccess }) {
       onLoginSuccess(data.token, data.user);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.message || 'Google authentication failed.');
+      setError(getAuthenticationErrorMessage(err, { isGoogle: true }));
     } finally {
       setLoading(false);
     }
@@ -166,7 +192,7 @@ export function LoginPage({ onLoginSuccess }) {
           {/* Traditional Credentials Form */}
           <form onSubmit={handleLoginSubmit} className="flex flex-col gap-5">
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl font-mono text-center">
+              <div className="ct-auth-error bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl font-mono text-center">
                 {error}
               </div>
             )}

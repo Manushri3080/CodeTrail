@@ -31,7 +31,12 @@ import { formatActiveDuration } from '../../utils/timeUtils';
 
 const API_BASE = 'http://localhost:5000/api';
 
-export const ContributionDossier = ({ activeWorkspace = null, currentUser = null, liveSocket = null }) => {
+export const ContributionDossier = ({
+  activeWorkspace = null,
+  currentUser = null,
+  liveSocket = null,
+  demoMode = false
+}) => {
   const [workspaces, setWorkspaces] = useState([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState(activeWorkspace);
   const [telemetry, setTelemetry] = useState(null);
@@ -68,7 +73,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
   // Load user's workspaces if logged in
   useEffect(() => {
-    if (!token) return;
+    if (demoMode || !token) return;
 
     let isMounted = true;
     const fetchUserWorkspaces = async () => {
@@ -104,6 +109,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
   // Socket.IO live sync setup (CT-167)
   useEffect(() => {
+    if (demoMode) return undefined;
+
     let socket = liveSocket;
     let localSocketCreated = false;
 
@@ -164,6 +171,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
   // Fetch telemetry & proof-of-work verification from backend
   const fetchTelemetry = useCallback(async (isRefresh = false) => {
+    if (demoMode) return;
+
     const wsId = selectedWorkspace?._id || selectedWorkspace?.id;
     if (!wsId || !token) return;
 
@@ -195,7 +204,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
       setLoading(false);
       setVerifying(false);
     }
-  }, [selectedWorkspace, token]);
+  }, [demoMode, selectedWorkspace, token]);
 
   useEffect(() => {
     fetchTelemetry();
@@ -301,12 +310,16 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
   const verificationStatusText = verification?.status || (isChainVerified ? '100% Cryptographically Verified' : 'Tamper Warning');
   const tamperDiag = verification?.tamperDiagnostics;
 
-  const workspaceTitle = selectedWorkspace?.title 
-    || telemetry?.workspaceTitle 
+  const workspaceTitle = demoMode
+    ? TELEMETRY_SUMMARY_CONFIG.auditTitle
+    : selectedWorkspace?.title
+    || telemetry?.workspaceTitle
     || TELEMETRY_SUMMARY_CONFIG.auditTitle;
 
-  const sessionId = selectedWorkspace?._id 
-    ? `#ws-${String(selectedWorkspace._id).slice(-6)}` 
+  const sessionId = demoMode
+    ? TELEMETRY_SUMMARY_CONFIG.sessionId
+    : selectedWorkspace?._id
+    ? `#ws-${String(selectedWorkspace._id).slice(-6)}`
     : TELEMETRY_SUMMARY_CONFIG.sessionId;
 
   return (
@@ -388,8 +401,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               {/* Integrity Audit Trigger Button */}
               <button
                 onClick={() => fetchTelemetry(true)}
-                disabled={verifying || loading}
-                title="Perform Real-time Cryptographic Chain Integrity Audit"
+                disabled={demoMode || verifying || loading}
+                title={demoMode ? 'Connect a workspace to run an audit' : 'Perform Real-time Cryptographic Chain Integrity Audit'}
                 className="px-2.5 py-1 rounded bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 <RefreshCw size={11} className={verifying ? 'animate-spin text-purple-400' : ''} />
@@ -399,8 +412,9 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               {/* Tamper Simulation Modal Trigger */}
               <button
                 onClick={() => setShowSimulationModal(true)}
+                disabled={demoMode}
                 className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer"
-                title="Test Tamper Detection Engine (Simulation)"
+                title={demoMode ? 'Connect a workspace to run a simulation' : 'Test Tamper Detection Engine (Simulation)'}
               >
                 <Bug size={11} className="text-rose-400" />
                 <span className="hidden sm:inline">Simulate Tamper</span>
@@ -415,7 +429,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="ct-dossier-title">{workspaceTitle}</h3>
-                  {isLive && (
+                  {isLive && !demoMode && (
                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">
                       Live Telemetry
                     </span>
@@ -426,12 +440,12 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
             </div>
 
             {/* Visual Verification Status Indicators (CT-166) & Action Buttons */}
-            <div className="flex items-center gap-2.5 flex-wrap">
+            <div className="ct-dossier-actions flex items-center gap-2.5 flex-wrap">
               
               {/* STATUS INDICATOR 1: 100% Cryptographically Verified */}
               {isChainVerified ? (
                 <div 
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs font-mono shadow-[0_0_15px_rgba(16,185,129,0.2)]"
+                  className="ct-verification-status flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-950/40 border border-emerald-500/40 text-emerald-300 text-xs font-mono"
                   title="Chain Integrity Verified: SHA-256 signatures match all historical blocks"
                 >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
@@ -441,7 +455,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               ) : (
                 /* STATUS INDICATOR 2: Tamper Warning */
                 <div 
-                  className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-950/60 border border-rose-500/60 text-rose-300 text-xs font-mono shadow-[0_0_18px_rgba(244,63,94,0.3)] animate-pulse"
+                  className="ct-verification-status flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-rose-950/60 border border-rose-500/60 text-rose-300 text-xs font-mono animate-pulse"
                   title="Tamper Detected: Payload or hash mismatch detected in activity ledger"
                 >
                   <ShieldAlert size={14} className="text-rose-400 shrink-0" />
@@ -452,8 +466,9 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
               {/* View Ledger Modal Button */}
               <button
                 onClick={() => setShowLedgerModal(true)}
+                disabled={demoMode}
                 className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Inspect detailed block-by-block Proof-of-Work ledger"
+                title={demoMode ? 'Connect a workspace to inspect the ledger' : 'Inspect detailed block-by-block Proof-of-Work ledger'}
               >
                 <Eye size={13} className="text-cyan-400" />
                 <span className="hidden md:inline">Inspect Ledger</span>
@@ -476,6 +491,8 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
                 <button 
                   className="ct-btn-download"
                   onClick={() => setShowExportMenu(!showExportMenu)}
+                  disabled={demoMode}
+                  title={demoMode ? 'Connect a workspace to export a report' : 'Export audit report'}
                 >
                   <Download size={14} />
                   <span>Export Report</span>
@@ -558,7 +575,7 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
           {/* VERIFIED SUMMARY STRIP (When 100% Verified) */}
           {isChainVerified && (
-            <div className="mx-6 my-2 px-4 py-2 rounded-lg bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono text-emerald-300/90 flex items-center justify-between flex-wrap gap-2">
+            <div className="ct-dossier-summary-strip mx-6 my-2 px-4 py-2 rounded-lg bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono text-emerald-300/90 flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Check size={12} className="text-emerald-400 shrink-0" />
                 <span>Genesis anchor verified • Monotonic sequential ordering • SHA-256 signatures intact</span>
@@ -650,9 +667,10 @@ export const ContributionDossier = ({ activeWorkspace = null, currentUser = null
 
                     <div className="ct-user-hash">
                       <button
-                        onClick={() => handleCopyHash(fullHash, shortHash)}
+                        onClick={demoMode ? undefined : () => handleCopyHash(fullHash, shortHash)}
+                        disabled={demoMode}
                         className="flex items-center gap-1.5 hover:text-purple-300 transition-colors group cursor-pointer"
-                        title={`Click to copy full SHA-256 hash: ${fullHash}`}
+                        title={demoMode ? 'Connect a workspace to copy the full hash' : `Click to copy full SHA-256 hash: ${fullHash}`}
                       >
                         <Hash size={12} className="text-purple-400 group-hover:scale-110 transition-transform" />
                         <span className="font-mono text-xs">{shortHash}</span>

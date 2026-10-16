@@ -43,7 +43,8 @@ import {
   Layers,
   Download,
   Activity,
-  Radio
+  Radio,
+  Sparkles
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
@@ -51,6 +52,7 @@ import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettings
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
 import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
 import { formatActiveDuration } from '../../utils/timeUtils';
+import { detectLanguage, getFileExtension } from '../../utils/languageDetection';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
 
 // Map file extensions to Monaco language identifiers
@@ -222,6 +224,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Project Scaffolding Modal Open State
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   // Interactive CLI Terminal Console State
   const [terminalEntries, setTerminalEntries] = useState([
@@ -587,6 +590,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
     }
 
+    // Keep a usable editor surface when a newly created workspace has file metadata
+    // but no content saved yet.
+    if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
+      activeWorkspace.files.forEach(file => {
+        if (file.isFolder) return;
+        const fileKey = file.path || file.id || file.name;
+        const fileName = file.name || fileKey;
+        if (fileKey && initial[fileKey] === undefined) {
+          initial[fileKey] = DEFAULT_FILES_CONTENT[fileKey] || getStarterBoilerplate(fileName);
+        }
+        if (fileName && initial[fileName] === undefined && fileName !== fileKey) {
+          initial[fileName] = initial[fileKey];
+        }
+      });
+    }
+
     return initial;
   });
 
@@ -641,7 +660,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (activeFileObj?.name && filesContent[activeFileObj.name] !== undefined) {
       return filesContent[activeFileObj.name];
     }
-    return '';
+    return DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
   };
 
   // Project Framework Scaffolder Handler
@@ -2735,6 +2754,61 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   };
 
   // 5. Leave Workspace Handler (Ends Session & Stores Duration)
+  const handleResetSession = () => {
+    if (!window.confirm('Reset the session timer? Your workspace files will remain unchanged.')) return;
+
+    const now = Date.now();
+    sessionStartRef.current = now;
+    setSessionSeconds(0);
+    setIsSessionRunning(true);
+
+    try {
+      localStorage.setItem(`ct-workspace-session-start-${wsId}`, now.toString());
+      localStorage.setItem(`ct-workspace-session-running-${wsId}`, 'true');
+      localStorage.removeItem(`ct-workspace-session-sec-${wsId}`);
+    } catch (err) {
+      console.warn('Session timer reset could not be persisted:', err.message);
+    }
+
+    recordHistoryLog('session', 'Session Timer Reset', 'The workspace session timer was reset without changing project files.');
+    showToast('Session timer reset', 'info');
+  };
+
+  const handleResetActiveFile = () => {
+    if (!canEditFiles || isViewer) {
+      showToast('Viewing mode: File editing is disabled', 'warning');
+      return;
+    }
+
+    const defaultContent = DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
+    if (!window.confirm(`Reset "${activeFile}" to its starter content?`)) return;
+
+    handleEditorChange(defaultContent);
+    showToast(`${activeFile} reset to starter content`, 'info');
+    recordHistoryLog('file', `Reset: ${activeFile}`, `Restored ${activeFile} to its starter content.`);
+  };
+
+  const handleFormatDocument = async () => {
+    if (!canEditFiles || isViewer) {
+      showToast('Viewing mode: Formatting is disabled', 'warning');
+      return;
+    }
+
+    const formatAction = editorRef.current?.getAction('editor.action.formatDocument');
+    if (!formatAction) {
+      showToast('Formatting is not available for this file', 'warning');
+      return;
+    }
+
+    try {
+      await formatAction.run();
+      showToast('Document formatted', 'success');
+    } catch (err) {
+      console.warn('Document formatting failed:', err.message);
+      showToast('Unable to format this file', 'warning');
+    }
+  };
+
   const handleLeaveWorkspace = async () => {
     const startTime = sessionStartRef.current || Date.now();
     const durationSec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
@@ -2925,6 +2999,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               <span>Start Session</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={handleResetSession}
+            className="ct-workspace-header-btn ct-workspace-reset-session-btn"
+            title="Reset the session timer without changing workspace files"
+          >
+            <RefreshCw size={14} />
+            <span>Reset Session</span>
+          </button>
 
           {/* Scaffold Project Button */}
           <button
@@ -3751,18 +3835,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
             {/* Top Editor Window Header (Tabs + Active Editors) */}
             <div
-              className="border-b border-white/15 flex items-center justify-between bg-[#12131F] shrink-0 overflow-hidden"
-              style={{ height: '52px', paddingLeft: '24px', paddingRight: '24px', gap: '20px' }}
+              className="ct-editor-window-header"
             >
               {/* Left Side: Window Controls + Active File Tabs */}
-              <div className="flex items-center gap-4 min-w-0 overflow-x-auto no-scrollbar py-1">
-                <div className="flex items-center gap-2 mr-2 shrink-0">
-                  <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+              <div className="ct-editor-tab-area">
+                <div className="ct-editor-window-controls" aria-hidden="true">
+                  <span className="ct-editor-window-dot close" />
+                  <span className="ct-editor-window-dot minimize" />
+                  <span className="ct-editor-window-dot maximize" />
                 </div>
 
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="ct-editor-tab-scroller">
+                  <div className="ct-editor-tabs">
                   {customFiles.filter(f => !f.isFolder).map((file) => {
                     // Always use canonical id (path-based) as the active file key
                     const isTabActive = activeFile === file.id || activeFile === file.path;
@@ -3770,8 +3854,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     return (
                       <button
                         key={file.id}
-                        className={`rounded-t-xl text-xs font-mono flex items-center gap-2.5 border-t border-x transition-all shrink-0 ${isTabActive ? 'bg-[#0D0E15] text-white border-purple-500/50 font-semibold shadow-md' : 'bg-white/5 text-gray-400 border-transparent hover:text-gray-200 hover:bg-white/10'}`}
-                        style={{ padding: '10px 20px' }}
+                        className={`ct-editor-file-tab ${isTabActive ? 'active' : ''}`}
                         onClick={() => handleSelectFile(file.id)}
                       >
                         <FileCode size={14} className={file.iconColor || 'text-yellow-400'} />
@@ -3779,6 +3862,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </button>
                     );
                   })}
+                  </div>
                 </div>
               </div>
 
@@ -3787,7 +3871,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 const langInfo = detectedActiveLanguage || getLanguageInfo(activeFile);
                 return (
                   <div
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono shrink-0 shadow-sm transition-all ml-2 ${detectedActiveLanguage ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : langInfo.bg}`}
+                    className={`ct-editor-language-badge ${detectedActiveLanguage ? 'supported' : ''} ${detectedActiveLanguage ? '' : langInfo.bg}`}
                     title={detectedActiveLanguage ? `Language: ${detectedActiveLanguage.name} (${detectedActiveLanguage.extension})` : 'This file cannot be executed'}
                   >
                     <Code2 size={14} className={detectedActiveLanguage ? 'text-emerald-400' : langInfo.color} />
@@ -3798,12 +3882,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               })()}
 
               {/* Active Peers Pills (Fixed Right Container with Border Separator) */}
-              <div className="hidden lg:flex items-center gap-3 shrink-0 border-l border-white/15" style={{ paddingLeft: '20px' }}>
+              <div className="ct-editor-active-editors hidden lg:flex">
                 <Users size={15} className="text-purple-400 shrink-0" />
                 <span className="text-xs font-mono text-gray-400 shrink-0">Active Editors:</span>
-                <div className="flex items-center gap-2">
+                <div className="ct-editor-peer-list">
                   {isViewer && (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-amber-300 text-xs font-mono font-bold shrink-0">
+                    <div className="ct-editor-peer-pill read-only">
                       <Lock size={12} />
                       <span>Read-Only</span>
                     </div>
@@ -3820,11 +3904,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     return (
                       <div
                         key={s._id || idx}
-                        className="rounded-full border text-xs font-mono flex items-center gap-2 shrink-0 bg-white/[0.04] transition-all"
-                        style={{ padding: '6px 14px', borderColor: color, color: color }}
+                        className="ct-editor-peer-pill"
+                        style={{ '--peer-color': color }}
                         title={`${name}${isMe ? ' (You)' : ''}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ''}`}
                       >
-                        <span className="w-2 h-2 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: color }} />
+                        <span className="ct-editor-peer-dot" />
                         <span>{name}{isMe ? ' (You)' : ''}</span>
                         {isOnSameFile && posInfo && !isMe && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
@@ -3835,6 +3919,50 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+
+            {/* Editor Action Toolbar */}
+            <div className="ct-editor-action-toolbar">
+              <div className="ct-editor-file-context">
+                <Code2 size={14} className="text-purple-400 shrink-0" />
+                <span className="ct-editor-file-path">{activeFile}</span>
+                <span className={`ct-editor-save-state ${autoSaveStatus.includes('Unsaved') ? 'is-unsaved' : ''}`}>
+                  {autoSaveStatus}
+                </span>
+              </div>
+
+              <div className="ct-editor-action-group">
+                <button
+                  type="button"
+                  onClick={handleFormatDocument}
+                  disabled={isViewer}
+                  className="ct-editor-action-btn"
+                  title={isViewer ? 'Viewers cannot format code' : 'Format the active document'}
+                >
+                  <Code2 size={13} />
+                  <span>Format</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetActiveFile}
+                  disabled={isViewer}
+                  className="ct-editor-action-btn ct-editor-action-btn-muted"
+                  title={isViewer ? 'Viewers cannot reset files' : 'Restore the active file starter content'}
+                >
+                  <RefreshCw size={13} />
+                  <span>Reset File</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerAutoSave}
+                  disabled={isViewer || autoSaveStatus === 'Saving...'}
+                  className="ct-editor-action-btn ct-editor-action-btn-primary"
+                  title={isViewer ? 'Viewers cannot save changes' : 'Save workspace changes now'}
+                >
+                  <Save size={13} />
+                  <span>{autoSaveStatus === 'Saving...' ? 'Saving...' : 'Save'}</span>
+                </button>
               </div>
             </div>
 
@@ -3852,6 +3980,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 onMount={(editor, monaco) => {
                   editorRef.current = editor;
                   monacoRef.current = monaco;
+                  editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+                  editor.setPosition({ lineNumber: 1, column: 1 });
+                  requestAnimationFrame(() => {
+                    editor.layout();
+                    editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+                  });
 
                   // Track cursor position in Monaco (onDidChangeCursorPosition) (CT-86)
                   editor.onDidChangeCursorPosition((e) => {
@@ -3875,6 +4009,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   automaticLayout: true,
                   tabSize: 2,
                   wordWrap: 'on',
+                  scrollBeyondLastColumn: 0,
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
                   readOnly: isViewer,

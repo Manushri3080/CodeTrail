@@ -1,0 +1,423 @@
+% Bi Weekly Report LaTex file
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+
+\definecolor{statusgreen}{HTML}{2E7D32}
+\definecolor{statusyellow}{HTML}{F9A825}
+\definecolor{statusred}{HTML}{C62828}
+\definecolor{lightgray}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Bi-Weekly Status Report}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}
+  {\large\bfseries}
+  {}
+  {0pt}
+  {}
+  [\vspace{2pt}\titlerule]
+
+\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=3pt}
+
+\newcommand{\field}[2]{\textbf{#1:} #2\par}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE\bfseries Bi-Weekly Status Report 4}\\[10pt]
+\end{center}
+
+\field{Project Name}{CodeTrail~-- Real-Time Collaborative Code Editor with Contribution Tracking}
+\field{Course}{WS \& SOA (IT645) $|$ Dhirubhai Ambani University (Formerly DA-IICT)}
+\field{Report Period}{14/09/2026~-- 27/09/2026 (Weeks 8--9)}
+\field{Date Submitted}{30/09/2026}
+\field{Prepared By}{Shaikh Maryam on behalf of CodeTrail Team}
+
+\vspace{8pt}
+
+\section{Project Status Summary\footnote{For details on indicators and status levels, see last page.}}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.62\textwidth}}
+Sprint / Milestone & SCRUM Sprint 4 (Bi-Weekly 4)~-- Module 4 Delivery: Code Execution \& Module 5: Contribution Logging \\
+\% Complete (overall) & 62.5\% (5 of 8 functional modules delivered On Track) \\
+\end{tabular}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-health-dashboard}
+\renewcommand{\arraystretch}{1.4}
+
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.3cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{1.7cm}
+                >{\centering\arraybackslash}p{3.2cm}}
+\toprule
+\textbf{Indicator} &
+\textbf{Current} &
+\textbf{Previous} &
+\textbf{Trend} &
+\textbf{Status} \\
+\midrule
+
+Overall Project &
+62.5\% &
+37.5\% &
+$\uparrow$ &
+On Track \\
+
+Schedule &
+On Schedule &
+On Schedule &
+$\rightarrow$ &
+On Track \\
+
+Scope &
+5/8 Modules &
+3/8 Modules &
+$\uparrow$ &
+On Track \\
+
+Quality &
+Piston API and SHA-256 verification stable &
+Stable &
+$\rightarrow$ &
+On Track \\
+
+Team Contribution &
+8/8 members contributed &
+8/8 members contributed &
+$\rightarrow$ &
+On Track \\
+
+Dependencies &
+Piston API fully integrated &
+Piston API 60\% &
+$\uparrow$ &
+On Track \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\vspace{8pt}
+\textbf{Summary Notes:}
+
+The CodeTrail team successfully completed and merged Module 4 (Code Execution Engine) and Module 5 (Contribution Dossier & Logging) in Bi-Weekly 4 (14/09/2026--27/09/2026, Weeks 8--9). Key deliverables included a complete Piston API integration for multiple language runtimes, the core SHA-256 cryptographic proof-of-work pipeline for tamper-evident activity logs, and a full telemetry workspace panel. Furthermore, the CI/CD deployment pipeline was finalized and hosted on Vercel.
+
+\section{Key Accomplishments in Two Weeks}
+
+\begin{itemize}
+    \item \textbf{Module 4 Delivery -- Code Execution Engine:} Implemented a full code execution controller with a local Piston server, allowing real-time sandboxed code execution in languages like JavaScript, Python, C++, Java, and Go. Real-time stdout/stderr mapping and custom stdin handling were fully integrated into the ModularWorkspace execution runner. (Commits \texttt{3a9d94ca}, \texttt{4edb37c0}, \texttt{32a2407e}, \texttt{d700a61d})
+    
+    \item \textbf{SHA-256 Proof-of-Work Activity Logging (CT-460):} Developed the cryptographic activity logging pipeline that records tamper-evident contribution history. Implemented a verification engine that secures logs with proof-of-work, alongside auto-recording features embedded into the workspace controller. (Commits \texttt{c035413e}, \texttt{b65c6b20})
+    
+    \item \textbf{Module 5 Delivery -- Contribution Dossier & Telemetry:} Launched the workspace telemetry panel that visualizes the recorded activity logs, tracks participant contribution metrics, and generates exportable audit reports. The telemetry layer interfaces via Socket.IO to keep metrics synchronized in real-time. (Commits \texttt{55333ac2}, \texttt{c3cae57e}, \texttt{19819efb})
+    
+    \item \textbf{Activity Validation \& Tamper Simulation:} Built visual verification indicators to track the integrity of cryptographic logs, including tamper simulation features for robust QA testing. (Commit \texttt{b97fc9d1})
+    
+    \item \textbf{CI/CD Deployment Setup:} Initialized and deployed the frontend via Vercel, adding specific Vite build configurations and post-install hooks to ensure zero-downtime deployment for future CI iterations. (Commits \texttt{c66702cf}, \texttt{a02b7690})
+\end{itemize}
+
+\section{Planned vs.\ Actual}
+
+\begin{tabular}{p{0.16\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.22\textwidth}}
+\toprule
+\textbf{Task/} & \textbf{Planned} & \textbf{Current} & \textbf{Actual} & \textbf{Notes} \\
+\textbf{Deliverable} & \textbf{Completion} & \textbf{Forecast} & \textbf{Status} & \\
+\midrule
+Module 3: Collaborative Editor & Sep 14 & --- & Done & Delivered in Bi-Weekly 3 \\
+Module 4: Code Execution & Sep 28 & --- & Done & Piston API fully integrated \\
+SHA-256 Contribution Logging & Sep 28 & --- & Done & Completed via CT-460 pipeline \\
+Module 5: Contribution Dossier & Oct 12 & --- & Done & Delivered ahead of schedule \\
+Vercel CI/CD Setup & Oct 12 & --- & Done & Successfully deployed \\
+\bottomrule
+\end{tabular}
+
+\section{Project Risks, Issues, \& Dependencies}
+
+\begin{tabular}{p{0.15\textwidth} p{0.25\textwidth} p{0.14\textwidth} p{0.14\textwidth} p{0.25\textwidth}}
+\toprule
+\textbf{Type (ID)} & \textbf{Description} & \textbf{Impact} & \textbf{Owner} & \textbf{Mitigation / Next Step} \\
+\midrule
+Dependency (D-02) & Third-party Piston API execution rate limits and latency variability & Medium & Meet Sheth / Dudhat Monar & \textbf{Resolved:} Integrated timeout guards and rate limit handling via local server fallbacks. \\
+Issue (I-03) & Vite build failures during Vercel deployment due to conflict markers & High & Mahi Kansara & \textbf{Resolved:} Fixed conflict markers in ModularWorkspace and implemented rigorous CI checks. \\
+Risk (R-05) & Overhead of real-time SHA-256 hashing during rapid socket code updates & Medium & Thakkar Manushri & Debounced payload logging to limit hash calculations per minute per user. \\
+\bottomrule
+\end{tabular}
+
+\section{Project Decisions}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-decisions}
+\renewcommand{\arraystretch}{1.3}
+
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.2cm}
+                >{\raggedright\arraybackslash}p{4.0cm}
+                >{\raggedright\arraybackslash}p{3.5cm}
+                >{\centering\arraybackslash}p{2.0cm}
+                >{\centering\arraybackslash}p{1.5cm}}
+\toprule
+\textbf{Decision} &
+\textbf{Rationale} &
+\textbf{Impact} &
+\textbf{Decided By} &
+\textbf{Date} \\
+\midrule
+
+Local Piston Server caching &
+Mitigate third-party rate limits and latency by caching specific execution runtimes. &
+Stable code execution across various languages with minimized delay. &
+Team &
+Sep.\ 19 \\
+
+Client-side Telemetry Sync (Socket) &
+Allows immediate visualization of contribution data without excessive database polling. &
+Reduced database load and instant UX feedback on contribution dossier. &
+Mahi &
+Sep.\ 28 \\
+
+Vercel Build Configuration &
+Ensures proper Vite compilation by resolving environment and dependency specific conflicts on deployment. &
+Enables automated continuous deployment. &
+Mahi &
+Sep.\ 28 \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Project Scope Changes}
+
+\begin{table}[htbp]
+\centering
+\label{tab:scope-changes}
+\renewcommand{\arraystretch}{1.25}
+
+\begin{tabular}{p{3.0cm} c p{3.2cm} c c}
+\toprule
+\textbf{Change} &
+\textbf{Action} &
+\textbf{Reason} &
+\textbf{Schedule Impact} &
+\textbf{Approved By} \\
+\midrule
+
+None & --- & Scope remains fully aligned with project proposal and approved SDD specifications. & None & --- \\
+
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Upcoming Work (Next Two Weeks' Plan~-- Bi-Weekly 5 Target)}
+
+\begin{itemize}
+    \item System integration testing and performance optimizations on the completed modules.
+    \item Expand Postman API test suite to cover all telemetry endpoints.
+    \item Enhance UI layout responsiveness on mobile views for the telemetry dossier.
+    \item Start working towards final presentation preparation and documentation compilation.
+\end{itemize}
+
+\section{Team Member Contributions}
+
+\vspace{6pt}
+
+\field{Name}{Meet Sheth (202512057)}
+\field{Role}{Backend Architect / System Designer}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Engineered the core Code Execution Controller and architected the local Piston execution server to process real-time code execution requests. Seamlessly integrated execution endpoints into the modular workspace backend, ensuring robust isolation and multi-language runtime stability (Commit \texttt{4edb37c0}). \\
+Contribution Type & Development / Architecture \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/controllers/executionController.js} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Rishika Shah (202512041)}
+\field{Role}{Frontend Developer / UI Engineer}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Resolved critical UI rendering anomalies within the Code Execution module and engineered a robust custom standard input (stdin) handling mechanism. Enhanced the overall execution engine interface to provide real-time interactive terminal feedback for end-users (Commit \texttt{32a2407e}). \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/workspace/ModularWorkspace.jsx} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Mahi Kansara (202512078)}
+\field{Role}{Frontend Developer / Socket.IO Integration Lead}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Led the development of real-time telemetry (CT-164/167), implementing high-precision timestamp recording and robust Socket.IO synchronization. Architected the Vercel CI/CD pipeline, resolving complex Vite build dependencies to establish zero-downtime automated deployments (Commits \texttt{19819efb}, \texttt{c66702cf}, \texttt{a02b7690}). \\
+Contribution Type & Development / DevOps \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{vercel.json}, \texttt{package.json}, Telemetry socket integrations \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Thakkar Manushri (202512122)}
+\field{Role}{Project Manager / DevOps / Backend Developer}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Architected and implemented the core SHA-256 Proof-of-Work cryptographic logging pipeline to establish tamper-evident activity records. Securely integrated the proof-of-work auto-recording mechanism into the workspace controller, bridging backend security with real-time audit trails (Commits \texttt{c035413e}, \texttt{b65c6b20}). \\
+Contribution Type & Development / Architecture \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/utils/cryptoProof.js}, \texttt{backend/controllers/workspaceController.js} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Anistina Dsouza (202512081)}
+\field{Role}{Full-Stack Developer / Module Lead}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Advanced the execution sandbox capabilities by developing an editable interactive runner, comprehensive diagnostic overlays, and real-time execution status badges. Formulated and executed rigorous backend validation suites for the Piston execution engine to guarantee runtime reliability (Commits \texttt{635432d8}, \texttt{d700a61d}). \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/tests/index.js}, \texttt{backend/scripts/simulateTamperValidation.js} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Ruchita Patadiya (202512070)}
+\field{Role}{Frontend Developer / Backend Developer}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Engineered the client-side Contribution Dossier and workspace telemetry visualization panels. Implemented comprehensive contribution tracking metrics and developed the core functionality to compile and export verifiable audit reports in both markdown and JSON formats (Commit \texttt{55333ac2}). \\
+Contribution Type & Development \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/telemetry/ContributionDossier.jsx}, \texttt{frontend/src/utils/auditExport.js} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Shaikh Maryam (202512074)}
+\field{Role}{Full-Stack Developer / UI Architect}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Led the frontend UI architecture for the Code Execution Engine, optimizing responsive layouts and language support. Spearheaded complex Git merge conflict resolutions to seamlessly integrate the Telemetry \& Audit Proof-of-Work modules (CT-164/167) into the core workspace environment. Systematically refactored the ModularWorkspace component to incorporate the new Telemetry Drawer while ensuring cross-component UI consistency (Commits \texttt{3a9d94ca}, \texttt{a601728f}, \texttt{4cfc152b}). \\
+Contribution Type & Development / Project Management \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/workspace/ModularWorkspace.jsx} \\
+\bottomrule
+\end{tabular}
+}
+
+\vspace{6pt}
+
+\field{Name}{Dudhat Monar (202512019)}
+\field{Role}{Backend Developer / QA Engineer}
+
+\vspace{4pt}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Spearheaded the Quality Assurance (QA) and security validation of the cryptographic pipeline. Developed real-time visual verification indicators, automated activity log validation scripts, and a tamper simulation suite to rigorously test the integrity of the Proof-of-Work telemetry data (Commit \texttt{b97fc9d1}). \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/scripts/simulateTamperValidation.js}, \texttt{frontend/src/modules/telemetry/ContributionDossier.jsx} \\
+\bottomrule
+\end{tabular}
+}
+
+\pagebreak
+
+\section{Guidelines (for reference, not to be submitted in your status report):}
+
+\begin{itemize}
+    \item Section 1 summarizes the overall project status.
+    \item Sections 2--5 capture team-wide progress.
+    \item Section 6 is the per-person breakdown -- keep individual entries short (3--5 bullet points max) so the report does not balloon as your project progresses / team grows.
+    \item The status indicators at the top give stakeholders a one-glance read before they dig into details -- useful if this report goes to non-technical stakeholders too.
+    \item Six project status indicators have the following context:
+    \begin{itemize}
+        \item Overall Progress --- \% of project scope completed
+        \item Schedule --- \% of planned work completed
+        \item Scope --- \% of approved requirements completed
+        \item Quality --- test pass rate / critical defects
+        \item Team Contribution --- \% of assigned deliverables completed
+        \item Dependencies --- \% of critical dependencies resolved
+    \end{itemize}
+    \item Status levels:
+    \begin{itemize}
+        \item On Track --- expected to meet current milestone
+        \item Needs Attention --- issue exists but recovery is likely
+        \item At Risk --- milestone/deliverable may be missed without intervention
+        \item Blocked --- progress cannot continue without resolving a dependency
+    \end{itemize}
+    \item Contribution Type with examples (Add more types, if needed)
+    \begin{itemize}
+        \item Development --- Code, APIs, UI, database
+        \item Architecture --- Architecture/design decisions
+        \item Testing --- Test cases, automation, defect verification
+        \item Documentation --- SRS, design docs, reports
+        \item DevOps --- CI/CD, deployment, containers
+        \item Research --- Literature review, technical investigation
+        \item Project Management --- Planning, coordination
+        \item Presentation --- Demo, presentation, client communication
+    \end{itemize}
+
+\end{itemize}
+
+\end{document}
