@@ -19,9 +19,43 @@ function LoginRouteWrapper({ onLoginSuccess }) {
 
 function MainRouter() {
   const handleLoginSuccess = (newToken, user) => {
+    let previousWorkspaceId = null;
+    try {
+      const previousWorkspace = JSON.parse(localStorage.getItem('ct-active-workspace-session') || 'null');
+      previousWorkspaceId = previousWorkspace?._id || previousWorkspace?.id || null;
+    } catch (err) {
+      console.warn('Previous workspace session could not be read during sign-in:', err.message);
+    }
+
     localStorage.setItem('ct-auth-token', newToken);
     localStorage.setItem('ct-auth-user', JSON.stringify(user));
     localStorage.setItem('ct-active-tab', 'home');
+    localStorage.removeItem('ct-active-workspace-session');
+
+    if (previousWorkspaceId) {
+      [
+        'session-start',
+        'session-sec',
+        'session-running',
+        'active-file',
+        'files',
+        'content'
+      ].forEach((suffix) => {
+        localStorage.removeItem(`ct-workspace-${suffix}-${previousWorkspaceId}`);
+      });
+    }
+
+    // The fallback workspace uses a shared key, so do not carry it into a new account.
+    [
+      'session-start',
+      'session-sec',
+      'session-running',
+      'active-file',
+      'files',
+      'content'
+    ].forEach((suffix) => {
+      localStorage.removeItem(`ct-workspace-${suffix}-demo-workspace`);
+    });
   };
 
   return (
@@ -49,4 +83,3 @@ createRoot(document.getElementById('root')).render(
     </GoogleOAuthProvider>
   </StrictMode>,
 )
-

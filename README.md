@@ -286,6 +286,7 @@ PISTON_API_URL=http://localhost:2000/api/v2/execute
 ```
 
 > **Note:** For `EMAIL_PASS`, use a [Gmail App Password](https://support.google.com/accounts/answer/185833), not your regular Gmail password.
+> Configure `PISTON_API_URL` and `PISTON_API_KEY` for the Piston deployment used by your team. The default public `emkc.org` endpoint may reject unauthenticated requests.
 
 ---
 

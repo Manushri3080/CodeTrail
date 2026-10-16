@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import HeroSection from './modules/landing/HeroSection';
+import WorkspacePreview from './modules/landing/WorkspacePreview';
 import ModulesGrid from './modules/landing/ModulesGrid';
 import ModularWorkspace from './modules/workspace/ModularWorkspace';
 import WorkspacesPage from './modules/workspace/WorkspacesPage';
@@ -142,16 +143,12 @@ function App({ defaultTab }) {
             onBackToHome={() => setActiveTab('home')}
           />
         ) : activeTab === 'execution-engine' ? (
-          <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
-            <ExecutionEngine />
-          </div>
+          <ExecutionEngine />
         ) : activeTab === 'contribution-dossier' ? (
-          <div className="ct-logged-container-wrap pt-20 pb-12 px-4 max-w-7xl mx-auto">
-            <ContributionDossier 
-              activeWorkspace={activeWorkspace} 
-              currentUser={currentUser} 
-            />
-          </div>
+          <ContributionDossier
+            activeWorkspace={activeWorkspace}
+            currentUser={currentUser}
+          />
         ) : (
           <HomePage
             currentUser={currentUser}
@@ -165,14 +162,14 @@ function App({ defaultTab }) {
           {/* LANDING PAGE HERO (ONLY SHOWN FOR LOGGED-OUT VISITORS) */}
           <HeroSection onOpenTerminal={() => setTerminalOpen(true)} />
 
-          {/* COLLABORATIVE WORKSPACE MODULE */}
-          <ModularWorkspace />
+          {/* STATIC COLLABORATIVE WORKSPACE EXAMPLE */}
+          <WorkspacePreview />
 
           {/* CODE EXECUTION SANDBOX MODULE */}
           <ExecutionEngine />
 
           {/* CONTRIBUTION TELEMETRY MODULE */}
-          <ContributionDossier />
+          <ContributionDossier demoMode />
 
           {/* CORE PLATFORM MODULES BREAKDOWN */}
           <ModulesGrid />

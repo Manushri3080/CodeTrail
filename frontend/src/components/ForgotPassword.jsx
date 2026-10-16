@@ -36,9 +36,9 @@ export function ForgotPassword() {
       {/* Back to Login Button */}
       <button 
         onClick={() => navigate('/login')}
-        className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-3 bg-transparent border-none text-gray-400 hover:text-white font-mono text-sm sm:text-base font-extrabold cursor-pointer transition-all duration-200"
+        className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2.5 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/40 text-gray-300 hover:text-white rounded-xl font-mono text-xs sm:text-sm font-bold cursor-pointer transition-all duration-200 shadow-md active:scale-95"
       >
-        <ArrowLeft size={20} />
+        <ArrowLeft size={16} />
         <span>Back to Login</span>
       </button>
 

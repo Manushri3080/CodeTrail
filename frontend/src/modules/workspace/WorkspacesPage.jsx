@@ -346,12 +346,12 @@ export const WorkspacesPage = ({
 
       {/* 3. WORKSPACES CARDS CONTAINER */}
       {loading ? (
-        <div className="p-12 text-center rounded-2xl bg-[#0D0E15] border border-white/10 text-gray-400 font-mono text-xs flex flex-col items-center justify-center gap-3">
+        <div className="ct-workspaces-empty-state text-center rounded-2xl bg-[#0D0E15] border border-white/10 text-gray-400 font-mono text-xs flex flex-col items-center justify-center">
           <Loader2 size={24} className="animate-spin text-purple-400" />
           <span>Loading workspace directory...</span>
         </div>
       ) : filteredWorkspaces.length === 0 ? (
-        <div className="p-12 text-center rounded-2xl bg-[#0D0E15] border border-white/10 text-gray-400 font-mono text-xs flex flex-col items-center justify-center gap-3">
+        <div className="ct-workspaces-empty-state text-center rounded-2xl bg-[#0D0E15] border border-white/10 text-gray-400 font-mono text-xs flex flex-col items-center justify-center">
           <FolderGit2 size={32} className="text-gray-600" />
           <p className="text-sm font-bold text-white">No workspaces found matching filter criteria.</p>
           <button
@@ -360,7 +360,7 @@ export const WorkspacesPage = ({
               setCategoryFilter('all');
               setLanguageFilter('all');
             }}
-            className="px-4 py-2 rounded-xl bg-purple-600/30 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 text-xs font-mono font-bold transition-all cursor-pointer mt-2"
+            className="ct-workspaces-empty-action rounded-xl bg-purple-600/30 hover:bg-purple-600/40 text-purple-300 border border-purple-500/40 text-xs font-mono font-bold transition-all cursor-pointer"
           >
             Reset Filters
           </button>

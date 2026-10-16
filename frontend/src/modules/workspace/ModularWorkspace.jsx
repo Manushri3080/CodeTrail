@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
-import { 
-  Users, 
-  ShieldCheck, 
-  Zap, 
-  GitCommit, 
-  FileCode, 
-  ArrowLeft, 
-  KeyRound, 
-  Globe, 
-  Lock, 
-  Clock, 
-  Check, 
+import {
+  Users,
+  ShieldCheck,
+  Zap,
+  GitCommit,
+  FileCode,
+  ArrowLeft,
+  KeyRound,
+  Globe,
+  Lock,
+  Clock,
+  Check,
   X,
-  Copy, 
-  Save, 
+  Copy,
+  Save,
   LogOut,
   ChevronDown,
   ChevronUp,
@@ -43,7 +43,8 @@ import {
   Layers,
   Download,
   Activity,
-  Radio
+  Radio,
+  Sparkles
 } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { WORKSPACE_FILES } from '../../constants/workspace.constants';
@@ -51,6 +52,7 @@ import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettings
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
 import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
 import { formatActiveDuration } from '../../utils/timeUtils';
+import { detectLanguage, getFileExtension } from '../../utils/languageDetection';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
 
 // Map file extensions to Monaco language identifiers
@@ -198,10 +200,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const isOwner = (currentWorkspace?.owner?._id || currentWorkspace?.owner) === currentUserId;
   const memberObj = currentWorkspace?.members?.find(m => (m.user?._id || m.user?.id || m.user) === currentUserId || m.id === currentUserId);
 
-  const workspaceRole = currentWorkspace?.role 
-    || activeWorkspace?.role 
-    || (isOwner ? 'owner' : null) 
-    || memberObj?.role 
+  const workspaceRole = currentWorkspace?.role
+    || activeWorkspace?.role
+    || (isOwner ? 'owner' : null)
+    || memberObj?.role
     || (currentUser?.role ? currentUser.role : null)
     || 'editor';
   const isViewer = String(workspaceRole).toLowerCase() === 'viewer';
@@ -220,27 +222,23 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     fileVersionsRef.current = fileVersions;
   }, [fileVersions]);
 
-  // Persistent Settings Modal Open State across page refreshes
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(() => {
-    try {
-      return localStorage.getItem(`ct-workspace-settings-open-${wsId}`) === 'true';
-    } catch (e) {
-      return false;
-    }
-  });
+  // Project Scaffolding Modal Open State
+  const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(`ct-workspace-settings-open-${wsId}`, isSettingsModalOpen.toString());
-    } catch (e) {}
-  }, [isSettingsModalOpen, wsId]);
+  // Interactive CLI Terminal Console State
+  const [terminalEntries, setTerminalEntries] = useState([
+    { id: 1, type: 'system', text: 'Welcome to CodeTrail Interactive CLI Web Terminal v2.4.0' },
+    { id: 2, type: 'info', text: 'Type "help" or "scaffold <react|fastapi|django|express>" to initialize projects directly.' }
+  ]);
+  const [terminalInput, setTerminalInput] = useState('');
 
   // Persistent Active File State across refreshes
   const [activeFile, setActiveFile] = useState(() => {
     try {
       const saved = localStorage.getItem(`ct-workspace-active-file-${wsId}`);
       if (saved) return saved;
-    } catch (e) {}
+    } catch (e) { }
     return activeWorkspace?.files?.[0]?.name || 'index.js';
   });
 
@@ -249,9 +247,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       if (activeFile) {
         localStorage.setItem(`ct-workspace-active-file-${wsId}`, activeFile);
       }
-    } catch (e) {}
+    } catch (e) { }
   }, [activeFile, wsId]);
-  
+
+  const detectedActiveLanguage = detectLanguage(activeFile);
+
   // Helper to normalize file objects with full path and parent ID attributes
   const normalizeFileItem = (f) => {
     const path = f.path || f.id || f.name || 'file.js';
@@ -266,6 +266,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       path,
       parentId,
       isFolder,
+      language: f.language,
       iconColor
     };
   };
@@ -289,7 +290,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           return parsed.map(normalizeFileItem);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     if (activeWorkspace?.files && activeWorkspace.files.length > 0) {
       return activeWorkspace.files.map(f => normalizeFileItem({
@@ -322,7 +323,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           currentWorkspaceRef.current = fetchedWs;
           try {
             localStorage.setItem('ct-active-workspace-session', JSON.stringify(fetchedWs));
-          } catch (e) {}
+          } catch (e) { }
 
           if (Array.isArray(fetchedWs.files) && fetchedWs.files.length > 0) {
             const normalized = fetchedWs.files.map(f => normalizeFileItem({
@@ -338,7 +339,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             customFilesRef.current = normalized;
             try {
               localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(normalized));
-            } catch (e) {}
+            } catch (e) { }
 
             setFilesContent(prev => {
               const next = { ...prev };
@@ -352,7 +353,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               filesContentRef.current = next;
               try {
                 localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
-              } catch (e) {}
+              } catch (e) { }
               return next;
             });
           }
@@ -390,7 +391,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   useEffect(() => {
     try {
       localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFiles));
-    } catch (e) {}
+    } catch (e) { }
   }, [customFiles, wsId]);
 
   const editorRef = useRef(null);
@@ -569,7 +570,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           Object.assign(initial, parsed);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // 2. Overlay from activeWorkspace.files (session data from localStorage)
     //    Only fill keys not already in localStorage backup
@@ -585,6 +586,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           if (f.name && f.name !== fileKey && initial[f.name] === undefined) {
             initial[f.name] = f.content;
           }
+        }
+      });
+    }
+
+    // Keep a usable editor surface when a newly created workspace has file metadata
+    // but no content saved yet.
+    if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
+      activeWorkspace.files.forEach(file => {
+        if (file.isFolder) return;
+        const fileKey = file.path || file.id || file.name;
+        const fileName = file.name || fileKey;
+        if (fileKey && initial[fileKey] === undefined) {
+          initial[fileKey] = DEFAULT_FILES_CONTENT[fileKey] || getStarterBoilerplate(fileName);
+        }
+        if (fileName && initial[fileName] === undefined && fileName !== fileKey) {
+          initial[fileName] = initial[fileKey];
         }
       });
     }
@@ -643,10 +660,163 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (activeFileObj?.name && filesContent[activeFileObj.name] !== undefined) {
       return filesContent[activeFileObj.name];
     }
-    return '';
+    return DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
   };
 
-  // Debounced Auto-Save Request Handler (PATCH /api/workspaces/:id) (CT-88)
+  // Project Framework Scaffolder Handler
+  const handleScaffoldProject = (template) => {
+    if (!template || !template.files || template.files.length === 0) return;
+
+    // 1. Normalize template file list
+    const newFiles = template.files.map(f => normalizeFileItem({
+      id: f.path || f.name,
+      name: f.name,
+      path: f.path || f.name,
+      language: f.language,
+      isFolder: false,
+      parentId: f.path.includes('/') ? f.path.split('/').slice(0, -1).join('/') : null
+    }));
+
+    const folderPaths = new Set();
+    template.files.forEach(f => {
+      if (f.path.includes('/')) {
+        const parts = f.path.split('/');
+        for (let i = 1; i < parts.length; i++) {
+          folderPaths.add(parts.slice(0, i).join('/'));
+        }
+      }
+    });
+
+    const folderItems = Array.from(folderPaths).map(p => normalizeFileItem({
+      id: p,
+      name: p.split('/').pop(),
+      path: p,
+      isFolder: true,
+      iconColor: 'text-purple-400'
+    }));
+
+    const completeFileList = [...folderItems, ...newFiles];
+
+    setCustomFiles(completeFileList);
+    customFilesRef.current = completeFileList;
+
+    // 2. Populate file contents map
+    const newContentMap = {};
+    template.files.forEach(f => {
+      newContentMap[f.path || f.name] = f.content;
+      newContentMap[f.name] = f.content;
+    });
+
+    setFilesContent(prev => {
+      const next = { ...prev, ...newContentMap };
+      filesContentRef.current = next;
+      try {
+        localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
+      } catch (e) { }
+      return next;
+    });
+
+    // 3. Set primary active file
+    const primary = template.primaryFile || template.files[0].path || template.files[0].name;
+    setActiveFile(primary);
+
+    // 4. Open Output Panel & switch to terminal tab
+    setIsOutputPanelOpen(true);
+    setIsOutputPanelMinimized(false);
+    setOutputTab('terminal');
+
+    // 5. Append CLI scaffolding log entries
+    const logTime = new Date().toLocaleTimeString();
+    setTerminalEntries(prev => [
+      ...prev,
+      { id: Date.now() + 1, type: 'system', text: `[${logTime}] INITIALIZING FRAMEWORK PROJECT: ${template.name} (${template.badge})` },
+      { id: Date.now() + 2, type: 'cmd', text: `$ npx create-workspace ${template.id} --template=${template.name}` },
+      { id: Date.now() + 3, type: 'info', text: `[1/3] Creating folder structure and project configuration...` },
+      { id: Date.now() + 4, type: 'info', text: `[2/3] Writing ${template.files.length} template source files (${template.files.map(f => f.name).join(', ')})...` },
+      { id: Date.now() + 5, type: 'success', text: `[3/3] ✨ Successfully scaffolded ${template.name}! Active file set to ${primary}.` }
+    ]);
+
+    showToast(`⚡ Initialized ${template.name} Project in Workspace!`, 'success');
+
+    // 6. Sync updated workspace files to backend
+    if (wsId && wsId !== 'demo-workspace' && token) {
+      const payloadFiles = completeFileList.map(f => ({
+        id: f.id,
+        name: f.name,
+        path: f.path,
+        isFolder: !!f.isFolder,
+        parentId: f.parentId || null,
+        content: newContentMap[f.path] || newContentMap[f.name] || ''
+      }));
+
+      axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
+        files: payloadFiles
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(err => console.warn('Sync scaffold files to DB warning:', err.message));
+    }
+  };
+
+  // Interactive Terminal CLI Command Submit Handler
+  const handleTerminalSubmit = (e) => {
+    e.preventDefault();
+    const cmd = terminalInput.trim();
+    if (!cmd) return;
+
+    setTerminalInput('');
+    const newEntry = { id: Date.now(), type: 'cmd', text: `$ ${cmd}` };
+
+    const lower = cmd.toLowerCase();
+
+    let reply = [];
+    if (lower === 'clear' || lower === 'cls') {
+      setTerminalEntries([]);
+      return;
+    } else if (lower === 'help') {
+      reply = [
+        { id: Date.now() + 1, type: 'info', text: 'CodeTrail Interactive CLI Web Terminal v2.4.0' },
+        { id: Date.now() + 2, type: 'info', text: 'Available Commands:' },
+        { id: Date.now() + 3, type: 'info', text: '  • scaffold <react|fastapi|django|express|python|java> - Initialize framework template' },
+        { id: Date.now() + 4, type: 'info', text: '  • ls / dir - List workspace files' },
+        { id: Date.now() + 5, type: 'info', text: '  • cat <filename> - Display file contents' },
+        { id: Date.now() + 6, type: 'info', text: '  • run / execute - Execute active file code' },
+        { id: Date.now() + 7, type: 'info', text: '  • clear - Clear terminal screen' }
+      ];
+    } else if (lower === 'ls' || lower === 'dir') {
+      reply = customFiles.map((f, i) => ({
+        id: Date.now() + i + 1,
+        type: f.isFolder ? 'info' : 'output',
+        text: f.isFolder ? `📁 ${f.path}/` : `📄 ${f.path} (${getLanguageInfo(f.name).name})`
+      }));
+    } else if (lower.startsWith('cat ')) {
+      const targetName = cmd.slice(4).trim();
+      const content = filesContent[targetName] || filesContent[targetName.split('/').pop()];
+      if (content !== undefined) {
+        reply = [{ id: Date.now() + 1, type: 'output', text: content }];
+      } else {
+        reply = [{ id: Date.now() + 1, type: 'error', text: `cat: ${targetName}: No such file in workspace` }];
+      }
+    } else if (lower.startsWith('scaffold ')) {
+      const target = lower.split(' ')[1];
+      const match = FRAMEWORK_TEMPLATES.find(t => t.id.includes(target) || t.name.toLowerCase().includes(target));
+      if (match) {
+        handleScaffoldProject(match);
+        return;
+      } else {
+        reply = [{ id: Date.now() + 1, type: 'error', text: `Unknown framework: ${target}. Available: react, fastapi, django, express, python, java` }];
+      }
+    } else if (lower === 'run' || lower === 'execute') {
+      handleRunActiveCode();
+      reply = [{ id: Date.now() + 1, type: 'success', text: `Executing ${activeFile}...` }];
+    } else {
+      reply = [
+        { id: Date.now() + 1, type: 'output', text: `Executed CLI command: ${cmd}` },
+        { id: Date.now() + 2, type: 'success', text: `Process completed with exit code 0.` }
+      ];
+    }
+
+    setTerminalEntries(prev => [...prev, newEntry, ...reply]);
+  };
   const triggerAutoSave = async () => {
     if (!wsId || wsId === 'demo-workspace' || !token) {
       setAutoSaveStatus('Auto-saved locally');
@@ -705,7 +875,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           localStorage.setItem('ct-active-workspace-session', JSON.stringify(res.data.workspace));
           localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFilesRef.current));
           localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(filesContentRef.current));
-        } catch (e) {}
+        } catch (e) { }
       }
       setAutoSaveStatus('Auto-saved just now');
     } catch (err) {
@@ -764,7 +934,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
       let updatedFiles;
       if (fileIndex >= 0) {
-        updatedFiles = baseFiles.map((f, i) => 
+        updatedFiles = baseFiles.map((f, i) =>
           i === fileIndex ? { ...f, content, version: nextVer } : f
         );
       } else {
@@ -1572,6 +1742,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       return;
     }
 
+    const detectedLanguage = detectLanguage(activeFile);
+    if (!detectedLanguage) {
+      const extension = getFileExtension(activeFile);
+      showToast(
+        extension ? `Unsupported programming language: ${extension}` : 'Unable to determine programming language.',
+        'warning'
+      );
+      return;
+    }
+
     const codeToRun = getActiveFileContent();
     const language = getMonacoLanguage(activeFile);
 
@@ -1605,7 +1785,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     try {
       const response = await axios.post('http://localhost:5000/api/execute', {
+        fileId: activeFile,
+        sourceCode: codeToRun,
         language,
+        runtime: detectedLanguage.runtime,
         code: codeToRun,
         filename: activeFile,
         stdin: customInput,
@@ -1752,11 +1935,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               currentFileId: activeFile
             }, {
               headers: { Authorization: `Bearer ${token}` }
-            }).catch(() => {});
+            }).catch(() => { });
 
             await axios.post(`http://localhost:5000/api/workspaces/${wsId}/history`, startLog, {
               headers: { Authorization: `Bearer ${token}` }
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
       } catch (err) {
@@ -1780,7 +1963,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   useEffect(() => {
     try {
       localStorage.setItem('ct-workspace-members-collapsed', isMembersCollapsed.toString());
-    } catch (e) {}
+    } catch (e) { }
   }, [isMembersCollapsed]);
 
   // Helper to record activity history events dynamically in DB & LocalStorage
@@ -1798,7 +1981,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       const savedKey = `ct-workspace-history-${wsId}`;
       const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
       localStorage.setItem(savedKey, JSON.stringify([newLog, ...existing]));
-    } catch (e) {}
+    } catch (e) { }
 
     if (token && wsId && wsId !== 'demo-workspace') {
       try {
@@ -1854,7 +2037,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   useEffect(() => {
     try {
       localStorage.setItem(`ct-workspace-session-running-${wsId}`, isSessionRunning.toString());
-    } catch (e) {}
+    } catch (e) { }
   }, [isSessionRunning, wsId]);
 
   const [autoSaveStatus, setAutoSaveStatus] = useState('Auto-saved just now');
@@ -2526,7 +2709,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         const savedKey = `ct-workspace-history-${wsId}`;
         const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
         localStorage.setItem(savedKey, JSON.stringify([endLog, ...existing]));
-      } catch (e) {}
+      } catch (e) { }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -2571,6 +2754,61 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   };
 
   // 5. Leave Workspace Handler (Ends Session & Stores Duration)
+  const handleResetSession = () => {
+    if (!window.confirm('Reset the session timer? Your workspace files will remain unchanged.')) return;
+
+    const now = Date.now();
+    sessionStartRef.current = now;
+    setSessionSeconds(0);
+    setIsSessionRunning(true);
+
+    try {
+      localStorage.setItem(`ct-workspace-session-start-${wsId}`, now.toString());
+      localStorage.setItem(`ct-workspace-session-running-${wsId}`, 'true');
+      localStorage.removeItem(`ct-workspace-session-sec-${wsId}`);
+    } catch (err) {
+      console.warn('Session timer reset could not be persisted:', err.message);
+    }
+
+    recordHistoryLog('session', 'Session Timer Reset', 'The workspace session timer was reset without changing project files.');
+    showToast('Session timer reset', 'info');
+  };
+
+  const handleResetActiveFile = () => {
+    if (!canEditFiles || isViewer) {
+      showToast('Viewing mode: File editing is disabled', 'warning');
+      return;
+    }
+
+    const defaultContent = DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
+    if (!window.confirm(`Reset "${activeFile}" to its starter content?`)) return;
+
+    handleEditorChange(defaultContent);
+    showToast(`${activeFile} reset to starter content`, 'info');
+    recordHistoryLog('file', `Reset: ${activeFile}`, `Restored ${activeFile} to its starter content.`);
+  };
+
+  const handleFormatDocument = async () => {
+    if (!canEditFiles || isViewer) {
+      showToast('Viewing mode: Formatting is disabled', 'warning');
+      return;
+    }
+
+    const formatAction = editorRef.current?.getAction('editor.action.formatDocument');
+    if (!formatAction) {
+      showToast('Formatting is not available for this file', 'warning');
+      return;
+    }
+
+    try {
+      await formatAction.run();
+      showToast('Document formatted', 'success');
+    } catch (err) {
+      console.warn('Document formatting failed:', err.message);
+      showToast('Unable to format this file', 'warning');
+    }
+  };
+
   const handleLeaveWorkspace = async () => {
     const startTime = sessionStartRef.current || Date.now();
     const durationSec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
@@ -2595,7 +2833,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       const savedKey = `ct-workspace-history-${wsId}`;
       const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
       localStorage.setItem(savedKey, JSON.stringify([endLog, ...existing]));
-    } catch (e) {}
+    } catch (e) { }
 
     if (token && wsId && wsId !== 'demo-workspace') {
       try {
@@ -2616,7 +2854,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       localStorage.removeItem(`ct-workspace-session-running-${wsId}`);
       localStorage.removeItem(`ct-workspace-active-file-${wsId}`);
       localStorage.removeItem(`ct-workspace-files-${wsId}`);
-    } catch (e) {}
+    } catch (e) { }
 
     if (socketRef.current) {
       socketRef.current.emit('leaveWorkspace', {
@@ -2630,23 +2868,23 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   };
 
   const wsTitle = currentWorkspace?.title || currentWorkspace?.name || 'Project Workspace';
-  const wsFiles = (currentWorkspace?.files && currentWorkspace.files.length > 0) 
+  const wsFiles = (currentWorkspace?.files && currentWorkspace.files.length > 0)
     ? currentWorkspace.files.map(f => ({ id: f.name || f.id, name: f.name, iconColor: 'text-yellow-400' }))
     : [
-        { id: 'index.js', name: 'index.js', iconColor: 'text-yellow-400' },
-        { id: 'server.js', name: 'server.js', iconColor: 'text-cyan-400' },
-        { id: 'styles.css', name: 'styles.css', iconColor: 'text-sky-400' },
-        { id: 'package.json', name: 'package.json', iconColor: 'text-emerald-400' },
-        { id: 'README.md', name: 'README.md', iconColor: 'text-purple-400' }
-      ];
+      { id: 'index.js', name: 'index.js', iconColor: 'text-yellow-400' },
+      { id: 'server.js', name: 'server.js', iconColor: 'text-cyan-400' },
+      { id: 'styles.css', name: 'styles.css', iconColor: 'text-sky-400' },
+      { id: 'package.json', name: 'package.json', iconColor: 'text-emerald-400' },
+      { id: 'README.md', name: 'README.md', iconColor: 'text-purple-400' }
+    ];
 
   return (
     <div className="w-full h-screen overflow-hidden flex flex-col bg-[#08090E] text-white">
-      
+
       {/* Workspace Session Top Navbar (STUCK AT TOP AS PRIMARY WORKSPACE NAVBAR) */}
-      <header 
+      <header
         className="sticky top-0 z-50 w-full bg-[#12131F]/95 backdrop-blur-2xl border-b border-white/15 shadow-xl flex items-center justify-between flex-wrap shrink-0"
-        style={{ padding: '12px 28px', minHeight: '64px', gap: '16px' }}
+        style={{ padding: '14px 36px', minHeight: '68px', gap: '16px' }}
       >
         {/* Left: Back to Home + Workspace Title + Room Code */}
         <div className="flex items-center flex-wrap" style={{ gap: '16px' }}>
@@ -2654,8 +2892,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <button
               type="button"
               onClick={onBackToHome}
-              className="flex items-center text-xs font-mono font-bold text-gray-200 hover:text-white bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 rounded-xl transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
-              style={{ padding: '8px 16px', gap: '8px' }}
+              className="flex items-center text-xs font-mono font-bold text-gray-200 hover:text-white bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 rounded-full transition-all cursor-pointer"
+              style={{ padding: '10px 22px', gap: '10px' }}
               title="Return to Home Dashboard"
             >
               <ArrowLeft size={15} className="text-purple-400" />
@@ -2666,17 +2904,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           {onBackToHome && <div className="h-5 w-[1px] bg-white/15 hidden sm:block" />}
 
           <div className="flex items-center" style={{ gap: '10px' }}>
-            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0 shadow-[0_0_10px_rgba(52,211,153,0.7)]" />
+            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0" />
             <h3 className="text-base font-extrabold text-white tracking-tight flex items-center" style={{ gap: '8px' }}>
               <span>{wsTitle}</span>
             </h3>
           </div>
 
           {/* Room Code Badge */}
-          <button 
+          <button
             type="button"
-            className="flex items-center text-xs font-mono font-semibold text-gray-200 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 rounded-xl transition-all cursor-pointer shadow-md hover:scale-[1.02]"
-            style={{ padding: '8px 16px', gap: '8px' }}
+            className="flex items-center text-xs font-mono font-semibold text-gray-200 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 rounded-full transition-all cursor-pointer"
+            style={{ padding: '10px 22px', gap: '10px' }}
             onClick={handleCopyCode}
             title="Click to copy room code"
           >
@@ -2742,7 +2980,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <button
               type="button"
               onClick={() => setIsSessionRunning(false)}
-              className="flex items-center bg-emerald-500/20 hover:bg-amber-500/25 border border-emerald-500/40 hover:border-amber-500/40 text-emerald-300 hover:text-amber-300 rounded-full text-xs font-bold transition-all cursor-pointer shadow-md hover:scale-[1.02]"
+              className="flex items-center bg-emerald-500/20 hover:bg-amber-500/25 border border-emerald-500/40 hover:border-amber-500/40 text-emerald-300 hover:text-amber-300 rounded-full text-xs font-bold transition-all cursor-pointer"
               style={{ padding: '10px 22px', gap: '10px' }}
               title="Click to pause session timer"
             >
@@ -2753,7 +2991,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <button
               type="button"
               onClick={() => setIsSessionRunning(true)}
-              className="flex items-center bg-purple-500/20 hover:bg-purple-500/35 border border-purple-500/40 text-purple-300 rounded-full text-xs font-bold transition-all cursor-pointer shadow-md hover:scale-[1.02]"
+              className="flex items-center bg-purple-500/20 hover:bg-purple-500/35 border border-purple-500/40 text-purple-300 rounded-full text-xs font-bold transition-all cursor-pointer"
               style={{ padding: '10px 22px', gap: '10px' }}
               title="Click to start session duration timer"
             >
@@ -2764,8 +3002,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
           <button
             type="button"
+            onClick={handleResetSession}
+            className="ct-workspace-header-btn ct-workspace-reset-session-btn"
+            title="Reset the session timer without changing workspace files"
+          >
+            <RefreshCw size={14} />
+            <span>Reset Session</span>
+          </button>
+
+          {/* Scaffold Project Button */}
+          <button
+            type="button"
+            onClick={() => setIsScaffoldModalOpen(true)}
+            className="flex items-center bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+            style={{ padding: '10px 22px', gap: '10px' }}
+            title="Scaffold React, FastAPI, Django, or Express Project Framework"
+          >
+            <Sparkles size={15} className="text-cyan-400 animate-pulse" />
+            <span>Scaffold Project</span>
+          </button>
+
+          <button
+            type="button"
             onClick={() => setIsSettingsModalOpen(true)}
-            className="flex items-center bg-white/10 hover:bg-purple-500/25 border border-white/15 hover:border-purple-500/40 text-gray-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer shadow-md hover:scale-[1.02]"
+            className="flex items-center bg-white/10 hover:bg-purple-500/25 border border-white/15 hover:border-purple-500/40 text-gray-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
             style={{ padding: '10px 22px', gap: '10px' }}
             title="Workspace Settings & History Log"
           >
@@ -2773,18 +3033,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             <span>Settings</span>
           </button>
 
-          {/* Run Code Button */}
+          {/* Run Code Button (Capsule Pill Styling, No Outer Glow) */}
           <button
             type="button"
             onClick={handleRunActiveCode}
             disabled={isExecuting || isViewer}
-            className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer shadow-xl hover:scale-[1.03] ${
-              isExecuting
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 cursor-wait'
-                : isViewer
+            className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer ${isExecuting
+              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 cursor-wait'
+              : isViewer
                 ? 'bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50'
-                : 'bg-gradient-to-r from-emerald-500/25 to-teal-500/25 hover:from-emerald-500/40 hover:to-teal-500/40 border-emerald-500/50 hover:border-emerald-400/70 text-emerald-300 hover:text-emerald-200 shadow-[0_0_16px_rgba(52,211,153,0.25)] hover:shadow-[0_0_24px_rgba(52,211,153,0.45)]'
-            }`}
+                : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white'
+              }`}
             style={{ padding: '10px 22px', gap: '10px' }}
             title={isViewer ? 'Viewers cannot run code' : `Run ${activeFile} (${getLanguageInfo(activeFile).name})`}
           >
@@ -2798,8 +3057,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
           <button
             type="button"
-            className="flex items-center bg-red-500/25 hover:bg-red-500/35 border border-red-500/50 text-red-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xl hover:scale-[1.03]"
-            style={{ padding: '8px 20px', gap: '8px' }}
+            className="flex items-center bg-red-500/25 hover:bg-red-500/35 border border-red-500/50 text-red-200 rounded-full text-xs font-bold transition-all cursor-pointer"
+            style={{ padding: '10px 22px', gap: '10px' }}
             onClick={handleLeaveWorkspace}
             title="Leave this workspace session"
           >
@@ -2866,26 +3125,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       )}
 
       {/* Main Workspace View Container (FULL WIDTH & FLUSH DIRECTLY BELOW NAVBAR) */}
-      <section 
-        id="modular-workspace" 
+      <section
+        id="modular-workspace"
         className="w-full flex-1 min-h-0 flex flex-col justify-start overflow-hidden bg-[#0D0E15]"
       >
         {/* IDE Split View (100% FULL SCREEN WIDTH & HEIGHT) */}
-        <div 
+        <div
           className="flex flex-col md:flex-row w-full flex-1 min-h-0 overflow-hidden bg-[#0D0E15]"
         >
-          
+
           {/* LEFT SIDEBAR: File Explorer & Active Members List (FIXED TO SIDE, NO OUTER SCROLL) */}
-          <div 
+          <div
             className="w-full md:w-72 lg:w-80 shrink-0 border-r border-white/15 bg-[#12131F] flex flex-col justify-between overflow-hidden select-none h-full"
           >
-            
+
             {/* Top Explorer Section (Flex grow & Scrollable for all files) */}
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Explorer Header */}
-              <div 
+              <div
                 className="border-b border-white/15 flex items-center justify-between bg-white/[0.03] shrink-0"
-                style={{ height: '48px', paddingLeft: '20px', paddingRight: '20px' }}
+                style={{ height: '52px', paddingLeft: '24px', paddingRight: '16px' }}
               >
                 <span className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2.5">
                   <Folder size={15} className="text-purple-400" />
@@ -2943,20 +3202,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               </div>
 
               {/* File List Tree Container (VS Code / Antigravity Style Hierarchy & Drag-and-Drop) */}
-              <div 
-                className="overflow-y-auto flex-1 flex flex-col focus:outline-none select-none" 
-                style={{ padding: '12px 8px', gap: '4px' }}
+              <div
+                className="overflow-y-auto flex-1 flex flex-col focus:outline-none select-none"
+                style={{ padding: '10px 10px', gap: '2px' }}
                 tabIndex={0}
                 onKeyDown={handleExplorerKeyDown}
                 onContextMenu={(e) => handleContextMenu(e, null)}
                 onDragOver={(e) => handleDragOver(e, null)}
                 onDrop={(e) => handleDrop(e, null)}
               >
-                
+
                 {/* Inline New File Row at Root */}
                 {showNewFileInput && targetFolderId === null && (
-                  <form 
-                    onSubmit={handleCreateFile} 
+                  <form
+                    onSubmit={handleCreateFile}
                     className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
                     style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
                   >
@@ -2978,14 +3237,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button 
+                      <button
                         type="submit"
                         className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
                         title="Create File (Enter)"
                       >
                         <Check size={14} />
                       </button>
-                      <button 
+                      <button
                         type="button"
                         onClick={() => {
                           setShowNewFileInput(false);
@@ -3002,8 +3261,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                 {/* Inline New Folder Row at Root */}
                 {showNewFolderInput && targetFolderId === null && (
-                  <form 
-                    onSubmit={handleCreateFolder} 
+                  <form
+                    onSubmit={handleCreateFolder}
                     className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
                     style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
                   >
@@ -3025,14 +3284,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       />
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button 
+                      <button
                         type="submit"
                         className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
                         title="Create Folder (Enter)"
                       >
                         <Check size={14} />
                       </button>
-                      <button 
+                      <button
                         type="button"
                         onClick={() => {
                           setShowNewFolderInput(false);
@@ -3072,18 +3331,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             handleSelectFile(item.id);
                           }
                         }}
-                        className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${
-                          isDragOver 
-                            ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50' 
-                            : isSelected 
-                            ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md' 
+                        className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${isDragOver
+                          ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50'
+                          : isSelected
+                            ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md'
                             : 'text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent'
-                        }`}
-                        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '12px', paddingTop: '7px', paddingBottom: '7px' }}
+                          }`}
+                        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '12px', paddingTop: '9px', paddingBottom: '9px' }}
                       >
                         {/* Inline Renaming Input Form */}
                         {isRenamingThis ? (
-                          <form 
+                          <form
                             onSubmit={(e) => handleRenameSubmit(item, e)}
                             className="flex items-center gap-2 flex-1 min-w-0"
                             onClick={(e) => e.stopPropagation()}
@@ -3109,8 +3367,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             {/* Left Side: Folder Chevron + Icon + Name */}
                             <div className="flex items-center gap-2 truncate min-w-0 pr-2 flex-1">
                               {item.isFolder ? (
-                                <span 
-                                  onClick={(e) => toggleFolder(item.id, e)} 
+                                <span
+                                  onClick={(e) => toggleFolder(item.id, e)}
                                   className="text-purple-400 hover:text-white shrink-0 p-0.5"
                                 >
                                   {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -3133,7 +3391,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               {peersInFile.length > 0 && (
                                 <div className="flex items-center gap-1 shrink-0 mr-1">
                                   {peersInFile.map((p, pidx) => (
-                                    <span 
+                                    <span
                                       key={pidx}
                                       className="w-5 h-5 rounded-full bg-purple-500 text-white font-mono text-[10px] font-bold flex items-center justify-center border border-[#12131F] shadow-sm"
                                       title={`${p.userId?.name || 'Peer'} is viewing ${item.name}`}
@@ -3218,8 +3476,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                       {/* Inline New File / Folder inside this Folder */}
                       {item.isFolder && isExpanded && targetFolderId === item.id && showNewFileInput && (
-                        <form 
-                          onSubmit={handleCreateFile} 
+                        <form
+                          onSubmit={handleCreateFile}
                           className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
                           style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
                         >
@@ -3241,14 +3499,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             />
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <button 
+                            <button
                               type="submit"
                               className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
                               title="Create File (Enter)"
                             >
                               <Check size={14} />
                             </button>
-                            <button 
+                            <button
                               type="button"
                               onClick={() => {
                                 setShowNewFileInput(false);
@@ -3264,8 +3522,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       )}
 
                       {item.isFolder && isExpanded && targetFolderId === item.id && showNewFolderInput && (
-                        <form 
-                          onSubmit={handleCreateFolder} 
+                        <form
+                          onSubmit={handleCreateFolder}
                           className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
                           style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
                         >
@@ -3287,14 +3545,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             />
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            <button 
+                            <button
                               type="submit"
                               className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
                               title="Create Folder (Enter)"
                             >
                               <Check size={14} />
                             </button>
-                            <button 
+                            <button
                               type="button"
                               onClick={() => {
                                 setShowNewFolderInput(false);
@@ -3316,7 +3574,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
             {/* VS Code Floating Right-Click Context Menu */}
             {contextMenu.visible && (
-              <div 
+              <div
                 className="fixed z-[9999] bg-[#161726]/95 border border-purple-500/30 rounded-xl shadow-2xl backdrop-blur-xl py-1.5 min-w-[190px] text-xs font-mono select-none animate-fadeIn"
                 style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
                 onClick={(e) => e.stopPropagation()}
@@ -3327,7 +3585,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       {contextMenu.item.isFolder ? <Folder size={12} className="text-purple-400" /> : <FileCode size={12} className={contextMenu.item.iconColor} />}
                       <span className="truncate">{contextMenu.item.name}</span>
                     </div>
-                    
+
                     {contextMenu.item.isFolder ? (
                       <>
                         <button
@@ -3468,14 +3726,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             )}
 
             {/* SIDEBAR BOTTOM: Active Session Members Panel (PROPER SPACING & COLLAPSIBLE TOGGLE) */}
-            <div 
+            <div
               className="border-t border-white/15 bg-[#0E0F17] flex flex-col shrink-0 transition-all"
             >
               <button
                 type="button"
                 onClick={() => setIsMembersCollapsed(prev => !prev)}
                 className="w-full flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.05] transition-all border-b border-white/5"
-                style={{ padding: '16px 20px' }}
+                style={{ padding: '18px 24px' }}
                 title={isMembersCollapsed ? "Click to expand session members" : "Click to collapse session members"}
               >
                 <div className="flex items-center" style={{ gap: '10px' }}>
@@ -3491,7 +3749,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   {isMembersCollapsed && (
                     <div className="hidden sm:flex items-center -space-x-2 ml-2 shrink-0">
                       {activeSessions.slice(0, 3).map((s, sidx) => (
-                        <span 
+                        <span
                           key={sidx}
                           className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white text-[10px] font-mono font-bold flex items-center justify-center border-2 border-[#0E0F17] shadow-sm"
                           title={s.userId?.name || 'Member'}
@@ -3513,17 +3771,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               </button>
 
               {!isMembersCollapsed && (
-                <div className="flex flex-col max-h-56 overflow-y-auto" style={{ padding: '16px 20px', gap: '10px' }}>
+                <div className="flex flex-col max-h-56 overflow-y-auto" style={{ padding: '16px 20px 20px 20px', gap: '12px' }}>
                   {activeSessions.map((session, idx) => {
                     const uName = session.userId?.name || `User ${idx + 1}`;
                     const isMe = (session.userId?._id || session.userId?.id || session.userId) === (currentUser.id || currentUser._id);
                     const statusColor = session.status === 'online' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]' : session.status === 'away' ? 'bg-amber-400' : 'bg-gray-500';
 
                     return (
-                      <div 
-                        key={session._id || idx} 
+                      <div
+                        key={session._id || idx}
                         className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.08] transition-all shadow-md group"
-                        style={{ padding: '12px 16px' }}
+                        style={{ padding: '14px 18px' }}
                       >
                         <div className="flex items-center" style={{ gap: '14px' }}>
                           <div className="relative flex items-center justify-center shrink-0">
@@ -3537,7 +3795,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             <div className="flex items-center" style={{ gap: '8px' }}>
                               <span className="text-xs md:text-sm font-bold text-white truncate">{uName}</span>
                               {isMe && (
-                                <span 
+                                <span
                                   className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
                                   style={{
                                     padding: '2px 10px',
@@ -3574,30 +3832,29 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
           {/* RIGHT MAIN PANEL: Code Editor Window (Fills remaining width & height) */}
           <div className="flex-1 flex flex-col bg-[#0D0E15] min-w-0 h-full">
-            
+
             {/* Top Editor Window Header (Tabs + Active Editors) */}
-            <div 
-              className="border-b border-white/15 flex items-center justify-between bg-[#12131F] shrink-0 overflow-hidden"
-              style={{ height: '48px', paddingLeft: '20px', paddingRight: '20px', gap: '20px' }}
+            <div
+              className="ct-editor-window-header"
             >
               {/* Left Side: Window Controls + Active File Tabs */}
-              <div className="flex items-center gap-4 min-w-0 overflow-x-auto no-scrollbar py-1">
-                <div className="flex items-center gap-2 mr-2 shrink-0">
-                  <span className="w-3 h-3 rounded-full bg-red-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-yellow-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-green-500/80 inline-block" />
+              <div className="ct-editor-tab-area">
+                <div className="ct-editor-window-controls" aria-hidden="true">
+                  <span className="ct-editor-window-dot close" />
+                  <span className="ct-editor-window-dot minimize" />
+                  <span className="ct-editor-window-dot maximize" />
                 </div>
 
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="ct-editor-tab-scroller">
+                  <div className="ct-editor-tabs">
                   {customFiles.filter(f => !f.isFolder).map((file) => {
                     // Always use canonical id (path-based) as the active file key
                     const isTabActive = activeFile === file.id || activeFile === file.path;
                     const displayName = file.name || file.id.split('/').pop() || file.id;
                     return (
-                      <button 
+                      <button
                         key={file.id}
-                        className={`rounded-t-xl text-xs font-mono flex items-center gap-2.5 border-t border-x transition-all shrink-0 ${isTabActive ? 'bg-[#0D0E15] text-white border-purple-500/50 font-semibold shadow-md' : 'bg-white/5 text-gray-400 border-transparent hover:text-gray-200 hover:bg-white/10'}`}
-                        style={{ padding: '9px 18px' }}
+                        className={`ct-editor-file-tab ${isTabActive ? 'active' : ''}`}
                         onClick={() => handleSelectFile(file.id)}
                       >
                         <FileCode size={14} className={file.iconColor || 'text-yellow-400'} />
@@ -3605,31 +3862,32 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </button>
                     );
                   })}
+                  </div>
                 </div>
               </div>
 
               {/* Automatic Programming Language Indicator Badge (Derived from File Extension) */}
               {(() => {
-                const langInfo = getLanguageInfo(activeFile);
+                const langInfo = detectedActiveLanguage || getLanguageInfo(activeFile);
                 return (
-                  <div 
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-mono shrink-0 shadow-sm transition-all ml-2 ${langInfo.bg}`}
-                    title={`Language: ${langInfo.name} (derived from .${activeFile.split('.').pop()})`}
+                  <div
+                    className={`ct-editor-language-badge ${detectedActiveLanguage ? 'supported' : ''} ${detectedActiveLanguage ? '' : langInfo.bg}`}
+                    title={detectedActiveLanguage ? `Language: ${detectedActiveLanguage.name} (${detectedActiveLanguage.extension})` : 'This file cannot be executed'}
                   >
-                    <Code2 size={14} className={langInfo.color} />
-                    <span className="font-bold">{langInfo.name}</span>
-                    <span className="text-[10px] opacity-75 font-mono font-normal">(.{activeFile.split('.').pop()})</span>
+                    <Code2 size={14} className={detectedActiveLanguage ? 'text-emerald-400' : langInfo.color} />
+                    <span className="font-bold">{detectedActiveLanguage ? detectedActiveLanguage.name : 'Unsupported file'}</span>
+                    <span className="text-[10px] opacity-75 font-mono font-normal">{detectedActiveLanguage?.extension || 'No runtime'}</span>
                   </div>
                 );
               })()}
 
               {/* Active Peers Pills (Fixed Right Container with Border Separator) */}
-              <div className="hidden lg:flex items-center gap-3 shrink-0 border-l border-white/15" style={{ paddingLeft: '20px' }}>
+              <div className="ct-editor-active-editors hidden lg:flex">
                 <Users size={15} className="text-purple-400 shrink-0" />
                 <span className="text-xs font-mono text-gray-400 shrink-0">Active Editors:</span>
-                <div className="flex items-center gap-2">
+                <div className="ct-editor-peer-list">
                   {isViewer && (
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/15 border border-amber-500/30 rounded-full text-amber-300 text-xs font-mono font-bold shrink-0">
+                    <div className="ct-editor-peer-pill read-only">
                       <Lock size={12} />
                       <span>Read-Only</span>
                     </div>
@@ -3644,13 +3902,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     const posInfo = peerCur?.position ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}` : null;
 
                     return (
-                      <div 
-                        key={s._id || idx} 
-                        className="rounded-full border text-xs font-mono flex items-center gap-2 shrink-0 bg-white/[0.04] transition-all"
-                        style={{ padding: '6px 14px', borderColor: color, color: color }}
+                      <div
+                        key={s._id || idx}
+                        className="ct-editor-peer-pill"
+                        style={{ '--peer-color': color }}
                         title={`${name}${isMe ? ' (You)' : ''}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ''}`}
                       >
-                        <span className="w-2 h-2 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: color }} />
+                        <span className="ct-editor-peer-dot" />
                         <span>{name}{isMe ? ' (You)' : ''}</span>
                         {isOnSameFile && posInfo && !isMe && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
@@ -3661,6 +3919,50 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     );
                   })}
                 </div>
+              </div>
+            </div>
+
+            {/* Editor Action Toolbar */}
+            <div className="ct-editor-action-toolbar">
+              <div className="ct-editor-file-context">
+                <Code2 size={14} className="text-purple-400 shrink-0" />
+                <span className="ct-editor-file-path">{activeFile}</span>
+                <span className={`ct-editor-save-state ${autoSaveStatus.includes('Unsaved') ? 'is-unsaved' : ''}`}>
+                  {autoSaveStatus}
+                </span>
+              </div>
+
+              <div className="ct-editor-action-group">
+                <button
+                  type="button"
+                  onClick={handleFormatDocument}
+                  disabled={isViewer}
+                  className="ct-editor-action-btn"
+                  title={isViewer ? 'Viewers cannot format code' : 'Format the active document'}
+                >
+                  <Code2 size={13} />
+                  <span>Format</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetActiveFile}
+                  disabled={isViewer}
+                  className="ct-editor-action-btn ct-editor-action-btn-muted"
+                  title={isViewer ? 'Viewers cannot reset files' : 'Restore the active file starter content'}
+                >
+                  <RefreshCw size={13} />
+                  <span>Reset File</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={triggerAutoSave}
+                  disabled={isViewer || autoSaveStatus === 'Saving...'}
+                  className="ct-editor-action-btn ct-editor-action-btn-primary"
+                  title={isViewer ? 'Viewers cannot save changes' : 'Save workspace changes now'}
+                >
+                  <Save size={13} />
+                  <span>{autoSaveStatus === 'Saving...' ? 'Saving...' : 'Save'}</span>
+                </button>
               </div>
             </div>
 
@@ -3678,6 +3980,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 onMount={(editor, monaco) => {
                   editorRef.current = editor;
                   monacoRef.current = monaco;
+                  editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+                  editor.setPosition({ lineNumber: 1, column: 1 });
+                  requestAnimationFrame(() => {
+                    editor.layout();
+                    editor.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+                  });
 
                   // Track cursor position in Monaco (onDidChangeCursorPosition) (CT-86)
                   editor.onDidChangeCursorPosition((e) => {
@@ -3701,6 +4009,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   automaticLayout: true,
                   tabSize: 2,
                   wordWrap: 'on',
+                  scrollBeyondLastColumn: 0,
                   smoothScrolling: true,
                   cursorBlinking: 'smooth',
                   readOnly: isViewer,
@@ -3714,53 +4023,55 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
             {/* Integrated Execution Output & Custom Input Console Panel */}
             {isOutputPanelOpen && (
-              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-9' : 'h-56 md:h-72'}`}>
+              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-14' : 'h-72 md:h-96'}`}>
                 {/* Output Panel Header & Tabs */}
-                <div className="h-9 bg-[#12131F] border-b border-white/10 px-4 flex items-center justify-between select-none shrink-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {/* Console Tab Buttons */}
+                <div className="h-14 bg-[#12131F] border-b border-white/10 flex items-center justify-between select-none shrink-0" style={{ paddingLeft: '28px', paddingRight: '20px' }}>
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Console Tab 1: Output */}
                     <button
                       type="button"
                       onClick={() => setOutputTab('output')}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
-                        outputTab === 'output' 
-                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'output'
+                        ? 'bg-purple-500/20 text-purple-200 border border-purple-500/60'
+                        : 'bg-white/5 hover:bg-purple-500/15 text-gray-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40'
+                        }`}
+                      style={{ padding: '8px 22px', gap: '10px' }}
                     >
-                      <Terminal size={13} className="text-purple-400" />
+                      <Terminal size={15} className={outputTab === 'output' ? 'text-purple-300' : 'text-purple-400'} />
                       <span>Output</span>
                     </button>
 
+                    {/* Console Tab 2: Input (stdin) */}
                     <button
                       type="button"
                       onClick={() => setOutputTab('input')}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
-                        outputTab === 'input' 
-                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'input'
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/60'
+                        : 'bg-white/5 hover:bg-cyan-500/15 text-gray-300 hover:text-cyan-200 border border-white/10 hover:border-cyan-500/40'
+                        }`}
+                      style={{ padding: '8px 22px', gap: '10px' }}
                     >
-                      <FileText size={13} className="text-cyan-400" />
+                      <FileText size={15} className={outputTab === 'input' ? 'text-cyan-300' : 'text-cyan-400'} />
                       <span>Input (stdin)</span>
                       {customInput.trim() ? (
-                        <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" title="Custom input active" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" title="Custom input active" />
                       ) : null}
                     </button>
 
+                    {/* Console Tab 3: Execution History */}
                     <button
                       type="button"
                       onClick={() => setOutputTab('history')}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
-                        outputTab === 'history' 
-                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'history'
+                        ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/60'
+                        : 'bg-white/5 hover:bg-indigo-500/15 text-gray-300 hover:text-indigo-200 border border-white/10 hover:border-indigo-500/40'
+                        }`}
+                      style={{ padding: '8px 22px', gap: '10px' }}
                     >
-                      <History size={13} className="text-indigo-400" />
+                      <History size={15} className={outputTab === 'history' ? 'text-indigo-300' : 'text-indigo-400'} />
                       <span>Execution History</span>
                       {executionHistoryList.length > 0 && (
-                        <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-bold border border-indigo-500/40">
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 text-xs font-bold border border-indigo-400/40 ml-1">
                           {executionHistoryList.length}
                         </span>
                       )}
@@ -3772,11 +4083,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         setOutputTab('telemetry');
                         fetchWorkspaceTelemetry();
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
-                        outputTab === 'telemetry' 
-                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50' 
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${outputTab === 'telemetry'
+                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50'
                           : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
+                        }`}
                     >
                       <ShieldCheck size={13} className="text-purple-400" />
                       <span>Telemetry & Audit</span>
@@ -3789,47 +4099,47 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                     {/* Active Execution Status Badge */}
                     {executionStatus === 'running' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-[11px] font-mono font-semibold animate-pulse shrink-0 ml-2">
-                        <Loader2 size={11} className="animate-spin text-blue-400" />
+                      <div className="flex items-center rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-mono font-bold animate-pulse shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
+                        <Loader2 size={14} className="animate-spin text-blue-400" />
                         <span>Executing...</span>
                       </div>
                     )}
 
                     {executionStatus === 'success' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
-                        <CheckCircle2 size={11} className="text-emerald-400" />
+                      <div className="flex items-center rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
+                        <CheckCircle2 size={14} className="text-emerald-400" />
                         <span>Success (Exit 0)</span>
                         {executionResult.executionTimeMs !== null && (
-                          <span className="text-[10px] text-emerald-400/80">• {executionResult.executionTimeMs}ms</span>
+                          <span className="text-xs text-emerald-400/80 font-normal">• {executionResult.executionTimeMs}ms</span>
                         )}
                       </div>
                     )}
 
                     {executionStatus === 'error' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
-                        <AlertTriangle size={11} className="text-red-400" />
+                      <div className="flex items-center rounded-full bg-red-500/20 border border-red-500/50 text-red-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
+                        <AlertTriangle size={14} className="text-red-400" />
                         <span>Runtime Error (Exit {executionResult.exitCode ?? 1})</span>
                       </div>
                     )}
 
                     {executionStatus === 'compile_error' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold shrink-0 ml-2">
-                        <AlertTriangle size={11} className="text-amber-400" />
+                      <div className="flex items-center rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
+                        <AlertTriangle size={14} className="text-amber-400" />
                         <span>Compilation Error</span>
                       </div>
                     )}
                   </div>
 
                   {/* Right Header Action Controls */}
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
                     {outputTab === 'output' && (
                       <button
                         type="button"
                         onClick={() => setExecutionResult(null)}
-                        className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                        className="text-gray-300 hover:text-white rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
                         title="Clear Output Console"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={16} />
                       </button>
                     )}
                     {outputTab === 'history' && executionHistoryList.length > 0 && (
@@ -3842,140 +4152,159 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               await axios.delete(`http://localhost:5000/api/workspaces/${wsId}/executions`, {
                                 headers: token ? { Authorization: `Bearer ${token}` } : {}
                               });
-                            } catch (e) {}
+                            } catch (e) { }
                           }
                           showToast('🗑️ Execution history cleared', 'info');
                         }}
-                        className="text-gray-400 hover:text-red-400 p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                        className="text-gray-300 hover:text-red-400 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
                         title="Clear Execution History"
                       >
-                        <Trash2 size={13} />
+                        <Trash2 size={16} />
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => setIsOutputPanelMinimized(prev => !prev)}
-                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                      className="text-gray-300 hover:text-white rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
                       title={isOutputPanelMinimized ? "Expand Panel" : "Minimize Panel"}
                     >
-                      {isOutputPanelMinimized ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      {isOutputPanelMinimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsOutputPanelOpen(false)}
-                      className="text-gray-400 hover:text-white p-1 rounded hover:bg-white/10 transition-colors cursor-pointer"
+                      className="text-gray-300 hover:text-white rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
                       title="Close Panel"
                     >
-                      <X size={13} />
+                      <X size={16} />
                     </button>
                   </div>
                 </div>
 
                 {/* Output Panel Body Tabs */}
                 {!isOutputPanelMinimized && (
-                  <div className="flex-1 overflow-y-auto p-3 font-mono text-xs leading-relaxed select-text">
-                    
+                  <div className="flex-1 overflow-y-auto font-mono text-xs leading-relaxed select-text space-y-6" style={{ padding: '24px 32px' }}>
+
                     {/* TAB 1: EXECUTION OUTPUT CONSOLE */}
                     {outputTab === 'output' && (
-                      <div className="space-y-2">
+                      <div className="space-y-5">
                         {executionStatus === 'running' && !executionResult?.stdout && !executionResult?.stderr && (
-                          <div className="flex items-center gap-2 text-gray-400 py-1">
-                            <Loader2 size={13} className="animate-spin text-blue-400" />
-                            <span>Running {activeFile} ({getLanguageInfo(activeFile).name})...</span>
+                          <div className="flex items-center gap-3.5 text-gray-200 py-4 px-6 rounded-2xl bg-blue-500/10 border border-blue-500/30 font-mono text-xs shadow-md">
+                            <Loader2 size={18} className="animate-spin text-blue-400 shrink-0" />
+                            <span>Running <strong>{activeFile}</strong> ({getLanguageInfo(activeFile).name})...</span>
                           </div>
                         )}
 
                         {executionResult && (
-                          <>
-                            {/* Metadata Header Line */}
-                            <div className="text-gray-500 text-[11px] pb-1 border-b border-white/5 flex items-center justify-between flex-wrap gap-2">
-                              <span>[Running {executionResult.filename} • {getLanguageInfo(executionResult.filename).name}]</span>
-                              <div className="flex items-center gap-2">
+                          <div className="flex flex-col space-y-5">
+                            {/* Card Header Bar - Distinct Padded Pill Container */}
+                            <div className="bg-[#141624] border border-white/15 px-7 py-4.5 rounded-2xl flex items-center justify-between flex-wrap gap-4 text-xs font-mono shadow-md">
+                              <div className="flex items-center gap-3">
+                                <span className="w-3 h-3 rounded-full bg-purple-400 animate-pulse shrink-0" />
+                                <span className="font-extrabold text-white text-xs sm:text-sm">Running {executionResult.filename}</span>
+                                <span className="text-gray-400 font-medium">• {getLanguageInfo(executionResult.filename).name}</span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-gray-400">
                                 {executionResult.stdin ? (
-                                  <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 font-bold">
+                                  <span className="px-3.5 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold">
                                     stdin attached ({executionResult.stdin.split('\n').length} line{executionResult.stdin.split('\n').length > 1 ? 's' : ''})
                                   </span>
                                 ) : null}
-                                <span>{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
+                                <span className="font-mono">{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
                               </div>
                             </div>
 
-                            {/* Compiler Diagnostic Output */}
-                            {executionResult.compileOutput && (
-                              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
-                                <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
-                                  <AlertTriangle size={12} />
-                                  <span>Compiler Error:</span>
+                            {/* Card Body Box - Distinct Floating Card with Deep Padding & Line Spacing */}
+                            <div className="bg-[#05060A] border border-white/15 rounded-2xl font-mono text-xs space-y-7 shadow-md" style={{ padding: '32px 36px' }}>
+                              {/* Compiler Diagnostic Output */}
+                              {executionResult.compileOutput && (
+                                <div className="p-6 md:p-7 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
+                                  <div className="font-bold text-amber-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
+                                    <AlertTriangle size={16} />
+                                    <span>Compiler Error:</span>
+                                  </div>
+                                  {executionResult.compileOutput}
                                 </div>
-                                {executionResult.compileOutput}
-                              </div>
-                            )}
+                              )}
 
-                            {/* Standard Output (stdout) */}
-                            {executionResult.stdout && (
-                              <div className="text-gray-100 whitespace-pre-wrap font-mono">
-                                {executionResult.stdout}
-                              </div>
-                            )}
-
-                            {/* Standard Error (stderr) */}
-                            {executionResult.stderr && (
-                              <div className="p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono text-xs">
-                                <div className="font-bold text-red-200 mb-1 flex items-center gap-1.5">
-                                  <AlertTriangle size={12} />
-                                  <span>Runtime Error / Stderr:</span>
+                              {/* Standard Output (stdout) - Wrapped in Padded Card Container with Spacious Line Height */}
+                              {executionResult.stdout ? (
+                                <div className="rounded-2xl bg-white/[0.03] border border-white/10 text-gray-100 whitespace-pre-wrap font-mono text-xs sm:text-sm leading-[2.6] tracking-wide my-5" style={{ padding: '28px 32px' }}>
+                                  {executionResult.stdout}
                                 </div>
-                                {executionResult.stderr}
-                              </div>
-                            )}
+                              ) : null}
 
-                            {/* Empty Output Scenario on Success */}
-                            {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
-                              <div className="text-gray-500 italic py-1">
-                                [Process exited with code 0 — no standard output produced]
-                              </div>
-                            )}
-
-                            {/* Timeout Scenario */}
-                            {executionStatus === 'timeout' && (
-                              <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono text-xs">
-                                <div className="font-bold text-amber-200 mb-1 flex items-center gap-1.5">
-                                  <Clock size={12} />
-                                  <span>Execution Timeout</span>
+                              {/* Standard Error (stderr) */}
+                              {executionResult.stderr && (
+                                <div className="p-6 md:p-7 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
+                                  <div className="font-bold text-red-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
+                                    <AlertTriangle size={16} />
+                                    <span>Runtime Error / Stderr:</span>
+                                  </div>
+                                  {executionResult.stderr}
                                 </div>
-                                The program execution timed out before completion.
-                              </div>
-                            )}
+                              )}
 
-                            {/* Process Completion Footer */}
-                            <div className="pt-2 text-[11px] text-gray-500 border-t border-white/5 flex items-center justify-between flex-wrap gap-2">
-                              <div className="flex items-center gap-2">
-                                <span>Process finished with exit code <strong className={executionResult.exitCode === 0 ? 'text-emerald-400' : 'text-red-400'}>{executionResult.exitCode ?? 0}</strong></span>
-                                {executionResult.executionTimeMs !== null && (
-                                  <span>in {executionResult.executionTimeMs}ms</span>
-                                )}
+                              {/* Empty Output Scenario on Success */}
+                              {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
+                                <div className="text-gray-500 italic p-6 rounded-2xl bg-white/[0.02] border border-white/5 my-4">
+                                  [Process exited with code 0 — no standard output produced]
+                                </div>
+                              )}
+
+                              {/* Timeout Scenario */}
+                              {executionStatus === 'timeout' && (
+                                <div className="p-6 md:p-7 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
+                                  <div className="font-bold text-amber-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
+                                    <Clock size={16} />
+                                    <span>Execution Timeout</span>
+                                  </div>
+                                  The program execution timed out before completion.
+                                </div>
+                              )}
+
+                              {/* Process Completion Footer Row - Independent Capsule Pill Row */}
+                              <div className="mt-7 rounded-full bg-white/[0.06] border border-white/15 flex items-center justify-between flex-wrap gap-5 text-xs text-gray-300" style={{ padding: '14px 24px' }}>
+                                <div className="flex items-center gap-3 font-mono">
+                                  <span className="flex items-center gap-2.5">
+                                    <span className="font-bold text-gray-200">Process finished with exit code</span>
+                                    <strong className={`px-4 py-1.5 rounded-full font-extrabold text-xs ${executionResult.exitCode === 0
+                                        ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-500/50'
+                                        : 'text-red-300 bg-red-500/20 border border-red-500/50'
+                                      }`}>
+                                      {executionResult.exitCode ?? 0}
+                                    </strong>
+                                  </span>
+                                  {executionResult.executionTimeMs !== null && (
+                                    <span className="text-gray-400 font-medium">• in {executionResult.executionTimeMs}ms</span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setOutputTab('input')}
+                                  className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
+                                  style={{ padding: '8px 22px', gap: '10px' }}
+                                >
+                                  <FileText size={15} className="text-cyan-400 shrink-0" />
+                                  <span>{customInput.trim() ? 'Edit Custom Input' : '+ Add Custom Input (stdin)'}</span>
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => setOutputTab('input')}
-                                className="text-cyan-400 hover:text-cyan-300 text-[11px] flex items-center gap-1 cursor-pointer font-bold"
-                              >
-                                <FileText size={12} />
-                                <span>{customInput.trim() ? 'Edit Custom Input' : '+ Add Custom Input (stdin)'}</span>
-                              </button>
                             </div>
-                          </>
+                          </div>
                         )}
 
                         {!executionResult && executionStatus === 'idle' && (
-                          <div className="text-gray-500 italic py-2 flex items-center justify-between">
+                          <div className="text-gray-300 italic p-6 bg-[#05060A] rounded-2xl border border-white/15 flex items-center justify-between flex-wrap gap-4">
                             <span>Click "Run Code" in the header to execute the active file. Output and errors will appear here.</span>
                             <button
                               type="button"
                               onClick={() => setOutputTab('input')}
-                              className="text-cyan-400 hover:underline font-normal cursor-pointer"
+                              className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
+                              style={{ padding: '8px 22px', gap: '10px' }}
                             >
-                              Configure Custom Input $\rightarrow$
+                              <FileText size={15} className="text-cyan-400 shrink-0" />
+                              <span>Configure Custom Input (stdin)</span>
                             </button>
                           </div>
                         )}
@@ -3984,12 +4313,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                     {/* TAB 2: CUSTOM INPUT (STDIN) CONFIGURATION */}
                     {outputTab === 'input' && (
-                      <div className="h-full flex flex-col justify-between space-y-3">
-                        <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                      <div className="h-full flex flex-col justify-between space-y-4">
+                        <div className="flex items-center justify-between pb-3 border-b border-white/10 gap-3">
                           <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
-                            <FileText size={14} className="text-cyan-400" />
+                            <FileText size={15} className="text-cyan-400 shrink-0" />
                             <span>Standard Input (stdin)</span>
-                            <span className="text-gray-400 text-[11px] font-normal font-mono">
+                            <span className="text-gray-400 text-[11px] font-normal font-mono hidden sm:inline">
                               (Pass custom inputs for Python `input()`, C++ `cin`, C `scanf`, Java `Scanner`, etc.)
                             </span>
                           </div>
@@ -3998,7 +4327,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               <button
                                 type="button"
                                 onClick={() => setCustomInput('')}
-                                className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white text-[11px] font-mono transition-all cursor-pointer"
+                                className="flex items-center rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-gray-200 hover:text-white text-xs font-mono font-semibold transition-all cursor-pointer"
+                                style={{ padding: '8px 20px', gap: '8px' }}
                               >
                                 Clear Input
                               </button>
@@ -4006,7 +4336,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             <button
                               type="button"
                               onClick={() => setCustomInput('42\nHello World\n10 20 30')}
-                              className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-mono transition-all cursor-pointer"
+                              className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-semibold transition-all cursor-pointer"
+                              style={{ padding: '8px 20px', gap: '8px' }}
                             >
                               Sample Input
                             </button>
@@ -4017,14 +4348,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                           value={customInput}
                           onChange={(e) => setCustomInput(e.target.value)}
                           placeholder="Type single-line or multiline standard input (stdin) here...&#10;Example:&#10;10&#10;20&#10;Alice"
-                          className="w-full h-32 md:h-36 bg-[#07080E] border border-cyan-500/30 focus:border-cyan-400 rounded-lg p-2.5 text-xs text-cyan-100 placeholder-gray-600 font-mono outline-none resize-y leading-relaxed focus:ring-1 focus:ring-cyan-400/40"
+                          className="w-full h-40 bg-[#06070C] border border-cyan-500/30 focus:border-cyan-400 rounded-xl text-xs text-cyan-100 placeholder-gray-500 font-mono outline-none resize-y leading-relaxed my-2" style={{ padding: '16px 20px', lineHeight: '1.8' }}
                         />
 
-                        <div className="flex items-center justify-between pt-1 border-t border-white/5 text-[11px] text-gray-400">
+                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-gray-400 flex-wrap gap-3">
                           <span>
                             {customInput ? (
-                              <span className="text-emerald-400 font-bold">
-                                ✓ Custom input is attached ({customInput.split('\n').length} line{customInput.split('\n').length > 1 ? 's' : ''}, {customInput.length} chars)
+                              <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                                <CheckCircle2 size={13} />
+                                <span>Custom input attached ({customInput.split('\n').length} line{customInput.split('\n').length > 1 ? 's' : ''}, {customInput.length} chars)</span>
                               </span>
                             ) : (
                               <span>No stdin specified (execution runs with empty input)</span>
@@ -4034,9 +4366,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             type="button"
                             onClick={handleRunActiveCode}
                             disabled={isExecuting || isViewer}
-                            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all disabled:opacity-50"
+                            className="flex items-center rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer disabled:opacity-50"
+                            style={{ padding: '10px 22px', gap: '10px' }}
                           >
-                            {isExecuting ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
+                            {isExecuting ? <Loader2 size={15} className="animate-spin text-emerald-400" /> : <Play size={15} className="text-emerald-400" />}
                             <span>Run Code with Input</span>
                           </button>
                         </div>
@@ -4068,46 +4401,46 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               const isCompileErr = item.status === 'compile_error';
                               const isTimeout = item.status === 'timeout';
 
-                              const badgeColor = isSuccess 
+                              const badgeColor = isSuccess
                                 ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                                 : isCompileErr
-                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                : isTimeout
-                                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                : 'bg-red-500/20 text-red-300 border-red-500/40';
+                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  : isTimeout
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                    : 'bg-red-500/20 text-red-300 border-red-500/40';
 
                               return (
-                                <div 
+                                <div
                                   key={item._id || idx}
-                                  className={`p-2.5 rounded-lg border transition-all ${
-                                    isSelected 
-                                      ? 'bg-purple-600/20 border-purple-500/60 ring-1 ring-purple-500/40' 
-                                      : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
-                                  }`}
+                                  className={`p-3.5 rounded-xl border transition-all ${isSelected
+                                    ? 'bg-purple-600/20 border-purple-500/60'
+                                    : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
+                                    }`}
                                 >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeColor}`}>
+                                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeColor}`}>
                                         {isSuccess ? 'Exit 0' : isCompileErr ? 'Compile Error' : isTimeout ? 'Timeout' : `Exit ${item.exitCode ?? 1}`}
                                       </span>
                                       <span className="font-bold text-gray-200 truncate">{item.filename}</span>
-                                      <span className="text-[10px] text-gray-400 font-mono">({item.language})</span>
+                                      <span className="text-[11px] text-gray-400 font-mono">({item.language})</span>
                                       {item.stdin ? (
-                                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
                                           +stdin
                                         </span>
                                       ) : null}
                                     </div>
 
-                                    <div className="flex items-center gap-3 shrink-0 text-[11px] text-gray-400">
+                                    <div className="flex items-center gap-3 shrink-0 text-xs text-gray-400 font-mono">
                                       {item.executionTimeMs !== null && item.executionTimeMs !== undefined && (
-                                        <span>{item.executionTimeMs}ms</span>
+                                        <span className="text-gray-400">{item.executionTimeMs}ms</span>
                                       )}
                                       <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
                                       <button
                                         type="button"
                                         onClick={() => setSelectedHistoryItem(isSelected ? null : item)}
-                                        className="text-purple-400 hover:text-purple-300 font-bold underline cursor-pointer"
+                                        className="flex items-center rounded-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 font-semibold text-xs transition-all cursor-pointer"
+                                        style={{ padding: '6px 18px', gap: '6px' }}
                                       >
                                         {isSelected ? 'Hide Details' : 'Details'}
                                       </button>
@@ -4116,10 +4449,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                   {/* Detailed View Panel when Selected */}
                                   {isSelected && (
-                                    <div className="mt-2 pt-2 border-t border-white/10 text-[11px] space-y-2 animate-fadeIn bg-black/40 p-2.5 rounded-md">
+                                    <div className="mt-3 pt-3 border-t border-white/10 text-xs space-y-2.5 animate-fadeIn bg-black/50 p-3 rounded-xl border border-purple-500/20">
                                       {item.stdin && (
                                         <div>
-                                          <div className="text-cyan-400 font-bold mb-0.5 flex items-center justify-between">
+                                          <div className="text-cyan-400 font-bold mb-1 flex items-center justify-between">
                                             <span>Standard Input (stdin):</span>
                                             <button
                                               type="button"
@@ -4127,12 +4460,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                                 setCustomInput(item.stdin);
                                                 showToast('📋 Loaded stdin into input editor', 'info');
                                               }}
-                                              className="text-[10px] text-cyan-300 underline hover:text-white cursor-pointer"
+                                              className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 text-[11px] font-mono cursor-pointer transition-all"
                                             >
                                               Use This Input
                                             </button>
                                           </div>
-                                          <pre className="bg-[#05060A] p-2 rounded text-cyan-100 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                          <pre className="bg-[#05060A] p-3 rounded-lg text-cyan-100 whitespace-pre-wrap font-mono text-xs border border-cyan-500/20 max-h-28 overflow-y-auto">
                                             {item.stdin}
                                           </pre>
                                         </div>
@@ -4140,8 +4473,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.stdout && (
                                         <div>
-                                          <div className="text-emerald-400 font-bold mb-0.5">Standard Output (stdout):</div>
-                                          <pre className="bg-[#05060A] p-2 rounded text-gray-100 whitespace-pre-wrap font-mono max-h-28 overflow-y-auto">
+                                          <div className="text-emerald-400 font-bold mb-1">Standard Output (stdout):</div>
+                                          <pre className="bg-[#05060A] p-3 rounded-lg text-gray-100 whitespace-pre-wrap font-mono text-xs border border-white/10 max-h-32 overflow-y-auto">
                                             {item.stdout}
                                           </pre>
                                         </div>
@@ -4149,8 +4482,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.compileOutput && (
                                         <div>
-                                          <div className="text-amber-400 font-bold mb-0.5">Compiler Output:</div>
-                                          <pre className="bg-[#05060A] p-2 rounded text-amber-200 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                          <div className="text-amber-400 font-bold mb-1">Compiler Output:</div>
+                                          <pre className="bg-[#05060A] p-3 rounded-lg text-amber-200 whitespace-pre-wrap font-mono text-xs border border-amber-500/20 max-h-28 overflow-y-auto">
                                             {item.compileOutput}
                                           </pre>
                                         </div>
@@ -4158,8 +4491,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.stderr && (
                                         <div>
-                                          <div className="text-red-400 font-bold mb-0.5">Standard Error (stderr):</div>
-                                          <pre className="bg-[#05060A] p-2 rounded text-red-200 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                          <div className="text-red-400 font-bold mb-1">Standard Error (stderr):</div>
+                                          <pre className="bg-[#05060A] p-3 rounded-lg text-red-200 whitespace-pre-wrap font-mono text-xs border border-red-500/20 max-h-28 overflow-y-auto">
                                             {item.stderr}
                                           </pre>
                                         </div>
@@ -4167,8 +4500,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.code && (
                                         <div>
-                                          <div className="text-purple-300 font-bold mb-0.5">Code Snapshot:</div>
-                                          <pre className="bg-[#05060A] p-2 rounded text-gray-300 whitespace-pre-wrap font-mono max-h-24 overflow-y-auto">
+                                          <div className="text-purple-300 font-bold mb-1">Code Snapshot:</div>
+                                          <pre className="bg-[#05060A] p-3 rounded-lg text-gray-300 whitespace-pre-wrap font-mono text-xs border border-purple-500/20 max-h-28 overflow-y-auto">
                                             {item.code}
                                           </pre>
                                         </div>
@@ -4311,12 +4644,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               const shortHash = c.hash || (c.fullHash ? `${c.fullHash.slice(0, 4)}...${c.fullHash.slice(-4)}` : 'GENESIS');
                               const fullHash = c.fullHash || c.hash || '';
                               return (
-                                <div 
+                                <div
                                   key={c.id || idx}
                                   className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-2"
                                 >
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <span 
+                                    <span
                                       className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
                                       style={{ backgroundColor: `${c.color || '#8B5CF6'}30`, color: c.color || '#8B5CF6' }}
                                     >
@@ -4330,7 +4663,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                   <div className="flex items-center gap-4 shrink-0 font-mono">
                                     <div className="text-[11px] text-gray-300">
-                                      <strong>{c.lines?.toLocaleString() || 0}</strong> lines 
+                                      <strong>{c.lines?.toLocaleString() || 0}</strong> lines
                                       <span className="text-[10px] text-gray-500 ml-1">
                                         (<span className="text-emerald-400">+{c.linesAdded || 0}</span>/<span className="text-rose-400">-{c.linesDeleted || 0}</span>)
                                       </span>
@@ -4338,8 +4671,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                     <div className="w-20 hidden sm:flex items-center gap-1.5">
                                       <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                        <div 
-                                          className="h-full rounded-full" 
+                                        <div
+                                          className="h-full rounded-full"
                                           style={{ width: `${c.percent || 0}%`, backgroundColor: c.color || '#8B5CF6' }}
                                         />
                                       </div>
@@ -4381,9 +4714,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             )}
 
             {/* IDE Bottom Status Bar */}
-            <div 
+            <div
               className="border-t border-white/15 flex items-center justify-between text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 flex-wrap"
-              style={{ height: '44px', paddingLeft: '20px', paddingRight: '20px', gap: '24px' }}
+              style={{ height: '44px', paddingLeft: '28px', paddingRight: '28px', gap: '24px' }}
             >
               <div className="flex items-center gap-6">
                 <div className="flex items-center gap-2">
@@ -4424,11 +4757,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     setIsOutputPanelMinimized(false);
                     fetchWorkspaceTelemetry();
                   }}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${
-                    outputTab === 'telemetry' && isOutputPanelOpen 
-                      ? 'text-purple-300 font-semibold' 
+                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${outputTab === 'telemetry' && isOutputPanelOpen
+                      ? 'text-purple-300 font-semibold'
                       : 'text-gray-400 hover:text-purple-300'
-                  }`}
+                    }`}
                   title="View Proof-of-Work Contribution Telemetry"
                 >
                   <ShieldCheck size={14} className={telemetryVerification?.isValid ? "text-emerald-400 shrink-0" : "text-purple-400 shrink-0"} />
@@ -4451,7 +4783,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           {/* RIGHT DOCKED SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
           {showTelemetryDrawer && (
             <div className="w-[410px] 2xl:w-[440px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-20 transition-all duration-300 shadow-2xl font-sans">
-              
+
               {/* 1. Panel Header */}
               <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-[#0B0C16] to-cyan-950/30 shrink-0">
                 <div className="flex items-center gap-3">
@@ -4468,11 +4800,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         CT-167
                       </span>
                       {telemetryVerification && (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border flex items-center gap-1 ${
-                          telemetryVerification.isValid 
-                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' 
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border flex items-center gap-1 ${telemetryVerification.isValid
+                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
                             : 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
-                        }`}>
+                          }`}>
                           {telemetryVerification.isValid ? '100% Verified' : 'Tamper Warning'}
                         </span>
                       )}
@@ -4484,7 +4815,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     </div>
                   </div>
                 </div>
-                <button 
+                <button
                   type="button"
                   onClick={() => setShowTelemetryDrawer(false)}
                   className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/10"
@@ -4512,11 +4843,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   <button
                     type="button"
                     onClick={() => setTelemetryDrawerTab('contributors')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      telemetryDrawerTab === 'contributors'
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'contributors'
                         ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
                         : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                    }`}
+                      }`}
                   >
                     <Users size={13} />
                     <span>Team Share</span>
@@ -4528,11 +4858,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   <button
                     type="button"
                     onClick={() => setTelemetryDrawerTab('stream')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      telemetryDrawerTab === 'stream'
+                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'stream'
                         ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
                         : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                    }`}
+                      }`}
                   >
                     <Radio size={13} className={telemetryDrawerTab === 'stream' ? 'animate-pulse' : ''} />
                     <span>Live Stream</span>
@@ -4545,7 +4874,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
               {/* 4. Tab Content Area */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                
+
                 {/* TAB 1: CONTRIBUTORS & DOSSIER SHARE */}
                 {telemetryDrawerTab === 'contributors' && (
                   <div className="space-y-4 animate-fadeIn">
@@ -4560,18 +4889,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                     <div className="space-y-3">
                       {dossierContributors.map((user, uIdx) => (
-                        <div 
-                          key={user.id || uIdx} 
+                        <div
+                          key={user.id || uIdx}
                           className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-4 transition-all shadow-sm group hover:bg-[#151829]"
                         >
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-3">
-                              <span 
+                              <span
                                 className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black border shadow-sm shrink-0"
-                                style={{ 
-                                  backgroundColor: `${user.color || '#38BDF8'}20`, 
-                                  color: user.color || '#38BDF8', 
-                                  borderColor: `${user.color || '#38BDF8'}50` 
+                                style={{
+                                  backgroundColor: `${user.color || '#38BDF8'}20`,
+                                  color: user.color || '#38BDF8',
+                                  borderColor: `${user.color || '#38BDF8'}50`
                                 }}
                               >
                                 {(user.name || 'Dev').charAt(0).toUpperCase()}
@@ -4581,12 +4910,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                   <span className="text-xs font-bold text-gray-100 group-hover:text-white truncate">
                                     {user.name}
                                   </span>
-                                  <span 
+                                  <span
                                     className="text-[9px] px-1.5 py-0.2 rounded font-mono font-semibold"
-                                    style={{ 
-                                      color: user.color || '#38BDF8', 
-                                      backgroundColor: `${user.color || '#38BDF8'}15`, 
-                                      border: `1px solid ${user.color || '#38BDF8'}35` 
+                                    style={{
+                                      color: user.color || '#38BDF8',
+                                      backgroundColor: `${user.color || '#38BDF8'}15`,
+                                      border: `1px solid ${user.color || '#38BDF8'}35`
                                     }}
                                   >
                                     {user.badge || 'Contributor'}
@@ -4609,11 +4938,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                           {/* Animated Progress Fill */}
                           <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden border border-white/5">
-                            <div 
+                            <div
                               className="h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.2)]"
-                              style={{ 
-                                width: `${Math.max(2, user.percent || 0)}%`, 
-                                backgroundColor: user.color || '#38BDF8' 
+                              style={{
+                                width: `${Math.max(2, user.percent || 0)}%`,
+                                backgroundColor: user.color || '#38BDF8'
                               }}
                             />
                           </div>
@@ -4677,8 +5006,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                           const badgeStyle = actionColors[evt.actionType] || 'bg-purple-500/15 text-purple-300 border-purple-500/30';
 
                           return (
-                            <div 
-                              key={evt.eventId || eIdx} 
+                            <div
+                              key={evt.eventId || eIdx}
                               className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-3.5 text-xs font-mono transition-all hover:bg-[#151829] shadow-sm"
                             >
                               <div className="flex items-center justify-between mb-2 gap-2">
@@ -4753,33 +5082,34 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       {/* ── Toast Notification Stack ──────────────────────────────────────── */}
       <div
         aria-live="polite"
-        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2.5 pointer-events-none"
-        style={{ maxWidth: '360px' }}
+        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none"
+        style={{ width: 'min(400px, calc(100vw - 32px))' }}
       >
         {toasts.map(toast => {
           const styles = {
             success: 'bg-emerald-900/90 border-emerald-500/60 text-emerald-200 shadow-[0_0_20px_rgba(52,211,153,0.3)]',
-            error:   'bg-red-900/90 border-red-500/60 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.3)]',
+            error: 'bg-red-900/90 border-red-500/60 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.3)]',
             warning: 'bg-amber-900/90 border-amber-500/60 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.3)]',
-            info:    'bg-indigo-900/90 border-indigo-500/60 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]',
+            info: 'bg-indigo-900/90 border-indigo-500/60 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]',
           };
           const icons = {
             success: <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />,
-            error:   <AlertTriangle size={16} className="text-red-400 shrink-0" />,
+            error: <AlertTriangle size={16} className="text-red-400 shrink-0" />,
             warning: <AlertTriangle size={16} className="text-amber-400 shrink-0" />,
-            info:    <Loader2 size={16} className="text-indigo-400 shrink-0 animate-spin" />,
+            info: <Loader2 size={16} className="text-indigo-400 shrink-0 animate-spin" />,
           };
           return (
             <div
               key={toast.id}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+              className={`flex items-start gap-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+              style={{ padding: '14px 16px', lineHeight: '1.5', minHeight: '52px' }}
             >
               {icons[toast.type] || icons.info}
-              <span className="flex-1 leading-relaxed">{toast.message}</span>
+              <span className="flex-1 min-w-0 break-words leading-relaxed">{toast.message}</span>
               <button
                 type="button"
                 onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-                className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 cursor-pointer"
+                className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 mt-0.5 cursor-pointer shrink-0"
               >
                 <X size={13} />
               </button>

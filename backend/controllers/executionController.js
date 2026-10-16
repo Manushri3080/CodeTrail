@@ -150,8 +150,8 @@ exports.executeCode = async (req, res) => {
 
     // 6. Detailed Status & Error Validation
     const isPistonTimeout = Boolean(
-      runResult.signal === 'SIGKILL' || 
-      runResult.status === 'timeout' || 
+      runResult.signal === 'SIGKILL' ||
+      runResult.status === 'timeout' ||
       (compileResult && (compileResult.signal === 'SIGKILL' || compileResult.status === 'timeout'))
     );
 
@@ -178,6 +178,7 @@ exports.executeCode = async (req, res) => {
     const responseData = {
       status,
       language: pistonConfig.language,
+      runtime: pistonConfig.runtime,
       version: response.data?.version || pistonConfig.version,
       engine: engineUsed,
       output: rawOutput || 'Execution completed with no output.',
