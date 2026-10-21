@@ -6,6 +6,7 @@ import ProfileStats from './ProfileStats';
 import RecentActivity from './RecentActivity';
 import AccountSettings from './AccountSettings';
 import EditProfileModal from './EditProfileModal';
+import { API_BASE } from '../../config/api';
 
 export const ProfilePage = ({ currentUser, setCurrentUser, onLogout, onBackToHome }) => {
   const [profile, setProfile] = useState(currentUser || null);
@@ -52,7 +53,7 @@ export const ProfilePage = ({ currentUser, setCurrentUser, onLogout, onBackToHom
     }
 
     try {
-      const res = await fetch('http://localhost:5000/api/auth/profile', {
+      const res = await fetch(`${API_BASE}/auth/profile`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -127,7 +128,7 @@ export const ProfilePage = ({ currentUser, setCurrentUser, onLogout, onBackToHom
 
     if (token) {
       try {
-        const res = await fetch('http://localhost:5000/api/auth/profile', {
+        const res = await fetch(`${API_BASE}/auth/profile`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
@@ -178,7 +179,7 @@ export const ProfilePage = ({ currentUser, setCurrentUser, onLogout, onBackToHom
     const token = localStorage.getItem('ct-auth-token');
     if (!token) throw new Error('Authentication token missing');
 
-    const res = await fetch('http://localhost:5000/api/auth/change-password', {
+    const res = await fetch(`${API_BASE}/auth/change-password`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

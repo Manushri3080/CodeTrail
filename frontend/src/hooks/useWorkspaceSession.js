@@ -2,8 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../utils/telemetryInterceptor';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../constants/telemetry.constants';
+import { BACKEND_URL } from '../config/api';
 
-const SOCKET_SERVER_URL = 'http://localhost:5000';
+const SOCKET_SERVER_URL = BACKEND_URL;
 
 export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'index.js', role = 'editor') => {
   const [activeUsers, setActiveUsers] = useState([]);

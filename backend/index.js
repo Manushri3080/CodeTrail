@@ -36,20 +36,49 @@ mongoose.set('bufferCommands', false);
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: 'http://localhost:5173',
-    methods: ['GET', 'POST', 'PATCH', 'DELETE'],
-    credentials: true
-  }
-});
 
-app.use(cors({
-  origin: 'http://localhost:5173',
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  process.env.CLIENT_URL
+].filter(Boolean);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith('.vercel.app') ||
+      origin.endsWith('.onrender.com') ||
+      process.env.NODE_ENV !== 'production'
+    ) {
+      return callback(null, true);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   credentials: true
-}));
+};
+
+const io = new Server(server, { cors: corsOptions });
+app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Root Health & Status Route (Prevents 404 when visiting backend URL directly)
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'online',
+    message: 'CodeTrail API Server is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'healthy' });
+});
+
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Multi-Language Code Execution Sandbox Endpoint (Supports optional auth & works offline)
 app.post('/api/execute', optionalAuth, executeCode);
