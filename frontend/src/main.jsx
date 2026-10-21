@@ -78,7 +78,7 @@ function MainRouter() {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <GoogleOAuthProvider clientId="384938790327-9is4krn800cbmsco1utj1aetqd2a9s5a.apps.googleusercontent.com">
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || "384938790327-9is4krn800cbmsco1utj1aetqd2a9s5a.apps.googleusercontent.com"}>
       <MainRouter />
     </GoogleOAuthProvider>
   </StrictMode>,
