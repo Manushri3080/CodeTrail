@@ -3,6 +3,7 @@ import { GoogleLogin } from '@react-oauth/google';
 import { Mail, Lock, Eye, EyeOff, ShieldCheck, Activity, Cpu, Terminal, ArrowLeft, User, Users, Globe, MessageSquare } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { BACKEND_URL, API_BASE } from '../config/api';
 
 const getAuthenticationErrorMessage = (error, { isSignUp = false, isGoogle = false } = {}) => {
   const backendMessage = error.response?.data?.message;
