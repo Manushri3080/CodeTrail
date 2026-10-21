@@ -17,7 +17,7 @@ export function ForgotPassword() {
     setLoading(true);
 
     try {
-      const { data } = await axios.post('http://localhost:5000/api/auth/forgot-password', { email });
+      const { data } = await axios.post(`${API_BASE}/auth/forgot-password`, { email });
       setSuccess(data.message || 'Password reset link sent to your email.');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to send password reset email. Please try again.');
@@ -28,13 +28,13 @@ export function ForgotPassword() {
 
   return (
     <div className="min-h-screen w-full flex bg-[#06070B] font-sans relative overflow-y-auto items-center justify-center p-6">
-      
+
       {/* Background Decorative Mesh Gradients */}
       <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-[radial-gradient(circle_at_center,rgba(124,58,237,0.08),transparent_70%)] pointer-events-none" />
       <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] rounded-full bg-[radial-gradient(circle_at_center,rgba(139,92,246,0.05),transparent_70%)] pointer-events-none" />
 
       {/* Back to Login Button */}
-      <button 
+      <button
         onClick={() => navigate('/login')}
         className="absolute top-4 left-4 sm:top-8 sm:left-8 flex items-center gap-2.5 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/40 text-gray-300 hover:text-white rounded-xl font-mono text-xs sm:text-sm font-bold cursor-pointer transition-all duration-200 shadow-md active:scale-95"
       >
@@ -44,7 +44,7 @@ export function ForgotPassword() {
 
       {/* Center Elevating Glass Card Container */}
       <div className="w-full max-w-[450px] bg-[#0E1017]/40 backdrop-blur-xl border border-white/[0.05] rounded-3xl p-10 sm:p-12 lg:p-14 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex flex-col gap-8">
-        
+
         {/* Form Header */}
         <div className="text-center flex flex-col gap-4 pt-10 pb-2">
           <div>
@@ -75,24 +75,24 @@ export function ForgotPassword() {
           {/* Email Input */}
           <div className="relative flex items-center group">
             <Mail size={16} className="absolute left-4 text-gray-500 z-10 pointer-events-none group-focus-within:text-purple-400 transition-colors duration-200" />
-            <input 
-              type="email" 
-              name="email" 
-              placeholder="Email Address" 
+            <input
+              type="email"
+              name="email"
+              placeholder="Email Address"
               style={{ paddingLeft: '46px', paddingRight: '16px', height: '52px' }}
               className="w-full bg-[#0A0B0F]/90 border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-500 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/10 outline-none transition-all duration-200"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              required 
+              required
               disabled={loading || !!success}
             />
           </div>
 
           {/* Submit Button */}
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             style={{ height: '52px' }}
-            className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 disabled:opacity-50" 
+            className="w-full mt-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border border-purple-500/20 rounded-xl text-sm font-semibold text-white tracking-wide shadow-md hover:shadow-lg active:scale-[0.98] transition-all duration-200 disabled:opacity-50"
             disabled={loading || !!success}
           >
             {loading ? 'SENDING RESET LINK...' : 'SEND RESET LINK'}

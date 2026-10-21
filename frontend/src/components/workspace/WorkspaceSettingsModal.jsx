@@ -22,8 +22,7 @@ import {
   RefreshCw,
   AlertTriangle
 } from 'lucide-react';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config/api';
 
 const AVAILABLE_LANGUAGES = [
   { id: 'javascript', name: 'JavaScript', ext: '.js' },

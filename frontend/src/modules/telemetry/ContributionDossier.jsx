@@ -28,8 +28,7 @@ import { io } from 'socket.io-client';
 import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
 import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
 import { formatActiveDuration } from '../../utils/timeUtils';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE, BACKEND_URL } from '../../config/api';
 
 export const ContributionDossier = ({
   activeWorkspace = null,
@@ -116,7 +115,7 @@ export const ContributionDossier = ({
 
     if (!socket) {
       try {
-        socket = io('http://localhost:5000', {
+        socket = io(BACKEND_URL, {
           transports: ['websocket', 'polling'],
           reconnection: true
         });

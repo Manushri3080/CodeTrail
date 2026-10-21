@@ -32,8 +32,7 @@ import {
 } from 'lucide-react';
 import { WorkspaceModal } from '../../components/workspace/WorkspaceModal';
 import { WorkspaceSettingsModal } from '../../components/workspace/WorkspaceSettingsModal';
-
-const API_BASE = 'http://localhost:5000/api';
+import { API_BASE } from '../../config/api';
 
 const resolveIcon = (iconName) => {
   switch (iconName) {

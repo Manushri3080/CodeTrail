@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { API_BASE } from '../../config/api';
 import { Play, Terminal, Code2, Loader2, CheckCircle2, AlertTriangle, Clock, FileText, History, Trash2, RotateCcw, Copy, Check } from 'lucide-react';
 import { EXECUTION_LANGUAGES } from '../../constants/execution.constants';
 
@@ -65,7 +66,7 @@ export const ExecutionEngine = () => {
       const extMap = { javascript: 'js', python: 'py', cpp: 'cpp', java: 'java' };
       const filename = `main.${extMap[currentLang.id] || 'txt'}`;
 
-      const response = await axios.post('http://localhost:5000/api/execute', {
+      const response = await axios.post(`${API_BASE}/execute`, {
         language: currentLang.id,
         code: activeCode,
         stdin: customInput,

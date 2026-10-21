@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { io } from 'socket.io-client';
+import { BACKEND_URL, API_BASE } from '../../config/api';
 import {
   Users,
   ShieldCheck,
@@ -312,7 +313,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     const fetchWorkspaceFromBackend = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}`, {
+        const res = await axios.get(`${API_BASE}/workspaces/${wsId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (!isMounted) return;
@@ -749,7 +750,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         content: newContentMap[f.path] || newContentMap[f.name] || ''
       }));
 
-      axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
+      axios.patch(`${API_BASE}/workspaces/${wsId}`, {
         files: payloadFiles
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -862,7 +863,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         };
       });
 
-      const res = await axios.patch(`http://localhost:5000/api/workspaces/${wsId}`, {
+      const res = await axios.patch(`${API_BASE}/workspaces/${wsId}`, {
         files: filesToSave
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -1686,13 +1687,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setIsTelemetryLoading(true);
     try {
       const [contribRes, verifyRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/workspaces/${wsId}/contributions`, {
+        axios.get(`${API_BASE}/workspaces/${wsId}/contributions`, {
           headers: { Authorization: `Bearer ${token}` }
         }).catch(err => {
           console.warn('Contributions fetch notice:', err.message);
           return null;
         }),
-        axios.get(`http://localhost:5000/api/workspaces/${wsId}/proof-of-work/verify`, {
+        axios.get(`${API_BASE}/workspaces/${wsId}/proof-of-work/verify`, {
           headers: { Authorization: `Bearer ${token}` }
         }).catch(err => {
           console.warn('Verification fetch notice:', err.message);
@@ -1718,7 +1719,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     let isMounted = true;
     const fetchExecutions = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}/executions`, {
+        const res = await axios.get(`${API_BASE}/workspaces/${wsId}/executions`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         if (isMounted && Array.isArray(res.data?.executions)) {
@@ -1784,7 +1785,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     });
 
     try {
-      const response = await axios.post('http://localhost:5000/api/execute', {
+      const response = await axios.post(`${API_BASE}/execute`, {
         fileId: activeFile,
         sourceCode: codeToRun,
         language,
@@ -1930,14 +1931,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           localStorage.setItem(savedKey, JSON.stringify([startLog, ...existing]));
 
           if (token && wsId !== 'demo-workspace') {
-            await axios.post(`http://localhost:5000/api/workspaces/${wsId}/session`, {
+            await axios.post(`${API_BASE}/workspaces/${wsId}/session`, {
               role: 'editor',
               currentFileId: activeFile
             }, {
               headers: { Authorization: `Bearer ${token}` }
             }).catch(() => { });
 
-            await axios.post(`http://localhost:5000/api/workspaces/${wsId}/history`, startLog, {
+            await axios.post(`${API_BASE}/workspaces/${wsId}/history`, startLog, {
               headers: { Authorization: `Bearer ${token}` }
             }).catch(() => { });
           }
@@ -1985,7 +1986,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     if (token && wsId && wsId !== 'demo-workspace') {
       try {
-        await axios.post(`http://localhost:5000/api/workspaces/${wsId}/history`, {
+        await axios.post(`${API_BASE}/workspaces/${wsId}/history`, {
           type,
           title,
           details,
@@ -2180,7 +2181,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (!wsId || wsId === 'demo-workspace' || !token) return;
     try {
       // 1. Fetch latest workspace details and files from backend
-      const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}`, {
+      const res = await axios.get(`${API_BASE}/workspaces/${wsId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.data?.workspace) {
@@ -2228,7 +2229,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
 
       // 2. Fetch latest active sessions
-      const sessionRes = await axios.get(`http://localhost:5000/api/workspaces/${wsId}/session/all`, {
+      const sessionRes = await axios.get(`${API_BASE}/workspaces/${wsId}/session/all`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (sessionRes.data?.sessions && sessionRes.data.sessions.length > 0) {
@@ -2271,7 +2272,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // A. Start / Enter Session via REST API
     const enterSession = async () => {
       try {
-        const res = await axios.post(`http://localhost:5000/api/workspaces/${wsId}/session`, {
+        const res = await axios.post(`${API_BASE}/workspaces/${wsId}/session`, {
           role: activeWorkspace?.role || 'editor',
           currentFileId: activeFile
         }, {
@@ -2288,7 +2289,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // B. Fetch All Active Workspace Sessions via REST
     const fetchWorkspaceSessions = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/workspaces/${wsId}/session/all`, {
+        const res = await axios.get(`${API_BASE}/workspaces/${wsId}/session/all`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.data?.sessions && res.data.sessions.length > 0) {
@@ -2304,7 +2305,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     // C. Initialize Socket.IO Real-Time Presence
     try {
-      const socket = io('http://localhost:5000', {
+      const socket = io(BACKEND_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true
       });
@@ -2639,7 +2640,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // D. 30-Second Activity Heartbeat Ping
     const heartbeatInterval = setInterval(async () => {
       try {
-        await axios.patch(`http://localhost:5000/api/workspaces/${wsId}/session/activity`, {}, {
+        await axios.patch(`${API_BASE}/workspaces/${wsId}/session/activity`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setAutoSaveStatus('Session synced');
@@ -2735,7 +2736,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (!token) return;
 
     try {
-      await axios.patch(`http://localhost:5000/api/workspaces/${wsId}/session/file`, {
+      await axios.patch(`${API_BASE}/workspaces/${wsId}/session/file`, {
         fileId
       }, {
         headers: { Authorization: `Bearer ${token}` }
@@ -2837,10 +2838,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     if (token && wsId && wsId !== 'demo-workspace') {
       try {
-        await axios.post(`http://localhost:5000/api/workspaces/${wsId}/history`, endLog, {
+        await axios.post(`${API_BASE}/workspaces/${wsId}/history`, endLog, {
           headers: { Authorization: `Bearer ${token}` }
         });
-        await axios.delete(`http://localhost:5000/api/workspaces/${wsId}/session`, {
+        await axios.delete(`${API_BASE}/workspaces/${wsId}/session`, {
           headers: { Authorization: `Bearer ${token}` }
         });
       } catch (err) {
@@ -4149,7 +4150,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                           setExecutionHistoryList([]);
                           if (wsId && wsId !== 'demo-workspace') {
                             try {
-                              await axios.delete(`http://localhost:5000/api/workspaces/${wsId}/executions`, {
+                              await axios.delete(`${API_BASE}/workspaces/${wsId}/executions`, {
                                 headers: token ? { Authorization: `Bearer ${token}` } : {}
                               });
                             } catch (e) { }
