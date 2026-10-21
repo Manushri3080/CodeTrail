@@ -126,8 +126,8 @@ const startServer = async () => {
     console.warn('Backend server starting with Database Offline (API endpoints will respond with HTTP 503 until DB is connected)...');
   }
 
-  server.listen(PORT, () => {
-    console.log(`Backend Server with Socket.IO listening on port ${PORT} (${connected ? 'Database Online' : 'Database Offline'})`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend Server with Socket.IO listening on 0.0.0.0:${PORT} (${connected ? 'Database Online' : 'Database Offline'})`);
   });
 };
 
