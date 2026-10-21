@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
+    "build": "echo 'No build step required for backend'",
     "dev": "node --watch index.js",
     "dev:nodemon": "node node_modules/nodemon/bin/nodemon.js index.js",
     "test": "node tests/index.js"
