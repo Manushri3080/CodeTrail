@@ -6,74 +6,53 @@
 
 const crypto = require('crypto');
 
-// Initial baseline contributors for demo workspaces
-const DEFAULT_CONTRIBUTORS = [
-  {
-    id: 'user-1',
-    name: 'Alex Rivers',
-    role: 'Lead Architect',
-    lines: 1420,
-    percent: 32,
-    hash: '8a9f...c4e1',
-    color: '#EC4899',
-    badge: 'Owner',
-    activeSeconds: 4820,
-    actionsCount: 142
-  },
-  {
-    id: 'user-2',
-    name: 'Sarah Chen',
-    role: 'Core Engine & Sync',
-    lines: 1180,
-    percent: 26,
-    hash: '3b2c...a9d0',
-    color: '#38BDF8',
-    badge: 'Maintainer',
-    activeSeconds: 3950,
-    actionsCount: 98
-  },
-  {
-    id: 'user-3',
-    name: 'Marcus Vance',
-    role: 'Cloud Code Sandbox',
-    lines: 980,
-    percent: 22,
-    hash: '5e7f...b1a2',
-    color: '#A855F7',
-    badge: 'Contributor',
-    activeSeconds: 3120,
-    actionsCount: 76
-  },
-  {
-    id: 'user-4',
-    name: 'Elena Rostova',
-    role: 'Telemetry & Analytics',
-    lines: 890,
-    percent: 20,
-    hash: '9c4d...e8f3',
-    color: '#10B981',
-    badge: 'Contributor',
-    activeSeconds: 2840,
-    actionsCount: 65
-  }
-];
+  class TelemetryStore {
+   constructor() {
+     // workspaceId -> { sequence: Number, contributors: Map<userId, Contributor>, events: Array, sessions: Map<socketId, Session> }
+     this.workspaces = new Map();
+   }
 
-class TelemetryStore {
-  constructor() {
-    // workspaceId -> { sequence: Number, contributors: Map<userId, Contributor>, events: Array, sessions: Map<socketId, Session> }
-    this.workspaces = new Map();
-  }
+   /**
+    * Register or update a contributor on join (CT-167)
+    */
+   registerContributor(workspaceId, user) {
+     const ws = this._getOrCreateWorkspace(workspaceId);
+     const userId = user?.id || user?._id || user?.userId || 'anonymous';
+     const userName = user?.name || 'Developer';
+     const userRole = user?.role || 'editor';
+     const color = user?.color || '#38BDF8';
+
+     if (!ws.contributors.has(userId)) {
+       ws.contributors.set(userId, {
+         id: userId,
+         name: userName,
+         role: userRole === 'owner' ? 'Lead Architect' : (userRole === 'admin' ? 'Maintainer' : 'Contributor'),
+         lines: 0,
+         percent: 0,
+         hash: '0000...0000',
+         color,
+         badge: userRole.charAt(0).toUpperCase() + userRole.slice(1),
+         activeSeconds: 0,
+         actionsCount: 0
+       });
+     } else {
+       const contributor = ws.contributors.get(userId);
+       contributor.name = userName;
+       contributor.color = color || contributor.color;
+       if (userRole) {
+         contributor.role = userRole === 'owner' ? 'Lead Architect' : (userRole === 'admin' ? 'Maintainer' : 'Contributor');
+         contributor.badge = userRole.charAt(0).toUpperCase() + userRole.slice(1);
+       }
+     }
+
+     return this.getDossier(workspaceId);
+   }
 
   _getOrCreateWorkspace(workspaceId) {
     if (!this.workspaces.has(workspaceId)) {
-      const initialContribs = new Map();
-      DEFAULT_CONTRIBUTORS.forEach(c => {
-        initialContribs.set(c.id, { ...c });
-      });
-
       this.workspaces.set(workspaceId, {
         sequence: 100,
-        contributors: initialContribs,
+        contributors: new Map(),
         events: [],
         sessions: new Map()
       });

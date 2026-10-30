@@ -1,10 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  createTelemetryEnvelope, 
-  ActiveContributionTracker, 
-  TELEMETRY_ACTION_TYPES 
-} from '../utils/telemetryInterceptor';
-import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../constants/telemetry.constants';
+import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../utils/telemetryInterceptor';
 
 export const useContributionTelemetry = ({
   workspaceId = 'demo-workspace',
@@ -19,8 +14,13 @@ export const useContributionTelemetry = ({
     efficiencyRatio: 100
   });
 
-  const [dossierContributors, setDossierContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
-  const [dossierSummary, setDossierSummary] = useState(TELEMETRY_SUMMARY_CONFIG);
+  const [dossierContributors, setDossierContributors] = useState([]);
+  const [dossierSummary, setDossierSummary] = useState({
+    sessionId: '',
+    auditTitle: '',
+    totalLines: '0 lines',
+    activeSync: 'Disconnected'
+  });
   const [recentTelemetryEvents, setRecentTelemetryEvents] = useState([]);
   const [lastBroadcastEvent, setLastBroadcastEvent] = useState(null);
 

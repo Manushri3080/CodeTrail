@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../utils/telemetryInterceptor';
-import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../constants/telemetry.constants';
 import { BACKEND_URL } from '../config/api';
 
 const SOCKET_SERVER_URL = BACKEND_URL;
@@ -16,8 +15,13 @@ export const useWorkspaceSession = (workspaceId, currentUser, activeFile = 'inde
   const [fileVersions, setFileVersions] = useState({});
   
   // CT-164 & CT-167: Live Telemetry & Active Duration State
-  const [dossierContributors, setDossierContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
-  const [dossierSummary, setDossierSummary] = useState(TELEMETRY_SUMMARY_CONFIG);
+  const [dossierContributors, setDossierContributors] = useState([]);
+  const [dossierSummary, setDossierSummary] = useState({
+    sessionId: '',
+    auditTitle: '',
+    totalLines: '0 lines',
+    activeSync: 'Disconnected'
+  });
   const [telemetryEvents, setTelemetryEvents] = useState([]);
   const [sessionMetrics, setSessionMetrics] = useState({
     totalSessionSeconds: 0,

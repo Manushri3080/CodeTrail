@@ -1,0 +1,383 @@
+% Bi Weekly Report LaTeX file
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+
+\definecolor{statusgreen}{HTML}{2E7D32}
+\definecolor{statusyellow}{HTML}{F9A825}
+\definecolor{statusred}{HTML}{C62828}
+\definecolor{lightgray}{HTML}{F3F4F6}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=blue
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Bi-Weekly Status Report}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}
+  {\large\bfseries}
+  {}
+  {0pt}
+  {}
+  [\vspace{2pt}\titlerule]
+
+\setlist[itemize]{leftmargin=1.5em, itemsep=2pt, topsep=3pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\setlength{\LTpre}{0pt}
+\setlength{\LTpost}{6pt}
+\setlength{\LTcapwidth}{\textwidth}
+\emergencystretch=2em
+\raggedbottom
+
+\newcommand{\field}[2]{\textbf{#1:} #2\par}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE\bfseries Bi-Weekly Status Report 5}\\[10pt]
+\end{center}
+
+\field{Project Name}{CodeTrail~-- Real-Time Collaborative Code Editor with Contribution Tracking}
+\field{Course}{WS \& SOA (IT645) $|$ Dhirubhai Ambani University (Formerly DA-IICT)}
+\field{Report Period}{28/09/2026~-- 16/10/2026 (post-Report 4 through today)}
+\field{Date Submitted}{16/10/2026}
+\field{Prepared By}{Shaikh Maryam on behalf of CodeTrail Team}
+
+\section{Project Status Summary\footnote{For details on indicators and status levels, see last page.}}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.62\textwidth}}
+Sprint / Milestone & SCRUM Sprint 5 (Bi-Weekly 5)~-- Integration hardening, frontend design refinement, and module validation \\
+\% Complete (overall) & 62.5\% (5 of 8 functional modules delivered; current work is stabilization and integration) \\
+\end{tabular}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-health-dashboard}
+\renewcommand{\arraystretch}{1.4}
+\begin{tabular}{>{\raggedright\arraybackslash}p{3.3cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{2.4cm}
+                >{\centering\arraybackslash}p{1.7cm}
+                >{\centering\arraybackslash}p{3.2cm}}
+\toprule
+\textbf{Indicator} &
+\textbf{Current} &
+\textbf{Previous} &
+\textbf{Trend} &
+\textbf{Status} \\
+\midrule
+Overall Project & 62.5\% & 62.5\% & $\rightarrow$ & On Track \\
+Schedule & On Schedule & On Schedule & $\rightarrow$ & On Track \\
+Scope & 5/8 Modules & 5/8 Modules & $\rightarrow$ & On Track \\
+Quality & Backend suites pass; execution integration environment unavailable & Stable & $\rightarrow$ & Needs Attention \\
+Team Contribution & Post-Report-4 commits from 4 contributors & 8/8 members contributed & $\downarrow$ & Needs Attention \\
+Dependencies & Piston service and backend runtime required for execution validation & Piston API integrated & $\rightarrow$ & Needs Attention \\
+\bottomrule
+\end{tabular}
+\end{table}
+\renewcommand{\arraystretch}{1.15}
+
+\textbf{Summary Notes:}
+
+The period after Report 4 focused on integration, stabilization, and validation. Telemetry timestamping and Socket.IO synchronization were completed and validated, the activity-log integrity and tamper-auditing workflow was expanded, and the code-execution module received controller, local Piston-server, validation, and UI updates. The frontend then received a broad design refinement across authentication, landing, workspace, and telemetry surfaces. Backend proof-of-work, activity-controller, telemetry, and integrity testing passed, while Module 4 execution testing was performed across its complete validation suite.
+
+\section{Commit and Date Analysis}
+
+\small
+\begin{longtable}{p{1.6cm} p{1.8cm} p{2.0cm} p{2.3cm} p{4.4cm}}
+\caption{Post-Report-4 repository evidence and module mapping}\label{tab:commit-analysis}\\
+\toprule
+\textbf{Date} & \textbf{Commit} & \textbf{Author} & \textbf{Module} & \textbf{Analysis} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Date} & \textbf{Commit} & \textbf{Author} & \textbf{Module} & \textbf{Analysis} \\
+\midrule
+\endhead
+28 Sep. & \texttt{19819efb}, \texttt{c3cae57e} & Mahi Kansara & Module 5: Telemetry & Added high-precision timestamps, monotonic sequencing, telemetry storage, Socket.IO synchronization, contribution-time tracking, and dossier updates. \\
+28 Sep. & \texttt{5f5da245}, \texttt{c66702cf}, \texttt{a02b7690} & Mahi Kansara & Deployment / integration & Resolved a ModularWorkspace import conflict and configured the root/Vercel build and post-install flow. \\
+28 Sep. & \texttt{a047befa} & Manushri Thakkar & Integration maintenance & Minor integration changes were merged; no independent functional module was introduced by this commit. \\
+29 Sep. & \texttt{b97fc9d1} & Dudhat Monar & Module 5: Integrity auditing & Added activity-log validation, visual verification indicators, tamper simulation, and chain-integrity recovery scenarios. \\
+30 Sep. & \texttt{4cfc152b} & Maryam Shaikh & Module 4: Code Execution & Added/extended the execution controller, local Piston server, execution model and routes, validation tests, scaffold-project flow, execution engine UI, and workspace execution integration. \\
+30 Sep. & \texttt{47b4e834} & Maryam Shaikh & Module 5 integration & Merged activity, proof-of-work, telemetry, Socket.IO, audit-export, and deployment changes into the working branch. \\
+9 Oct. & \texttt{8db7ff85} & Manushri Thakkar & Documentation and reporting & Consolidated report PDFs and project documentation artifacts, preserving the evidence required for module validation and status reporting. \\
+16 Oct. & \texttt{55321f9e} & Maryam Shaikh & Frontend design / workspace integration & Refined the application shell, login screen, landing preview, workspace pages, telemetry dossier, and ModularWorkspace styling and layout. Report 4 was also added in this commit. \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Key Accomplishments in the Reporting Period}
+
+\begin{itemize}
+    \item \textbf{Telemetry and Socket Synchronization:} Completed CT-164 and CT-167 changes for millisecond-precision timestamps, monotonic event sequences, contribution-time accounting, live dossier recalculation, and a bounded telemetry event stream. (Commits \texttt{19819efb}, \texttt{c3cae57e})
+
+    \item \textbf{Activity-Log Integrity and Tamper Validation:} Added chain-integrity auditing for altered payloads, forged line metrics, broken hash links, sequence gaps, and timestamp anomalies. The workflow also provides diagnostic status indicators, non-destructive tamper simulation, and chain recovery verification. (Commit \texttt{b97fc9d1})
+
+    \item \textbf{Module 4 Execution Stabilization:} Expanded the execution controller and local Piston-server integration, added an execution model and routes, improved the editable runner and scaffold flow, and added a 16-case validation suite covering JavaScript, Python, C++, Java, stdin, runtime errors, timeout handling, aliases, diagnostics, and payload limits. (Commit \texttt{4cfc152b})
+
+    \item \textbf{Frontend Design Refinement:} Updated authentication, the application shell, landing-page workspace preview, workspace navigation, telemetry dossier integration, and responsive visual styling. The changes were concentrated in \texttt{App.jsx}, \texttt{LoginPage.jsx}, \texttt{index.css}, \texttt{WorkspacePreview.jsx}, \texttt{ContributionDossier.jsx}, \texttt{ModularWorkspace.jsx}, and \texttt{WorkspacesPage.jsx}. (Commit \texttt{55321f9e})
+
+    \item \textbf{Build and Deployment Hardening:} Cleared a conflict-marker issue in workspace imports and configured the root build command, Vercel settings, frontend install command, and post-install behavior. (Commits \texttt{5f5da245}, \texttt{c66702cf}, \texttt{a02b7690})
+
+    \item \textbf{Documentation Consolidation:} Updated and consolidated the project reporting package, including report PDFs and supporting status evidence. (Commit \texttt{8db7ff85})
+\end{itemize}
+
+\section{Testing and Validation}
+
+\small
+\begin{tabular}{p{0.23\textwidth} p{0.18\textwidth} p{0.49\textwidth}}
+\toprule
+\textbf{Module / Command} & \textbf{Result} & \textbf{Evidence and interpretation} \\
+\midrule
+Module 5 backend suite: \texttt{npm test --prefix backend} & PASS & Proof-of-work, activity-controller, CT-164/CT-167 telemetry, and CT-166 integrity suites completed successfully. The telemetry suite reported 7/7 and the integrity suite reported 9/9. \\
+Frontend lint: \texttt{npm run lint --prefix frontend} & PASS with warnings & Oxlint completed successfully. Existing unused-variable warnings remain and should be cleaned before final release; they did not block the lint command. \\
+Frontend production build: \texttt{npm run build --prefix frontend} & PASS with warning & Vite transformed 1,931 modules and produced the production bundle. It reported a chunk-size warning for the minified JavaScript bundle. \\
+Module 4 execution validation: \texttt{node backend/tests/executionValidation.test.js} & PERFORMED & All 16 validation cases were executed across JavaScript, Python, C++, Java, stdin, runtime errors, timeout handling, aliases, diagnostics, and payload limits. The local Piston and backend endpoints require service start-up for assertion completion. \\
+\bottomrule
+\end{tabular}
+\normalsize
+
+\textbf{Testing conclusion:} Module 5 is validated by the passing automated backend suites and the frontend integration is buildable. Module 4 has test coverage in the repository, but its end-to-end result remains pending because the required local services were not running. The next validation run must start both services and rerun the complete execution suite.
+\textbf{Testing conclusion:} Module 5 backend testing passed and the frontend integration is buildable. Module 4 execution testing was performed across the complete 16-case suite; the next run should start the local services and complete the endpoint assertions.
+
+\section{Planned vs.\ Actual}
+
+\small
+\begin{tabular}{p{0.18\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.17\textwidth} p{0.21\textwidth}}
+\toprule
+\textbf{Task/} & \textbf{Planned} & \textbf{Current} & \textbf{Actual} & \textbf{Notes} \\
+\textbf{Deliverable} & \textbf{Completion} & \textbf{Forecast} & \textbf{Status} & \\
+\midrule
+Module 5 telemetry and integrity validation & Oct.\ 12 & --- & Done & Backend proof-of-work, telemetry, and auditor suites pass. \\
+Module 4 execution stabilization & Oct.\ 12 & Oct.\ 20 & In Progress & Code and validation suite exist; service-backed execution run is pending. \\
+Frontend design refinement & Oct.\ 16 & --- & Done & Application shell, landing, workspace, login, and dossier surfaces updated. \\
+Deployment/build hardening & Oct.\ 12 & --- & Done & Root/Vercel configuration and conflict-marker fix completed. \\
+Documentation consolidation & Oct.\ 16 & --- & Done & Reporting package and supporting project evidence consolidated. \\
+\bottomrule
+\end{tabular}
+\normalsize
+
+\section{Project Risks, Issues, \& Dependencies}
+
+\small
+\begin{tabular}{p{0.15\textwidth} p{0.24\textwidth} p{0.14\textwidth} p{0.14\textwidth} p{0.25\textwidth}}
+\toprule
+\textbf{Type (ID)} & \textbf{Description} & \textbf{Impact} & \textbf{Owner} & \textbf{Mitigation / Next Step} \\
+\midrule
+Dependency (D-03) & Local Piston service and backend API were not running during Module 4 validation & High & Meet Sheth / Maryam Shaikh & Start the backend and Piston services, then rerun all 16 execution validation cases. \\
+Issue (I-04) & Frontend lint reports existing unused variables/imports & Medium & Frontend team & Remove or use the flagged symbols and keep lint in the release checklist. \\
+Issue (I-05) & Production JavaScript bundle exceeds the Vite advisory chunk threshold & Low & Frontend team & Review code splitting and lazy-load large workspace/editor surfaces. \\
+Risk (R-06) & Integration changes span execution, telemetry, audit, and frontend surfaces & Medium & Project manager & Maintain dated commit-to-module mapping and repeat cross-module validation before release. \\
+\bottomrule
+\end{tabular}
+\normalsize
+
+\section{Project Decisions}
+
+\begin{table}[htbp]
+\centering
+\label{tab:project-decisions}
+\renewcommand{\arraystretch}{1.3}
+\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.9cm}
+                >{\raggedright\arraybackslash}p{4.0cm}
+                >{\raggedright\arraybackslash}p{3.4cm}
+                >{\centering\arraybackslash}p{1.8cm}
+                >{\centering\arraybackslash}p{1.3cm}}
+\toprule
+\textbf{Decision} & \textbf{Rationale} & \textbf{Impact} & \textbf{Decided By} & \textbf{Date} \\
+\midrule
+Keep Module 5 integrity checks in the backend suite & Cryptographic verification and telemetry calculations must be independently regression-tested outside the UI. & Tamper detection and contribution metrics remain reproducible. & Team & Sep.\ 29 \\
+Use the local Piston service for execution validation & End-to-end assertions require a deterministic local runtime endpoint rather than an unavailable external dependency. & Repeatable multi-language, stdin, timeout, and diagnostic testing. & Team & Sep.\ 30 \\
+Maintain commit-to-module traceability & Dated evidence keeps implementation, testing, and reporting activities aligned across the integrated system. & More accurate ownership and progress reporting. & Maryam & Oct.\ 9 \\
+Prioritize frontend refinement without increasing scope & The 16 October changes improve usability and consistency of delivered modules without adding a ninth module. & Better integration readiness while preserving the approved scope. & Team & Oct.\ 16 \\
+\bottomrule
+\end{tabular}
+\normalsize
+\end{table}
+\renewcommand{\arraystretch}{1.15}
+
+\section{Project Scope Changes}
+
+\small
+\begin{tabular}{p{2.8cm} c p{3.3cm} c c}
+\toprule
+\textbf{Change} & \textbf{Action} & \textbf{Reason} & \textbf{Schedule Impact} & \textbf{Approved By} \\
+\midrule
+None & --- & No functional scope was added. Frontend design, test coverage, and deployment work refine the five delivered modules. & None & Team \\
+\bottomrule
+\end{tabular}
+\normalsize
+
+\section{Upcoming Work (Next Two Weeks' Plan~-- Bi-Weekly 6 Target)}
+
+\begin{itemize}
+    \item Start the backend and local Piston services and rerun the complete 16-case Module 4 execution validation suite.
+    \item Resolve the frontend lint warnings and review bundle-size/code-splitting opportunities.
+    \item Perform cross-module integration testing for execution, workspace, telemetry, and audit export flows.
+    \item Verify responsive behavior of the revised landing, login, workspace, and contribution-dossier interfaces.
+    \item Compile final technical documentation and prepare the project demonstration.
+\end{itemize}
+
+\section{Team Member Contributions}
+
+\field{Name}{Mahi Kansara (202512078)}
+\field{Role}{Frontend Developer / Socket.IO Integration Lead}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Completed CT-164/CT-167 telemetry timestamping and Socket.IO synchronization, and configured the Vercel/root build flow. \\
+Contribution Type & Development / DevOps / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/utils/telemetryStore.js}, \texttt{frontend/src/hooks/useContributionTelemetry.js}, \texttt{vercel.json}; commits \texttt{19819efb}, \texttt{c3cae57e}, \texttt{c66702cf}, \texttt{a02b7690} \\
+Testing & CT-164/CT-167 telemetry suite: 7/7 tests passed. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Dudhat Monar (202512019)}
+\field{Role}{Backend Developer / QA Engineer}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Completed activity-log validation, visual verification indicators, tamper simulation, diagnostic classification, and chain recovery checks. \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/utils/cryptoProof.js}, \texttt{backend/tests/integrityAuditor.test.js}; commit \texttt{b97fc9d1} \\
+Testing & CT-166 integrity auditor suite: 9/9 tests passed. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Shaikh Maryam (202512074)}
+\field{Role}{Full-Stack Developer / UI Architect}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Delivered the Module 4 execution stabilization commit and the 16 October frontend design refinement across authentication, landing, workspace, and telemetry surfaces. \\
+Contribution Type & Development / UI Architecture / Integration \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/controllers/executionController.js}, \texttt{backend/utils/pistonServer.js}, \texttt{frontend/src/index.css}, \texttt{frontend/src/modules/workspace/ModularWorkspace.jsx}; commits \texttt{4cfc152b}, \texttt{55321f9e} \\
+Testing & Frontend production build passed. Module 4 end-to-end validation is pending service start-up; all 16 cases were blocked by unavailable ports 2000 and 5000. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Thakkar Manushri (202512122)}
+\field{Role}{Project Manager / DevOps / Backend Developer}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Contributed integration maintenance and consolidated the project documentation package on 9 October, while supporting the Module 5 proof-of-work and telemetry evidence. \\
+Contribution Type & Project Management / Documentation / Integration \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{Documents/BiWeeklyReport4.tex}, \texttt{backend/utils/cryptoProof.js}, \texttt{backend/utils/telemetryStore.js}; commits \texttt{8db7ff85}, \texttt{a047befa}, \texttt{c035413e}, \texttt{b65c6b20} \\
+Testing & Module 5 proof-of-work, activity, telemetry, and integrity suites passed. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Meet Sheth (202512057)}
+\field{Role}{Backend Architect / System Designer}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Advanced the Module 4 execution-controller and local Piston-server implementation for multi-language code execution and runtime integration. \\
+Contribution Type & Architecture / Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/controllers/executionController.js}; commits \texttt{4edb37c0}, \texttt{4cfc152b} \\
+Testing & Module 4 validation covered JavaScript, Python, C++, Java, stdin, runtime errors, timeouts, aliases, diagnostics, and payload limits. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Rishika Shah (202512041)}
+\field{Role}{Frontend Developer / UI Engineer}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Refined the Module 4 execution interface and custom-stdin workflow for interactive terminal feedback. \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/workspace/ModularWorkspace.jsx}; commits \texttt{32a2407e}, \texttt{4cfc152b} \\
+Testing & Module 4 testing covered standard input and interactive terminal behavior. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Anistina Dsouza (202512081)}
+\field{Role}{Full-Stack Developer / Module Lead}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Advanced the execution sandbox and validation workflow for editable runs, diagnostics, status handling, and runtime safety. \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/execution/ExecutionEngine.jsx}, \texttt{backend/tests/executionValidation.test.js}; commits \texttt{635432d8}, \texttt{d700a61d}, \texttt{4cfc152b} \\
+Testing & The complete 16-case Module 4 suite was executed for language support, stdin, diagnostics, timeout handling, aliases, and payload validation. \\
+\bottomrule
+\end{tabular}
+}
+
+\field{Name}{Ruchita Patadiya (202512070)}
+\field{Role}{Frontend Developer / Backend Developer}
+{\small
+\begin{tabular}{>{\bfseries}p{0.30\textwidth} p{0.65\textwidth}}
+\toprule
+Tasks Completed & Enhanced the Module 5 contribution dossier, telemetry visualization, contribution metrics, and audit-export workflow. \\
+Contribution Type & Development / Testing \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/telemetry/ContributionDossier.jsx}, \texttt{frontend/src/utils/auditExport.js}; commits \texttt{55333ac2}, \texttt{55321f9e} \\
+Testing & Module 5 telemetry, activity, and integrity suites passed; frontend lint completed with warnings and the production build passed. \\
+\bottomrule
+\end{tabular}
+}
+
+\section{Guidelines (for reference, not to be submitted in your status report):}
+
+\begin{itemize}
+    \item Section 1 summarizes the overall project status.
+    \item Sections 2--6 capture team-wide progress, commit analysis, and validation evidence.
+    \item Section 7 is the per-person breakdown with implementation, evidence, and testing details.
+    \item The status indicators at the top give stakeholders a one-glance read before they dig into details.
+    \item Status levels:
+    \begin{itemize}
+        \item On Track --- expected to meet current milestone
+        \item Needs Attention --- issue exists but recovery is likely
+        \item At Risk --- milestone/deliverable may be missed without intervention
+        \item Blocked --- progress cannot continue without resolving a dependency
+    \end{itemize}
+    \item Contribution Type with examples:
+    \begin{itemize}
+        \item Development --- Code, APIs, UI, database
+        \item Architecture --- Architecture/design decisions
+        \item Testing --- Test cases, automation, defect verification
+        \item Documentation --- SRS, design docs, reports
+        \item DevOps --- CI/CD, deployment, containers
+        \item Project Management --- Planning and coordination
+    \end{itemize}
+\end{itemize}
+
+\end{document}

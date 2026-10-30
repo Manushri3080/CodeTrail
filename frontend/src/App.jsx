@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, X } from 'lucide-react';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
 import HeroSection from './modules/landing/HeroSection';
@@ -9,6 +10,7 @@ import ModularWorkspace from './modules/workspace/ModularWorkspace';
 import WorkspacesPage from './modules/workspace/WorkspacesPage';
 import ExecutionEngine from './modules/execution/ExecutionEngine';
 import ContributionDossier from './modules/telemetry/ContributionDossier';
+import ContributionAnalytics from './modules/analytics/ContributionAnalytics';
 import HomePage from './modules/home/HomePage';
 import TerminalModal from './modules/terminal/TerminalModal';
 import { INITIAL_TERMINAL_LOGS, processKernelCommand } from './modules/terminal/terminalKernel';
@@ -50,6 +52,7 @@ function App({ defaultTab }) {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
+  const [logoutMessage, setLogoutMessage] = useState('');
 
   const handleJumpToWorkspace = (workspace = null) => {
     if (workspace) {
@@ -99,7 +102,8 @@ function App({ defaultTab }) {
     setCurrentUser(null);
     setActiveWorkspace(null);
     setActiveTab('modules-grid');
-    alert('Logged out successfully.');
+    setLogoutMessage('Logged out successfully.');
+    window.setTimeout(() => setLogoutMessage(''), 3500);
   };
 
   return (
@@ -149,6 +153,12 @@ function App({ defaultTab }) {
             activeWorkspace={activeWorkspace}
             currentUser={currentUser}
           />
+        ) : activeTab === 'analytics' ? (
+          // CT-197: Contribution Analytics Dashboard
+          <ContributionAnalytics
+            activeWorkspace={activeWorkspace}
+            currentUser={currentUser}
+          />
         ) : (
           <HomePage
             currentUser={currentUser}
@@ -188,6 +198,25 @@ function App({ defaultTab }) {
         setTerminalInput={setTerminalInput}
         handleTerminalSubmit={handleTerminalSubmit}
       />
+
+      {logoutMessage && (
+        <div
+          className="fixed top-6 right-6 z-[200] flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border border-emerald-500/30 bg-[#101A18]/95 px-4 py-3 text-sm text-emerald-200 shadow-[0_12px_35px_rgba(0,0,0,0.35)] backdrop-blur-xl"
+          role="status"
+          aria-live="polite"
+        >
+          <CheckCircle2 size={18} className="shrink-0 text-emerald-400" />
+          <span className="flex-1">{logoutMessage}</span>
+          <button
+            type="button"
+            onClick={() => setLogoutMessage('')}
+            className="rounded-md p-1 text-emerald-300/70 transition-colors hover:bg-emerald-400/10 hover:text-emerald-200"
+            aria-label="Dismiss logout message"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

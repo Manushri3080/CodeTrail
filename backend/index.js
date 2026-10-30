@@ -29,6 +29,7 @@ const { optionalAuth } = require('./middleware/auth');
 const workspaceRoutes = require('./routes/workspaceRoutes');
 const workspaceSessionRoutes = require('./routes/workspaceSessionRoutes');
 const activityRoutes = require('./routes/activityRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
 const initWorkspaceSessionSocket = require('./sockets/workspaceSessionSocket');
 
 // Disable Mongoose command buffering so queries fail immediately when DB is offline instead of hanging
@@ -86,6 +87,12 @@ app.post('/api/execute', optionalAuth, executeCode);
 
 // Middleware to verify database connectivity for API endpoints
 const checkDbConnection = (req, res, next) => {
+  // Allow in development when DB is offline to avoid blocking local UI
+  if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
+    // Attach flag for controllers if needed
+    req.dbOffline = true;
+    return next();
+  }
   if (mongoose.connection.readyState !== 1) { // 1 = Connected
     return res.status(503).json({
       message: 'Database connection is currently offline or unreachable. Please ensure MongoDB is running and reachable.',
@@ -113,6 +120,8 @@ app.put('/api/auth/change-password', auth, changePassword);
 app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/workspaces/:workspaceId/session', workspaceSessionRoutes);
 app.use('/api/workspaces/:workspaceId', activityRoutes);
+// CT-197: Contribution Analytics Routes
+app.use('/api/workspaces/:workspaceId', analyticsRoutes);
 
 // Initialize Real-time Socket.IO Presence Engine
 initWorkspaceSessionSocket(io);

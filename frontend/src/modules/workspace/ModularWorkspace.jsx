@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
-import { io } from 'socket.io-client';
-import { BACKEND_URL, API_BASE } from '../../config/api';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import axios from "axios";
+import { io } from "socket.io-client";
+import { BACKEND_URL, API_BASE } from "../../config/api";
 import {
   Users,
   ShieldCheck,
@@ -45,100 +45,219 @@ import {
   Download,
   Activity,
   Radio,
-  Sparkles
-} from 'lucide-react';
-import Editor from '@monaco-editor/react';
-import { WORKSPACE_FILES } from '../../constants/workspace.constants';
-import WorkspaceSettingsModal from '../../components/workspace/WorkspaceSettingsModal';
-import { exportAuditJson, exportAuditMarkdown } from '../../utils/auditExport';
-import { createTelemetryEnvelope, ActiveContributionTracker, TELEMETRY_ACTION_TYPES } from '../../utils/telemetryInterceptor';
-import { formatActiveDuration } from '../../utils/timeUtils';
-import { detectLanguage, getFileExtension } from '../../utils/languageDetection';
-import { INITIAL_TEAM_CONTRIBUTIONS, TELEMETRY_SUMMARY_CONFIG } from '../../constants/telemetry.constants';
+  Sparkles,
+} from "lucide-react";
+import Editor from "@monaco-editor/react";
+import { WORKSPACE_FILES } from "../../constants/workspace.constants";
+import WorkspaceSettingsModal from "../../components/workspace/WorkspaceSettingsModal";
+import { exportAuditJson, exportAuditMarkdown } from "../../utils/auditExport";
+import {
+  createTelemetryEnvelope,
+  ActiveContributionTracker,
+  TELEMETRY_ACTION_TYPES,
+} from "../../utils/telemetryInterceptor";
+import { formatActiveDuration } from "../../utils/timeUtils";
+import {
+  detectLanguage,
+  getFileExtension,
+} from "../../utils/languageDetection";
+import { TELEMETRY_SUMMARY_CONFIG } from "../../constants/telemetry.constants";
 
 // Map file extensions to Monaco language identifiers
-const getMonacoLanguage = (fileName = '') => {
-  const ext = fileName.split('.').pop().toLowerCase();
+const getMonacoLanguage = (fileName = "") => {
+  const ext = fileName.split(".").pop().toLowerCase();
   const map = {
-    js: 'javascript',
-    jsx: 'javascript',
-    ts: 'typescript',
-    tsx: 'typescript',
-    py: 'python',
-    cpp: 'cpp',
-    c: 'cpp',
-    h: 'cpp',
-    hpp: 'cpp',
-    java: 'java',
-    rs: 'rust',
-    go: 'go',
-    html: 'html',
-    css: 'css',
-    json: 'json',
-    md: 'markdown',
-    sql: 'sql',
-    sh: 'shell',
-    yaml: 'yaml',
-    yml: 'yaml',
-    xml: 'xml'
+    js: "javascript",
+    jsx: "javascript",
+    ts: "typescript",
+    tsx: "typescript",
+    py: "python",
+    cpp: "cpp",
+    c: "cpp",
+    h: "cpp",
+    hpp: "cpp",
+    java: "java",
+    rs: "rust",
+    go: "go",
+    html: "html",
+    css: "css",
+    json: "json",
+    md: "markdown",
+    sql: "sql",
+    sh: "shell",
+    yaml: "yaml",
+    yml: "yaml",
+    xml: "xml",
   };
-  return map[ext] || 'javascript';
+  return map[ext] || "javascript";
 };
 
 // Map file extension directly to clean display name & icon color badge
-const getLanguageInfo = (fileName = '') => {
-  const ext = fileName.split('.').pop().toLowerCase();
+const getLanguageInfo = (fileName = "") => {
+  const ext = fileName.split(".").pop().toLowerCase();
   const map = {
-    js: { name: 'JavaScript', tag: 'JS', color: 'text-yellow-400', bg: 'bg-yellow-500/10 border-yellow-500/30 text-yellow-300' },
-    jsx: { name: 'React JSX', tag: 'JSX', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' },
-    ts: { name: 'TypeScript', tag: 'TS', color: 'text-sky-400', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
-    tsx: { name: 'React TSX', tag: 'TSX', color: 'text-sky-400', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
-    py: { name: 'Python 3', tag: 'PY', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300' },
-    cpp: { name: 'C++', tag: 'C++', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
-    c: { name: 'C', tag: 'C', color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/30 text-indigo-300' },
-    h: { name: 'C Header', tag: 'H', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
-    hpp: { name: 'C++ Header', tag: 'HPP', color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30 text-blue-300' },
-    java: { name: 'Java', tag: 'JAVA', color: 'text-rose-400', bg: 'bg-rose-500/10 border-rose-500/30 text-rose-300' },
-    rs: { name: 'Rust', tag: 'RS', color: 'text-amber-500', bg: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
-    go: { name: 'Go', tag: 'GO', color: 'text-teal-400', bg: 'bg-teal-500/10 border-teal-500/30 text-teal-300' },
-    html: { name: 'HTML5', tag: 'HTML', color: 'text-orange-500', bg: 'bg-orange-500/10 border-orange-500/30 text-orange-300' },
-    css: { name: 'CSS3', tag: 'CSS', color: 'text-sky-300', bg: 'bg-sky-500/10 border-sky-500/30 text-sky-300' },
-    json: { name: 'JSON', tag: 'JSON', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' },
-    md: { name: 'Markdown', tag: 'MD', color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30 text-purple-300' },
-    sql: { name: 'SQL', tag: 'SQL', color: 'text-amber-300', bg: 'bg-amber-500/10 border-amber-500/30 text-amber-300' },
-    sh: { name: 'Shell / Bash', tag: 'SH', color: 'text-green-400', bg: 'bg-green-500/10 border-green-500/30 text-green-300' },
-    yaml: { name: 'YAML', tag: 'YAML', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30 text-red-300' },
-    yml: { name: 'YAML', tag: 'YAML', color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30 text-red-300' },
-    xml: { name: 'XML', tag: 'XML', color: 'text-purple-300', bg: 'bg-purple-500/10 border-purple-500/30 text-purple-300' }
+    js: {
+      name: "JavaScript",
+      tag: "JS",
+      color: "text-yellow-400",
+      bg: "bg-yellow-500/10 border-yellow-500/30 text-yellow-300",
+    },
+    jsx: {
+      name: "React JSX",
+      tag: "JSX",
+      color: "text-cyan-400",
+      bg: "bg-cyan-500/10 border-cyan-500/30 text-cyan-300",
+    },
+    ts: {
+      name: "TypeScript",
+      tag: "TS",
+      color: "text-sky-400",
+      bg: "bg-sky-500/10 border-sky-500/30 text-sky-300",
+    },
+    tsx: {
+      name: "React TSX",
+      tag: "TSX",
+      color: "text-sky-400",
+      bg: "bg-sky-500/10 border-sky-500/30 text-sky-300",
+    },
+    py: {
+      name: "Python 3",
+      tag: "PY",
+      color: "text-cyan-400",
+      bg: "bg-cyan-500/10 border-cyan-500/30 text-cyan-300",
+    },
+    cpp: {
+      name: "C++",
+      tag: "C++",
+      color: "text-blue-400",
+      bg: "bg-blue-500/10 border-blue-500/30 text-blue-300",
+    },
+    c: {
+      name: "C",
+      tag: "C",
+      color: "text-indigo-400",
+      bg: "bg-indigo-500/10 border-indigo-500/30 text-indigo-300",
+    },
+    h: {
+      name: "C Header",
+      tag: "H",
+      color: "text-blue-400",
+      bg: "bg-blue-500/10 border-blue-500/30 text-blue-300",
+    },
+    hpp: {
+      name: "C++ Header",
+      tag: "HPP",
+      color: "text-blue-400",
+      bg: "bg-blue-500/10 border-blue-500/30 text-blue-300",
+    },
+    java: {
+      name: "Java",
+      tag: "JAVA",
+      color: "text-rose-400",
+      bg: "bg-rose-500/10 border-rose-500/30 text-rose-300",
+    },
+    rs: {
+      name: "Rust",
+      tag: "RS",
+      color: "text-amber-500",
+      bg: "bg-amber-500/10 border-amber-500/30 text-amber-300",
+    },
+    go: {
+      name: "Go",
+      tag: "GO",
+      color: "text-teal-400",
+      bg: "bg-teal-500/10 border-teal-500/30 text-teal-300",
+    },
+    html: {
+      name: "HTML5",
+      tag: "HTML",
+      color: "text-orange-500",
+      bg: "bg-orange-500/10 border-orange-500/30 text-orange-300",
+    },
+    css: {
+      name: "CSS3",
+      tag: "CSS",
+      color: "text-sky-300",
+      bg: "bg-sky-500/10 border-sky-500/30 text-sky-300",
+    },
+    json: {
+      name: "JSON",
+      tag: "JSON",
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300",
+    },
+    md: {
+      name: "Markdown",
+      tag: "MD",
+      color: "text-purple-400",
+      bg: "bg-purple-500/10 border-purple-500/30 text-purple-300",
+    },
+    sql: {
+      name: "SQL",
+      tag: "SQL",
+      color: "text-amber-300",
+      bg: "bg-amber-500/10 border-amber-500/30 text-amber-300",
+    },
+    sh: {
+      name: "Shell / Bash",
+      tag: "SH",
+      color: "text-green-400",
+      bg: "bg-green-500/10 border-green-500/30 text-green-300",
+    },
+    yaml: {
+      name: "YAML",
+      tag: "YAML",
+      color: "text-red-400",
+      bg: "bg-red-500/10 border-red-500/30 text-red-300",
+    },
+    yml: {
+      name: "YAML",
+      tag: "YAML",
+      color: "text-red-400",
+      bg: "bg-red-500/10 border-red-500/30 text-red-300",
+    },
+    xml: {
+      name: "XML",
+      tag: "XML",
+      color: "text-purple-300",
+      bg: "bg-purple-500/10 border-purple-500/30 text-purple-300",
+    },
   };
-  return map[ext] || { name: 'Plain Text', tag: 'TXT', color: 'text-gray-400', bg: 'bg-gray-500/10 border-gray-500/30 text-gray-300' };
+  return (
+    map[ext] || {
+      name: "Plain Text",
+      tag: "TXT",
+      color: "text-gray-400",
+      bg: "bg-gray-500/10 border-gray-500/30 text-gray-300",
+    }
+  );
 };
 
-const getStarterBoilerplate = (filename = '') => {
-  const ext = filename.split('.').pop().toLowerCase();
+const getStarterBoilerplate = (filename = "") => {
+  const ext = filename.split(".").pop().toLowerCase();
   switch (ext) {
-    case 'py':
+    case "py":
       return `# ${filename}\ndef main():\n    print("Hello from Python!")\n\nif __name__ == "__main__":\n    main()\n`;
-    case 'cpp':
-    case 'c':
-    case 'h':
-    case 'hpp':
+    case "cpp":
+    case "c":
+    case "h":
+    case "hpp":
       return `// ${filename}\n#include <iostream>\n\nint main() {\n    std::cout << "Hello from C++!" << std::endl;\n    return 0;\n}\n`;
-    case 'java':
+    case "java":
       return `// ${filename}\npublic class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java!");\n    }\n}\n`;
-    case 'rs':
+    case "rs":
       return `// ${filename}\nfn main() {\n    println!("Hello from Rust!");\n}\n`;
-    case 'go':
+    case "go":
       return `// ${filename}\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello from Go!")\n}\n`;
-    case 'css':
+    case "css":
       return `/* ${filename} */\nbody {\n  margin: 0;\n  padding: 0;\n}\n`;
-    case 'json':
+    case "json":
       return `{\n  "name": "project",\n  "version": "1.0.0"\n}\n`;
-    case 'html':
+    case "html":
       return `<!DOCTYPE html>\n<html>\n<head>\n  <title>CodeTrail</title>\n</head>\n<body>\n  <h1>Hello World</h1>\n</body>\n</html>\n`;
-    case 'md':
+    case "md":
       return `# ${filename}\n\nDocumentation for CodeTrail project.\n`;
-    case 'js':
+    case "js":
     default:
       return `// ${filename}\nconsole.log("Ready to code in CodeTrail!");\n`;
   }
@@ -146,19 +265,19 @@ const getStarterBoilerplate = (filename = '') => {
 
 // Vibrant color palette for collaborative peers and live cursors (CT-86)
 const PEER_COLORS = [
-  '#EC4899', // Pink
-  '#38BDF8', // Sky Blue
-  '#10B981', // Emerald
-  '#F59E0B', // Amber
-  '#8B5CF6', // Purple
-  '#EF4444', // Red
-  '#06B6D4', // Cyan
-  '#14B8A6', // Teal
-  '#F97316', // Orange
-  '#A855F7'  // Violet
+  "#EC4899", // Pink
+  "#38BDF8", // Sky Blue
+  "#10B981", // Emerald
+  "#F59E0B", // Amber
+  "#8B5CF6", // Purple
+  "#EF4444", // Red
+  "#06B6D4", // Cyan
+  "#14B8A6", // Teal
+  "#F97316", // Orange
+  "#A855F7", // Violet
 ];
 
-const getPeerColor = (userId = '', index = 0) => {
+const getPeerColor = (userId = "", index = 0) => {
   if (!userId) return PEER_COLORS[index % PEER_COLORS.length];
   let hash = 0;
   const str = String(userId);
@@ -170,19 +289,44 @@ const getPeerColor = (userId = '', index = 0) => {
 };
 
 const DEFAULT_WORKSPACE_FILES = [
-  { id: 'index.js', name: 'index.js', language: 'javascript', content: `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n` },
-  { id: 'server.js', name: 'server.js', language: 'javascript', content: `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n` },
-  { id: 'styles.css', name: 'styles.css', language: 'css', content: `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n` },
-  { id: 'package.json', name: 'package.json', language: 'json', content: `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n` },
-  { id: 'README.md', name: 'README.md', language: 'markdown', content: `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n` }
+  {
+    id: "index.js",
+    name: "index.js",
+    language: "javascript",
+    content: `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n`,
+  },
+  {
+    id: "server.js",
+    name: "server.js",
+    language: "javascript",
+    content: `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n`,
+  },
+  {
+    id: "styles.css",
+    name: "styles.css",
+    language: "css",
+    content: `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n`,
+  },
+  {
+    id: "package.json",
+    name: "package.json",
+    language: "json",
+    content: `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n`,
+  },
+  {
+    id: "README.md",
+    name: "README.md",
+    language: "markdown",
+    content: `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`,
+  },
 ];
 
 const DEFAULT_FILES_CONTENT = {
-  'index.js': `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n`,
-  'server.js': `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n`,
-  'styles.css': `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n`,
-  'package.json': `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n`,
-  'README.md': `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`
+  "index.js": `// index.js - CodeTrail Collaborative Workspace\n\nconsole.log("Welcome to CodeTrail!");\nconsole.log("Interactive Monaco Editor mounted successfully.");\n`,
+  "server.js": `// server.js\nconst express = require('express');\nconst app = express();\nconst PORT = 3000;\n\napp.get('/', (req, res) => res.send('CodeTrail Server Online'));\napp.listen(PORT, () => console.log('Listening on ' + PORT));\n`,
+  "styles.css": `/* styles.css */\nbody {\n  background-color: #0d0e15;\n  color: #ffffff;\n  font-family: sans-serif;\n}\n`,
+  "package.json": `{\n  "name": "codetrail-project",\n  "version": "1.0.0",\n  "main": "index.js"\n}\n`,
+  "README.md": `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`,
 };
 
 export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
@@ -194,27 +338,44 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     }
   }, [activeWorkspace]);
 
-  const currentUser = JSON.parse(localStorage.getItem('ct-auth-user')) || { id: 'usr-guest', name: 'Maryam Shaikh', role: 'admin' };
-  const token = localStorage.getItem('ct-auth-token');
+  const currentUser = JSON.parse(localStorage.getItem("ct-auth-user")) || {
+    id: "usr-guest",
+    name: "Maryam Shaikh",
+    role: "admin",
+  };
+  const token = localStorage.getItem("ct-auth-token");
   const currentUserId = currentUser?.id || currentUser?._id;
 
-  const isOwner = (currentWorkspace?.owner?._id || currentWorkspace?.owner) === currentUserId;
-  const memberObj = currentWorkspace?.members?.find(m => (m.user?._id || m.user?.id || m.user) === currentUserId || m.id === currentUserId);
+  const isOwner =
+    (currentWorkspace?.owner?._id || currentWorkspace?.owner) === currentUserId;
+  const memberObj = currentWorkspace?.members?.find(
+    (m) =>
+      (m.user?._id || m.user?.id || m.user) === currentUserId ||
+      m.id === currentUserId,
+  );
 
-  const workspaceRole = currentWorkspace?.role
-    || activeWorkspace?.role
-    || (isOwner ? 'owner' : null)
-    || memberObj?.role
-    || (currentUser?.role ? currentUser.role : null)
-    || 'editor';
-  const isViewer = String(workspaceRole).toLowerCase() === 'viewer';
+  const workspaceRole =
+    currentWorkspace?.role ||
+    activeWorkspace?.role ||
+    (isOwner ? "owner" : null) ||
+    memberObj?.role ||
+    (currentUser?.role ? currentUser.role : null) ||
+    "editor";
+  const isViewer = String(workspaceRole).toLowerCase() === "viewer";
   const canEditFiles = !isViewer;
-  const wsId = currentWorkspace?._id || currentWorkspace?.id || activeWorkspace?._id || activeWorkspace?.id || 'demo-workspace';
+  const wsId =
+    currentWorkspace?._id ||
+    currentWorkspace?.id ||
+    activeWorkspace?._id ||
+    activeWorkspace?.id ||
+    "demo-workspace";
 
   // Real-time Connection Status State & Reconnect Tracking (CT-89)
-  const [connectionStatus, setConnectionStatus] = useState('connected'); // 'connected' | 'reconnecting' | 'disconnected' | 'reconnected'
+  const [connectionStatus, setConnectionStatus] = useState("connected"); // 'connected' | 'reconnecting' | 'disconnected' | 'reconnected'
   const wasDisconnectedRef = useRef(false);
   const reconnectToastTimerRef = useRef(null);
+  const workspaceNotFoundRef = useRef(false);
+  const telemetryFailedRef = useRef(false);
 
   // File Version Counters to Avoid Packet Conflicts (CT-89)
   const [fileVersions, setFileVersions] = useState({});
@@ -229,18 +390,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Interactive CLI Terminal Console State
   const [terminalEntries, setTerminalEntries] = useState([
-    { id: 1, type: 'system', text: 'Welcome to CodeTrail Interactive CLI Web Terminal v2.4.0' },
-    { id: 2, type: 'info', text: 'Type "help" or "scaffold <react|fastapi|django|express>" to initialize projects directly.' }
+    {
+      id: 1,
+      type: "system",
+      text: "Welcome to CodeTrail Interactive CLI Web Terminal v2.4.0",
+    },
+    {
+      id: 2,
+      type: "info",
+      text: 'Type "help" or "scaffold <react|fastapi|django|express>" to initialize projects directly.',
+    },
   ]);
-  const [terminalInput, setTerminalInput] = useState('');
+  const [terminalInput, setTerminalInput] = useState("");
 
   // Persistent Active File State across refreshes
   const [activeFile, setActiveFile] = useState(() => {
     try {
       const saved = localStorage.getItem(`ct-workspace-active-file-${wsId}`);
       if (saved) return saved;
-    } catch (e) { }
-    return activeWorkspace?.files?.[0]?.name || 'index.js';
+    } catch (e) {}
+    return activeWorkspace?.files?.[0]?.name || "index.js";
   });
 
   useEffect(() => {
@@ -248,19 +417,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       if (activeFile) {
         localStorage.setItem(`ct-workspace-active-file-${wsId}`, activeFile);
       }
-    } catch (e) { }
+    } catch (e) {}
   }, [activeFile, wsId]);
 
   const detectedActiveLanguage = detectLanguage(activeFile);
 
   // Helper to normalize file objects with full path and parent ID attributes
   const normalizeFileItem = (f) => {
-    const path = f.path || f.id || f.name || 'file.js';
-    const name = f.name || path.split('/').pop() || path;
-    const parts = path.split('/');
-    const parentId = f.parentId !== undefined ? f.parentId : (parts.length > 1 ? parts.slice(0, -1).join('/') : null);
+    const path = f.path || f.id || f.name || "file.js";
+    const name = f.name || path.split("/").pop() || path;
+    const parts = path.split("/");
+    const parentId =
+      f.parentId !== undefined
+        ? f.parentId
+        : parts.length > 1
+          ? parts.slice(0, -1).join("/")
+          : null;
     const isFolder = !!f.isFolder;
-    const iconColor = f.iconColor || (isFolder ? 'text-purple-400' : getLanguageInfo(name).color);
+    const iconColor =
+      f.iconColor ||
+      (isFolder ? "text-purple-400" : getLanguageInfo(name).color);
     return {
       id: path,
       name,
@@ -268,17 +444,52 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       parentId,
       isFolder,
       language: f.language,
-      iconColor
+      iconColor,
     };
   };
 
   // Default workspace starter files
   const DEFAULT_WORKSPACE_FILES = [
-    { id: 'index.js', name: 'index.js', path: 'index.js', parentId: null, iconColor: 'text-yellow-400', isFolder: false },
-    { id: 'server.js', name: 'server.js', path: 'server.js', parentId: null, iconColor: 'text-cyan-400', isFolder: false },
-    { id: 'styles.css', name: 'styles.css', path: 'styles.css', parentId: null, iconColor: 'text-sky-400', isFolder: false },
-    { id: 'package.json', name: 'package.json', path: 'package.json', parentId: null, iconColor: 'text-emerald-400', isFolder: false },
-    { id: 'README.md', name: 'README.md', path: 'README.md', parentId: null, iconColor: 'text-purple-400', isFolder: false }
+    {
+      id: "index.js",
+      name: "index.js",
+      path: "index.js",
+      parentId: null,
+      iconColor: "text-yellow-400",
+      isFolder: false,
+    },
+    {
+      id: "server.js",
+      name: "server.js",
+      path: "server.js",
+      parentId: null,
+      iconColor: "text-cyan-400",
+      isFolder: false,
+    },
+    {
+      id: "styles.css",
+      name: "styles.css",
+      path: "styles.css",
+      parentId: null,
+      iconColor: "text-sky-400",
+      isFolder: false,
+    },
+    {
+      id: "package.json",
+      name: "package.json",
+      path: "package.json",
+      parentId: null,
+      iconColor: "text-emerald-400",
+      isFolder: false,
+    },
+    {
+      id: "README.md",
+      name: "README.md",
+      path: "README.md",
+      parentId: null,
+      iconColor: "text-purple-400",
+      isFolder: false,
+    },
   ];
 
   // Dynamic Files & Folders List State (Persisted in localStorage & synced with MongoDB)
@@ -291,17 +502,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           return parsed.map(normalizeFileItem);
         }
       }
-    } catch (e) { }
+    } catch (e) {}
 
     if (activeWorkspace?.files && activeWorkspace.files.length > 0) {
-      return activeWorkspace.files.map(f => normalizeFileItem({
-        id: f.path || f.name || f.id,
-        name: f.name || f.id,
-        path: f.path || f.name || f.id,
-        isFolder: !!f.isFolder,
-        parentId: f.parentId || null,
-        iconColor: f.iconColor
-      }));
+      return activeWorkspace.files.map((f) =>
+        normalizeFileItem({
+          id: f.path || f.name || f.id,
+          name: f.name || f.id,
+          path: f.path || f.name || f.id,
+          isFolder: !!f.isFolder,
+          parentId: f.parentId || null,
+          iconColor: f.iconColor,
+        }),
+      );
     }
     return DEFAULT_WORKSPACE_FILES.map(normalizeFileItem);
   });
@@ -309,12 +522,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   // Fetch the authoritative latest workspace state directly from backend MongoDB on mount / wsId change
   useEffect(() => {
     let isMounted = true;
-    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    if (
+      !wsId ||
+      wsId === "demo-workspace" ||
+      !token ||
+      workspaceNotFoundRef.current
+    )
+      return;
 
     const fetchWorkspaceFromBackend = async () => {
       try {
         const res = await axios.get(`${API_BASE}/workspaces/${wsId}`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (!isMounted) return;
 
@@ -323,28 +542,36 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           setCurrentWorkspace(fetchedWs);
           currentWorkspaceRef.current = fetchedWs;
           try {
-            localStorage.setItem('ct-active-workspace-session', JSON.stringify(fetchedWs));
-          } catch (e) { }
+            localStorage.setItem(
+              "ct-active-workspace-session",
+              JSON.stringify(fetchedWs),
+            );
+          } catch (e) {}
 
           if (Array.isArray(fetchedWs.files) && fetchedWs.files.length > 0) {
-            const normalized = fetchedWs.files.map(f => normalizeFileItem({
-              id: f.path || f.name || f.id,
-              name: f.name || f.id,
-              path: f.path || f.name || f.id,
-              isFolder: !!f.isFolder,
-              parentId: f.parentId || null,
-              iconColor: f.iconColor
-            }));
+            const normalized = fetchedWs.files.map((f) =>
+              normalizeFileItem({
+                id: f.path || f.name || f.id,
+                name: f.name || f.id,
+                path: f.path || f.name || f.id,
+                isFolder: !!f.isFolder,
+                parentId: f.parentId || null,
+                iconColor: f.iconColor,
+              }),
+            );
 
             setCustomFiles(normalized);
             customFilesRef.current = normalized;
             try {
-              localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(normalized));
-            } catch (e) { }
+              localStorage.setItem(
+                `ct-workspace-files-${wsId}`,
+                JSON.stringify(normalized),
+              );
+            } catch (e) {}
 
-            setFilesContent(prev => {
+            setFilesContent((prev) => {
               const next = { ...prev };
-              fetchedWs.files.forEach(f => {
+              fetchedWs.files.forEach((f) => {
                 const fileKey = f.path || f.name || f.id;
                 if (fileKey && f.content !== undefined) {
                   next[fileKey] = f.content;
@@ -353,35 +580,61 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               });
               filesContentRef.current = next;
               try {
-                localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
-              } catch (e) { }
+                localStorage.setItem(
+                  `ct-workspace-content-${wsId}`,
+                  JSON.stringify(next),
+                );
+              } catch (e) {}
               return next;
             });
           }
         }
       } catch (err) {
-        console.warn('Backend workspace fetch on mount failed:', err.message);
+        if (err.response?.status === 404) {
+          workspaceNotFoundRef.current = true;
+          // Clear stale workspace from localStorage
+          try {
+            localStorage.removeItem("ct-active-workspace-session");
+            localStorage.removeItem(`ct-workspace-files-${wsId}`);
+            localStorage.removeItem(`ct-workspace-content-${wsId}`);
+          } catch (e) {}
+        }
+        console.warn("Backend workspace fetch on mount failed:", err.message);
       }
     };
 
     fetchWorkspaceFromBackend();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [wsId, token]);
 
   useEffect(() => {
-    if (!Array.isArray(currentWorkspace?.files) || currentWorkspace.files.length === 0) return;
+    if (
+      !Array.isArray(currentWorkspace?.files) ||
+      currentWorkspace.files.length === 0
+    )
+      return;
 
-    const sharedFiles = currentWorkspace.files.map(f => normalizeFileItem({
-      id: f.path || f.name || f.id,
-      name: f.name || f.id,
-      path: f.path || f.name || f.id,
-      isFolder: !!f.isFolder,
-      parentId: f.parentId || null,
-      iconColor: f.iconColor
-    }));
+    const sharedFiles = currentWorkspace.files.map((f) =>
+      normalizeFileItem({
+        id: f.path || f.name || f.id,
+        name: f.name || f.id,
+        path: f.path || f.name || f.id,
+        isFolder: !!f.isFolder,
+        parentId: f.parentId || null,
+        iconColor: f.iconColor,
+      }),
+    );
 
     setCustomFiles(sharedFiles);
-    setActiveFile(previous => sharedFiles.some(file => (file.path || file.name || file.id) === previous) ? previous : (sharedFiles[0]?.path || sharedFiles[0]?.name || 'index.js'));
+    setActiveFile((previous) =>
+      sharedFiles.some(
+        (file) => (file.path || file.name || file.id) === previous,
+      )
+        ? previous
+        : sharedFiles[0]?.path || sharedFiles[0]?.name || "index.js",
+    );
   }, [currentWorkspace?.files]);
 
   const customFilesRef = useRef(customFiles);
@@ -391,8 +644,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFiles));
-    } catch (e) { }
+      localStorage.setItem(
+        `ct-workspace-files-${wsId}`,
+        JSON.stringify(customFiles),
+      );
+    } catch (e) {}
   }, [customFiles, wsId]);
 
   const editorRef = useRef(null);
@@ -424,7 +680,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const monaco = monacoRef.current;
     const currentFile = activeFileRef.current;
 
-    let dynamicCss = '';
+    let dynamicCss = "";
     const newDecorations = [];
 
     const activePeers = Object.values(peerCursorsRef.current);
@@ -435,9 +691,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       // Only render cursor if peer is currently viewing the active file
       if (peer.fileId && peer.fileId !== currentFile) return;
 
-      const peerName = (peer.user?.name || peer.name || `Peer ${idx + 1}`).replace(/["\\]/g, '');
-      const peerColor = peer.user?.color || peer.color || getPeerColor(peerUid, idx);
-      const safeId = peerUid.toString().replace(/[^a-zA-Z0-9_-]/g, '_');
+      const peerName = (
+        peer.user?.name ||
+        peer.name ||
+        `Peer ${idx + 1}`
+      ).replace(/["\\]/g, "");
+      const peerColor =
+        peer.user?.color || peer.color || getPeerColor(peerUid, idx);
+      const safeId = peerUid.toString().replace(/[^a-zA-Z0-9_-]/g, "_");
       const isTopLine = (peer.position?.lineNumber || 1) <= 1;
 
       dynamicCss += `
@@ -453,49 +714,64 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }
       `;
 
-      if (peer.position && typeof peer.position.lineNumber === 'number') {
+      if (peer.position && typeof peer.position.lineNumber === "number") {
         const line = Math.max(1, peer.position.lineNumber);
         const col = Math.max(1, peer.position.column || 1);
 
         newDecorations.push({
           range: new monaco.Range(line, col, line, col),
           options: {
-            className: `ct-monaco-remote-cursor ct-monaco-nametag ct-peer-cursor-${safeId} ${isTopLine ? 'ct-monaco-nametag-top' : ''}`,
+            className: `ct-monaco-remote-cursor ct-monaco-nametag ct-peer-cursor-${safeId} ${isTopLine ? "ct-monaco-nametag-top" : ""}`,
             hoverMessage: { value: `**${peerName}** is actively editing here` },
-            stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-            zIndex: 100
-          }
+            stickiness:
+              monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            zIndex: 100,
+          },
         });
       }
 
       if (peer.selection) {
-        const { startLineNumber, startColumn, endLineNumber, endColumn } = peer.selection;
+        const { startLineNumber, startColumn, endLineNumber, endColumn } =
+          peer.selection;
         if (
-          startLineNumber && endLineNumber &&
+          startLineNumber &&
+          endLineNumber &&
           (startLineNumber !== endLineNumber || startColumn !== endColumn)
         ) {
           const sLine = Math.min(startLineNumber, endLineNumber);
           const eLine = Math.max(startLineNumber, endLineNumber);
-          const sCol = startLineNumber < endLineNumber ? startColumn : (startLineNumber > endLineNumber ? endColumn : Math.min(startColumn, endColumn));
-          const eCol = startLineNumber < endLineNumber ? endColumn : (startLineNumber > endLineNumber ? startColumn : Math.max(startColumn, endColumn));
+          const sCol =
+            startLineNumber < endLineNumber
+              ? startColumn
+              : startLineNumber > endLineNumber
+                ? endColumn
+                : Math.min(startColumn, endColumn);
+          const eCol =
+            startLineNumber < endLineNumber
+              ? endColumn
+              : startLineNumber > endLineNumber
+                ? startColumn
+                : Math.max(startColumn, endColumn);
 
           newDecorations.push({
             range: new monaco.Range(sLine, sCol, eLine, eCol),
             options: {
               className: `ct-monaco-remote-selection ct-peer-selection-${safeId}`,
-              stickiness: monaco.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
-              zIndex: 90
-            }
+              stickiness:
+                monaco.editor.TrackedRangeStickiness
+                  .NeverGrowsWhenTypingAtEdges,
+              zIndex: 90,
+            },
           });
         }
       }
     });
 
     // Update dynamic stylesheet in document head
-    let styleEl = document.getElementById('ct-monaco-peer-cursor-styles');
+    let styleEl = document.getElementById("ct-monaco-peer-cursor-styles");
     if (!styleEl) {
-      styleEl = document.createElement('style');
-      styleEl.id = 'ct-monaco-peer-cursor-styles';
+      styleEl = document.createElement("style");
+      styleEl.id = "ct-monaco-peer-cursor-styles";
       document.head.appendChild(styleEl);
     }
     styleEl.textContent = dynamicCss;
@@ -506,7 +782,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       const newIds = editor.deltaDecorations(oldIds, newDecorations);
       remoteDecorationIdsRef.current = newIds;
     } catch (err) {
-      console.warn('[Monaco] Decoration apply warning:', err);
+      console.warn("[Monaco] Decoration apply warning:", err);
     }
   };
 
@@ -529,22 +805,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         fileId: activeFileRef.current,
         user: {
           id: currentUserId,
-          name: currentUser.name || 'Maryam Shaikh',
-          color: myPeerColor
+          name: currentUser.name || "Maryam Shaikh",
+          color: myPeerColor,
         },
         position: {
           lineNumber: position.lineNumber,
-          column: position.column
+          column: position.column,
         },
-        selection: selection && !selection.isEmpty() ? {
-          startLineNumber: selection.selectionStartLineNumber,
-          startColumn: selection.selectionStartColumn,
-          endLineNumber: selection.positionLineNumber,
-          endColumn: selection.positionColumn
-        } : null
+        selection:
+          selection && !selection.isEmpty()
+            ? {
+                startLineNumber: selection.selectionStartLineNumber,
+                startColumn: selection.selectionStartColumn,
+                endLineNumber: selection.positionLineNumber,
+                endColumn: selection.positionColumn,
+              }
+            : null,
       };
 
-      socketRef.current.emit('cursor_position_update', payload);
+      socketRef.current.emit("cursor_position_update", payload);
     };
 
     const now = Date.now();
@@ -567,16 +846,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       const savedBackup = localStorage.getItem(`ct-workspace-content-${wsId}`);
       if (savedBackup) {
         const parsed = JSON.parse(savedBackup);
-        if (parsed && typeof parsed === 'object') {
+        if (parsed && typeof parsed === "object") {
           Object.assign(initial, parsed);
         }
       }
-    } catch (e) { }
+    } catch (e) {}
 
     // 2. Overlay from activeWorkspace.files (session data from localStorage)
     //    Only fill keys not already in localStorage backup
     if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
-      activeWorkspace.files.forEach(f => {
+      activeWorkspace.files.forEach((f) => {
         const fileKey = f.id || f.path || f.name;
         if (fileKey && f.content !== undefined) {
           // Only set if not already restored from localStorage backup
@@ -594,14 +873,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // Keep a usable editor surface when a newly created workspace has file metadata
     // but no content saved yet.
     if (activeWorkspace?.files && Array.isArray(activeWorkspace.files)) {
-      activeWorkspace.files.forEach(file => {
+      activeWorkspace.files.forEach((file) => {
         if (file.isFolder) return;
         const fileKey = file.path || file.id || file.name;
         const fileName = file.name || fileKey;
         if (fileKey && initial[fileKey] === undefined) {
-          initial[fileKey] = DEFAULT_FILES_CONTENT[fileKey] || getStarterBoilerplate(fileName);
+          initial[fileKey] =
+            DEFAULT_FILES_CONTENT[fileKey] || getStarterBoilerplate(fileName);
         }
-        if (fileName && initial[fileName] === undefined && fileName !== fileKey) {
+        if (
+          fileName &&
+          initial[fileName] === undefined &&
+          fileName !== fileKey
+        ) {
           initial[fileName] = initial[fileKey];
         }
       });
@@ -635,9 +919,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   // Keep filesContent in sync if workspace files load from backend
   useEffect(() => {
     if (currentWorkspace?.files && Array.isArray(currentWorkspace.files)) {
-      setFilesContent(prev => {
+      setFilesContent((prev) => {
         const next = { ...prev };
-        currentWorkspace.files.forEach(f => {
+        currentWorkspace.files.forEach((f) => {
           const fileKey = f.id || f.path || f.name;
           if (fileKey && f.content !== undefined) {
             next[fileKey] = f.content;
@@ -657,11 +941,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       return filesContent[activeFile];
     }
     // Fallback: by file name only (handles legacy stored content)
-    const activeFileObj = customFilesRef.current?.find(f => f.id === activeFile || f.path === activeFile);
+    const activeFileObj = customFilesRef.current?.find(
+      (f) => f.id === activeFile || f.path === activeFile,
+    );
     if (activeFileObj?.name && filesContent[activeFileObj.name] !== undefined) {
       return filesContent[activeFileObj.name];
     }
-    return DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
+    return (
+      DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile)
+    );
   };
 
   // Project Framework Scaffolder Handler
@@ -669,32 +957,38 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (!template || !template.files || template.files.length === 0) return;
 
     // 1. Normalize template file list
-    const newFiles = template.files.map(f => normalizeFileItem({
-      id: f.path || f.name,
-      name: f.name,
-      path: f.path || f.name,
-      language: f.language,
-      isFolder: false,
-      parentId: f.path.includes('/') ? f.path.split('/').slice(0, -1).join('/') : null
-    }));
+    const newFiles = template.files.map((f) =>
+      normalizeFileItem({
+        id: f.path || f.name,
+        name: f.name,
+        path: f.path || f.name,
+        language: f.language,
+        isFolder: false,
+        parentId: f.path.includes("/")
+          ? f.path.split("/").slice(0, -1).join("/")
+          : null,
+      }),
+    );
 
     const folderPaths = new Set();
-    template.files.forEach(f => {
-      if (f.path.includes('/')) {
-        const parts = f.path.split('/');
+    template.files.forEach((f) => {
+      if (f.path.includes("/")) {
+        const parts = f.path.split("/");
         for (let i = 1; i < parts.length; i++) {
-          folderPaths.add(parts.slice(0, i).join('/'));
+          folderPaths.add(parts.slice(0, i).join("/"));
         }
       }
     });
 
-    const folderItems = Array.from(folderPaths).map(p => normalizeFileItem({
-      id: p,
-      name: p.split('/').pop(),
-      path: p,
-      isFolder: true,
-      iconColor: 'text-purple-400'
-    }));
+    const folderItems = Array.from(folderPaths).map((p) =>
+      normalizeFileItem({
+        id: p,
+        name: p.split("/").pop(),
+        path: p,
+        isFolder: true,
+        iconColor: "text-purple-400",
+      }),
+    );
 
     const completeFileList = [...folderItems, ...newFiles];
 
@@ -703,58 +997,93 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     // 2. Populate file contents map
     const newContentMap = {};
-    template.files.forEach(f => {
+    template.files.forEach((f) => {
       newContentMap[f.path || f.name] = f.content;
       newContentMap[f.name] = f.content;
     });
 
-    setFilesContent(prev => {
+    setFilesContent((prev) => {
       const next = { ...prev, ...newContentMap };
       filesContentRef.current = next;
       try {
-        localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(next));
-      } catch (e) { }
+        localStorage.setItem(
+          `ct-workspace-content-${wsId}`,
+          JSON.stringify(next),
+        );
+      } catch (e) {}
       return next;
     });
 
     // 3. Set primary active file
-    const primary = template.primaryFile || template.files[0].path || template.files[0].name;
+    const primary =
+      template.primaryFile || template.files[0].path || template.files[0].name;
     setActiveFile(primary);
 
     // 4. Open Output Panel & switch to terminal tab
     setIsOutputPanelOpen(true);
     setIsOutputPanelMinimized(false);
-    setOutputTab('terminal');
+    setOutputTab("terminal");
 
     // 5. Append CLI scaffolding log entries
     const logTime = new Date().toLocaleTimeString();
-    setTerminalEntries(prev => [
+    setTerminalEntries((prev) => [
       ...prev,
-      { id: Date.now() + 1, type: 'system', text: `[${logTime}] INITIALIZING FRAMEWORK PROJECT: ${template.name} (${template.badge})` },
-      { id: Date.now() + 2, type: 'cmd', text: `$ npx create-workspace ${template.id} --template=${template.name}` },
-      { id: Date.now() + 3, type: 'info', text: `[1/3] Creating folder structure and project configuration...` },
-      { id: Date.now() + 4, type: 'info', text: `[2/3] Writing ${template.files.length} template source files (${template.files.map(f => f.name).join(', ')})...` },
-      { id: Date.now() + 5, type: 'success', text: `[3/3] ✨ Successfully scaffolded ${template.name}! Active file set to ${primary}.` }
+      {
+        id: Date.now() + 1,
+        type: "system",
+        text: `[${logTime}] INITIALIZING FRAMEWORK PROJECT: ${template.name} (${template.badge})`,
+      },
+      {
+        id: Date.now() + 2,
+        type: "cmd",
+        text: `$ npx create-workspace ${template.id} --template=${template.name}`,
+      },
+      {
+        id: Date.now() + 3,
+        type: "info",
+        text: `[1/3] Creating folder structure and project configuration...`,
+      },
+      {
+        id: Date.now() + 4,
+        type: "info",
+        text: `[2/3] Writing ${template.files.length} template source files (${template.files.map((f) => f.name).join(", ")})...`,
+      },
+      {
+        id: Date.now() + 5,
+        type: "success",
+        text: `[3/3] ✨ Successfully scaffolded ${template.name}! Active file set to ${primary}.`,
+      },
     ]);
 
-    showToast(`⚡ Initialized ${template.name} Project in Workspace!`, 'success');
+    showToast(
+      `⚡ Initialized ${template.name} Project in Workspace!`,
+      "success",
+    );
 
     // 6. Sync updated workspace files to backend
-    if (wsId && wsId !== 'demo-workspace' && token) {
-      const payloadFiles = completeFileList.map(f => ({
+    if (wsId && wsId !== "demo-workspace" && token) {
+      const payloadFiles = completeFileList.map((f) => ({
         id: f.id,
         name: f.name,
         path: f.path,
         isFolder: !!f.isFolder,
         parentId: f.parentId || null,
-        content: newContentMap[f.path] || newContentMap[f.name] || ''
+        content: newContentMap[f.path] || newContentMap[f.name] || "",
       }));
 
-      axios.patch(`${API_BASE}/workspaces/${wsId}`, {
-        files: payloadFiles
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(err => console.warn('Sync scaffold files to DB warning:', err.message));
+      axios
+        .patch(
+          `${API_BASE}/workspaces/${wsId}`,
+          {
+            files: payloadFiles,
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        )
+        .catch((err) =>
+          console.warn("Sync scaffold files to DB warning:", err.message),
+        );
     }
   };
 
@@ -764,82 +1093,138 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const cmd = terminalInput.trim();
     if (!cmd) return;
 
-    setTerminalInput('');
-    const newEntry = { id: Date.now(), type: 'cmd', text: `$ ${cmd}` };
+    setTerminalInput("");
+    const newEntry = { id: Date.now(), type: "cmd", text: `$ ${cmd}` };
 
     const lower = cmd.toLowerCase();
 
     let reply = [];
-    if (lower === 'clear' || lower === 'cls') {
+    if (lower === "clear" || lower === "cls") {
       setTerminalEntries([]);
       return;
-    } else if (lower === 'help') {
+    } else if (lower === "help") {
       reply = [
-        { id: Date.now() + 1, type: 'info', text: 'CodeTrail Interactive CLI Web Terminal v2.4.0' },
-        { id: Date.now() + 2, type: 'info', text: 'Available Commands:' },
-        { id: Date.now() + 3, type: 'info', text: '  • scaffold <react|fastapi|django|express|python|java> - Initialize framework template' },
-        { id: Date.now() + 4, type: 'info', text: '  • ls / dir - List workspace files' },
-        { id: Date.now() + 5, type: 'info', text: '  • cat <filename> - Display file contents' },
-        { id: Date.now() + 6, type: 'info', text: '  • run / execute - Execute active file code' },
-        { id: Date.now() + 7, type: 'info', text: '  • clear - Clear terminal screen' }
+        {
+          id: Date.now() + 1,
+          type: "info",
+          text: "CodeTrail Interactive CLI Web Terminal v2.4.0",
+        },
+        { id: Date.now() + 2, type: "info", text: "Available Commands:" },
+        {
+          id: Date.now() + 3,
+          type: "info",
+          text: "  • scaffold <react|fastapi|django|express|python|java> - Initialize framework template",
+        },
+        {
+          id: Date.now() + 4,
+          type: "info",
+          text: "  • ls / dir - List workspace files",
+        },
+        {
+          id: Date.now() + 5,
+          type: "info",
+          text: "  • cat <filename> - Display file contents",
+        },
+        {
+          id: Date.now() + 6,
+          type: "info",
+          text: "  • run / execute - Execute active file code",
+        },
+        {
+          id: Date.now() + 7,
+          type: "info",
+          text: "  • clear - Clear terminal screen",
+        },
       ];
-    } else if (lower === 'ls' || lower === 'dir') {
+    } else if (lower === "ls" || lower === "dir") {
       reply = customFiles.map((f, i) => ({
         id: Date.now() + i + 1,
-        type: f.isFolder ? 'info' : 'output',
-        text: f.isFolder ? `📁 ${f.path}/` : `📄 ${f.path} (${getLanguageInfo(f.name).name})`
+        type: f.isFolder ? "info" : "output",
+        text: f.isFolder
+          ? `📁 ${f.path}/`
+          : `📄 ${f.path} (${getLanguageInfo(f.name).name})`,
       }));
-    } else if (lower.startsWith('cat ')) {
+    } else if (lower.startsWith("cat ")) {
       const targetName = cmd.slice(4).trim();
-      const content = filesContent[targetName] || filesContent[targetName.split('/').pop()];
+      const content =
+        filesContent[targetName] || filesContent[targetName.split("/").pop()];
       if (content !== undefined) {
-        reply = [{ id: Date.now() + 1, type: 'output', text: content }];
+        reply = [{ id: Date.now() + 1, type: "output", text: content }];
       } else {
-        reply = [{ id: Date.now() + 1, type: 'error', text: `cat: ${targetName}: No such file in workspace` }];
+        reply = [
+          {
+            id: Date.now() + 1,
+            type: "error",
+            text: `cat: ${targetName}: No such file in workspace`,
+          },
+        ];
       }
-    } else if (lower.startsWith('scaffold ')) {
-      const target = lower.split(' ')[1];
-      const match = FRAMEWORK_TEMPLATES.find(t => t.id.includes(target) || t.name.toLowerCase().includes(target));
+    } else if (lower.startsWith("scaffold ")) {
+      const target = lower.split(" ")[1];
+      const match = FRAMEWORK_TEMPLATES.find(
+        (t) => t.id.includes(target) || t.name.toLowerCase().includes(target),
+      );
       if (match) {
         handleScaffoldProject(match);
         return;
       } else {
-        reply = [{ id: Date.now() + 1, type: 'error', text: `Unknown framework: ${target}. Available: react, fastapi, django, express, python, java` }];
+        reply = [
+          {
+            id: Date.now() + 1,
+            type: "error",
+            text: `Unknown framework: ${target}. Available: react, fastapi, django, express, python, java`,
+          },
+        ];
       }
-    } else if (lower === 'run' || lower === 'execute') {
+    } else if (lower === "run" || lower === "execute") {
       handleRunActiveCode();
-      reply = [{ id: Date.now() + 1, type: 'success', text: `Executing ${activeFile}...` }];
+      reply = [
+        {
+          id: Date.now() + 1,
+          type: "success",
+          text: `Executing ${activeFile}...`,
+        },
+      ];
     } else {
       reply = [
-        { id: Date.now() + 1, type: 'output', text: `Executed CLI command: ${cmd}` },
-        { id: Date.now() + 2, type: 'success', text: `Process completed with exit code 0.` }
+        {
+          id: Date.now() + 1,
+          type: "output",
+          text: `Executed CLI command: ${cmd}`,
+        },
+        {
+          id: Date.now() + 2,
+          type: "success",
+          text: `Process completed with exit code 0.`,
+        },
       ];
     }
 
-    setTerminalEntries(prev => [...prev, newEntry, ...reply]);
+    setTerminalEntries((prev) => [...prev, newEntry, ...reply]);
   };
   const triggerAutoSave = async () => {
-    if (!wsId || wsId === 'demo-workspace' || !token) {
-      setAutoSaveStatus('Auto-saved locally');
+    if (!wsId || wsId === "demo-workspace" || !token) {
+      setAutoSaveStatus("Auto-saved locally");
       return;
     }
 
     if (!canEditFiles) return;
 
     try {
-      setAutoSaveStatus('Saving...');
+      setAutoSaveStatus("Saving...");
 
-      const currentFilesList = (customFilesRef.current && customFilesRef.current.length > 0)
-        ? customFilesRef.current
-        : customFiles;
+      const currentFilesList =
+        customFilesRef.current && customFilesRef.current.length > 0
+          ? customFilesRef.current
+          : customFiles;
 
-      const filesToSave = currentFilesList.map(f => {
+      const filesToSave = currentFilesList.map((f) => {
         const fileKey = f.id || f.path || f.name;
-        const fname = f.name || fileKey.split('/').pop() || fileKey;
+        const fname = f.name || fileKey.split("/").pop() || fileKey;
 
-        let latestContent = '';
+        let latestContent = "";
         if (f.isFolder) {
-          latestContent = '';
+          latestContent = "";
         } else if (filesContentRef.current[fileKey] !== undefined) {
           latestContent = filesContentRef.current[fileKey];
         } else if (filesContentRef.current[fname] !== undefined) {
@@ -847,7 +1232,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         } else if (f.content !== undefined) {
           latestContent = f.content;
         } else {
-          latestContent = '';
+          latestContent = "";
         }
 
         return {
@@ -856,32 +1241,49 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           path: f.path || fileKey,
           parentId: f.parentId || null,
           isFolder: !!f.isFolder,
-          language: f.isFolder ? 'plaintext' : (f.language || getMonacoLanguage(fname)),
-          iconColor: f.iconColor || (f.isFolder ? 'text-purple-400' : getLanguageInfo(fname).color),
+          language: f.isFolder
+            ? "plaintext"
+            : f.language || getMonacoLanguage(fname),
+          iconColor:
+            f.iconColor ||
+            (f.isFolder ? "text-purple-400" : getLanguageInfo(fname).color),
           content: latestContent,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         };
       });
 
-      const res = await axios.patch(`${API_BASE}/workspaces/${wsId}`, {
-        files: filesToSave
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await axios.patch(
+        `${API_BASE}/workspaces/${wsId}`,
+        {
+          files: filesToSave,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       if (res.data?.workspace) {
         setCurrentWorkspace(res.data.workspace);
         currentWorkspaceRef.current = res.data.workspace;
         try {
-          localStorage.setItem('ct-active-workspace-session', JSON.stringify(res.data.workspace));
-          localStorage.setItem(`ct-workspace-files-${wsId}`, JSON.stringify(customFilesRef.current));
-          localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(filesContentRef.current));
-        } catch (e) { }
+          localStorage.setItem(
+            "ct-active-workspace-session",
+            JSON.stringify(res.data.workspace),
+          );
+          localStorage.setItem(
+            `ct-workspace-files-${wsId}`,
+            JSON.stringify(customFilesRef.current),
+          );
+          localStorage.setItem(
+            `ct-workspace-content-${wsId}`,
+            JSON.stringify(filesContentRef.current),
+          );
+        } catch (e) {}
       }
-      setAutoSaveStatus('Auto-saved just now');
+      setAutoSaveStatus("Auto-saved just now");
     } catch (err) {
-      console.warn('Auto-save to backend failed:', err.message);
-      setAutoSaveStatus('Saved locally (offline)');
+      console.warn("Auto-save to backend failed:", err.message);
+      setAutoSaveStatus("Saved locally (offline)");
     }
   };
 
@@ -892,65 +1294,76 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     // Guard: Viewers cannot modify code (CT-89)
     if (!canEditFiles || isViewer) {
-      setAutoSaveStatus('Viewing mode: Editing disabled');
+      setAutoSaveStatus("Viewing mode: Editing disabled");
       return;
     }
 
-    const content = newCode ?? '';
+    const content = newCode ?? "";
 
     // Increment monotonic version counter for this file (CT-89)
     const currentVer = fileVersionsRef.current[activeFile] || 0;
     const nextVer = currentVer + 1;
     fileVersionsRef.current[activeFile] = nextVer;
-    setFileVersions(prev => ({
+    setFileVersions((prev) => ({
       ...prev,
-      [activeFile]: nextVer
+      [activeFile]: nextVer,
     }));
 
     // 1. Immediately store under the specific activeFile key in state and ref
     const updatedMap = {
       ...filesContentRef.current,
-      [activeFile]: content
+      [activeFile]: content,
     };
     filesContentRef.current = updatedMap;
 
-    setFilesContent(prev => ({
+    setFilesContent((prev) => ({
       ...prev,
-      [activeFile]: content
+      [activeFile]: content,
     }));
 
     // 2. Synchronous LocalStorage Backup (CT-88 Requirement 8)
     try {
-      localStorage.setItem(`ct-workspace-content-${wsId}`, JSON.stringify(updatedMap));
+      localStorage.setItem(
+        `ct-workspace-content-${wsId}`,
+        JSON.stringify(updatedMap),
+      );
     } catch (e) {
-      console.warn('LocalStorage backup error:', e);
+      console.warn("LocalStorage backup error:", e);
     }
 
     // 3. Keep currentWorkspace.files synchronized (match by id or path, not name)
-    setCurrentWorkspace(prev => {
+    setCurrentWorkspace((prev) => {
       if (!prev) return prev;
-      const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : [];
+      const baseFiles = prev.files && prev.files.length > 0 ? prev.files : [];
       // Match by canonical id/path key
-      const fileIndex = baseFiles.findIndex(f => (f.id || f.path || f.name) === activeFile);
+      const fileIndex = baseFiles.findIndex(
+        (f) => (f.id || f.path || f.name) === activeFile,
+      );
 
       let updatedFiles;
       if (fileIndex >= 0) {
         updatedFiles = baseFiles.map((f, i) =>
-          i === fileIndex ? { ...f, content, version: nextVer } : f
+          i === fileIndex ? { ...f, content, version: nextVer } : f,
         );
       } else {
         // File not yet in currentWorkspace.files — add it
-        const activeFileObj = customFilesRef.current?.find(f => f.id === activeFile);
-        updatedFiles = [...baseFiles, {
-          id: activeFile,
-          name: activeFileObj?.name || activeFile.split('/').pop() || activeFile,
-          path: activeFile,
-          parentId: activeFileObj?.parentId || null,
-          isFolder: false,
-          language: getMonacoLanguage(activeFile),
-          content,
-          version: nextVer
-        }];
+        const activeFileObj = customFilesRef.current?.find(
+          (f) => f.id === activeFile,
+        );
+        updatedFiles = [
+          ...baseFiles,
+          {
+            id: activeFile,
+            name:
+              activeFileObj?.name || activeFile.split("/").pop() || activeFile,
+            path: activeFile,
+            parentId: activeFileObj?.parentId || null,
+            isFolder: false,
+            language: getMonacoLanguage(activeFile),
+            content,
+            version: nextVer,
+          },
+        ];
       }
 
       const nextWs = { ...prev, files: updatedFiles };
@@ -960,30 +1373,34 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     // 4. Emit real-time code change to peers via Socket.IO with version counter (CT-85, CT-89)
     if (socketRef.current) {
-      socketRef.current.emit('code_change', {
+      socketRef.current.emit("code_change", {
         workspaceId: wsId,
         fileId: activeFile,
         content,
-        version: nextVer
+        version: nextVer,
       });
     }
 
     // 4b. Intercept code edit telemetry action with monotonic sequence counter (CT-164)
     // Calculate actual line delta: only count new lines when Enter is pressed, not on every keystroke
-    const newLineCount = content.split('\n').length;
+    const newLineCount = content.split("\n").length;
     const oldLineCount = prevLineCountRef.current[activeFile] || newLineCount;
     const actualLinesAdded = Math.max(0, newLineCount - oldLineCount);
     const actualLinesDeleted = Math.max(0, oldLineCount - newLineCount);
     prevLineCountRef.current[activeFile] = newLineCount;
 
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.CODE_EDIT, `Edited ${activeFile} (v${nextVer})`, {
-      linesAdded: actualLinesAdded,
-      linesDeleted: actualLinesDeleted,
-      totalLines: newLineCount
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.CODE_EDIT,
+      `Edited ${activeFile} (v${nextVer})`,
+      {
+        linesAdded: actualLinesAdded,
+        linesDeleted: actualLinesDeleted,
+        totalLines: newLineCount,
+      },
+    );
 
     // 5. 2.5-second Debounced Auto-save (CT-88 Requirement 1, 2, 3, 10, 11)
-    setAutoSaveStatus('Unsaved changes...');
+    setAutoSaveStatus("Unsaved changes...");
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
     }
@@ -998,57 +1415,69 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (!activeFile) return;
 
     const langExtMap = {
-      javascript: 'js',
-      typescript: 'ts',
-      python: 'py',
-      cpp: 'cpp',
-      c: 'c',
-      java: 'java',
-      rust: 'rs',
-      go: 'go',
-      html: 'html',
-      css: 'css',
-      json: 'json',
-      markdown: 'md',
-      sql: 'sql',
-      shell: 'sh',
-      yaml: 'yaml',
-      xml: 'xml'
+      javascript: "js",
+      typescript: "ts",
+      python: "py",
+      cpp: "cpp",
+      c: "c",
+      java: "java",
+      rust: "rs",
+      go: "go",
+      html: "html",
+      css: "css",
+      json: "json",
+      markdown: "md",
+      sql: "sql",
+      shell: "sh",
+      yaml: "yaml",
+      xml: "xml",
     };
-    const targetExt = langExtMap[newLang] || 'js';
+    const targetExt = langExtMap[newLang] || "js";
 
     // Compute target filename by swapping extension
-    const dotIdx = activeFile.lastIndexOf('.');
+    const dotIdx = activeFile.lastIndexOf(".");
     const baseName = dotIdx > 0 ? activeFile.substring(0, dotIdx) : activeFile;
     const targetFileName = `${baseName}.${targetExt}`;
 
     const iconColorMap = {
-      javascript: 'text-yellow-400',
-      typescript: 'text-sky-400',
-      python: 'text-cyan-400',
-      cpp: 'text-blue-400',
-      c: 'text-indigo-400',
-      java: 'text-rose-400',
-      rust: 'text-amber-500',
-      go: 'text-teal-400',
-      html: 'text-orange-500',
-      css: 'text-sky-300',
-      json: 'text-emerald-400',
-      markdown: 'text-purple-400',
-      sql: 'text-amber-300',
-      shell: 'text-green-400',
-      yaml: 'text-red-400',
-      xml: 'text-purple-300'
+      javascript: "text-yellow-400",
+      typescript: "text-sky-400",
+      python: "text-cyan-400",
+      cpp: "text-blue-400",
+      c: "text-indigo-400",
+      java: "text-rose-400",
+      rust: "text-amber-500",
+      go: "text-teal-400",
+      html: "text-orange-500",
+      css: "text-sky-300",
+      json: "text-emerald-400",
+      markdown: "text-purple-400",
+      sql: "text-amber-300",
+      shell: "text-green-400",
+      yaml: "text-red-400",
+      xml: "text-purple-300",
     };
-    const iconColor = iconColorMap[newLang] || 'text-purple-400';
+    const iconColor = iconColorMap[newLang] || "text-purple-400";
 
-    const oldContent = filesContentRef.current[activeFile] || getStarterBoilerplate(activeFile);
+    const oldContent =
+      filesContentRef.current[activeFile] || getStarterBoilerplate(activeFile);
     const oldDefault = getStarterBoilerplate(activeFile);
-    const isDefaultContent = !oldContent || oldContent.trim() === '' || oldContent.trim() === oldDefault.trim();
-    const newContent = isDefaultContent ? getStarterBoilerplate(targetFileName) : oldContent;
+    const isDefaultContent =
+      !oldContent ||
+      oldContent.trim() === "" ||
+      oldContent.trim() === oldDefault.trim();
+    const newContent = isDefaultContent
+      ? getStarterBoilerplate(targetFileName)
+      : oldContent;
 
     // Update files tree state
-    setCustomFiles(prev => prev.map(f => (f.name === activeFile || f.id === activeFile) ? { ...f, id: targetFileName, name: targetFileName, iconColor } : f));
+    setCustomFiles((prev) =>
+      prev.map((f) =>
+        f.name === activeFile || f.id === activeFile
+          ? { ...f, id: targetFileName, name: targetFileName, iconColor }
+          : f,
+      ),
+    );
 
     // Update in-memory files content map
     const updatedContentMap = { ...filesContentRef.current };
@@ -1071,25 +1500,29 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     // Broadcast language change to Socket.IO room peers
     if (socketRef.current) {
-      socketRef.current.emit('language_change', {
+      socketRef.current.emit("language_change", {
         workspaceId: wsId,
         fileId: targetFileName,
-        language: newLang
+        language: newLang,
       });
     }
 
-    recordHistoryLog('language', `Language Switched: ${newLang.toUpperCase()}`, `Active file syntax changed to ${newLang} ("${targetFileName}").`);
+    recordHistoryLog(
+      "language",
+      `Language Switched: ${newLang.toUpperCase()}`,
+      `Active file syntax changed to ${newLang} ("${targetFileName}").`,
+    );
   };
 
   // ── Toast Notification System ──────────────────────────────────────────────
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
-  const showToast = (message, type = 'success', duration = 3500) => {
+  const showToast = (message, type = "success", duration = 3500) => {
     const id = ++toastIdRef.current;
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, duration);
   };
 
@@ -1098,14 +1531,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const [selectedItem, setSelectedItem] = useState(null); // ID of active/selected tree item
   const [targetFolderId, setTargetFolderId] = useState(null); // Parent ID for inline creation
   const [showNewFileInput, setShowNewFileInput] = useState(false);
-  const [newFileName, setNewFileName] = useState('');
+  const [newFileName, setNewFileName] = useState("");
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
+  const [newFolderName, setNewFolderName] = useState("");
   const [renamingFileId, setRenamingFileId] = useState(null);
-  const [renamingFileName, setRenamingFileName] = useState('');
+  const [renamingFileName, setRenamingFileName] = useState("");
 
   // Right-click Floating Context Menu State
-  const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, item: null });
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    item: null,
+  });
 
   // Drag and Drop Moving State
   const [draggedItem, setDraggedItem] = useState(null);
@@ -1116,16 +1554,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const handleCloseMenu = () => {
       setContextMenu({ visible: false, x: 0, y: 0, item: null });
     };
-    window.addEventListener('click', handleCloseMenu);
-    return () => window.removeEventListener('click', handleCloseMenu);
+    window.addEventListener("click", handleCloseMenu);
+    return () => window.removeEventListener("click", handleCloseMenu);
   }, []);
 
   // Folder Expansion Toggles
   const toggleFolder = (folderId, e) => {
     if (e) e.stopPropagation();
-    setExpandedFolders(prev => ({
+    setExpandedFolders((prev) => ({
       ...prev,
-      [folderId]: !prev[folderId]
+      [folderId]: !prev[folderId],
     }));
   };
 
@@ -1142,7 +1580,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       visible: true,
       x: Math.min(e.clientX, window.innerWidth - 220),
       y: Math.min(e.clientY, window.innerHeight - 260),
-      item
+      item,
     });
   };
 
@@ -1152,12 +1590,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const cleanName = newFileName.trim();
     if (!cleanName) return;
 
-    const parentFolder = customFiles.find(f => f.isFolder && (f.id === targetFolderId || f.path === targetFolderId));
+    const parentFolder = customFiles.find(
+      (f) =>
+        f.isFolder && (f.id === targetFolderId || f.path === targetFolderId),
+    );
     const parentPath = parentFolder ? parentFolder.path : null;
     const fullPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
 
-    if (customFiles.some(f => f.id === fullPath || f.path === fullPath)) {
-      showToast(`File "${fullPath}" already exists.`, 'error');
+    if (customFiles.some((f) => f.id === fullPath || f.path === fullPath)) {
+      showToast(`File "${fullPath}" already exists.`, "error");
       return;
     }
 
@@ -1168,7 +1609,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       path: fullPath,
       parentId: parentFolder ? parentFolder.id : null,
       isFolder: false,
-      iconColor
+      iconColor,
     });
 
     const updatedFiles = [...customFiles, newFileObj];
@@ -1176,34 +1617,51 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     customFilesRef.current = updatedFiles;
 
     const boilerplate = getStarterBoilerplate(cleanName);
-    filesContentRef.current = { ...filesContentRef.current, [fullPath]: boilerplate };
-    setFilesContent(prev => ({ ...prev, [fullPath]: boilerplate }));
+    filesContentRef.current = {
+      ...filesContentRef.current,
+      [fullPath]: boilerplate,
+    };
+    setFilesContent((prev) => ({ ...prev, [fullPath]: boilerplate }));
 
     if (parentFolder) {
-      setExpandedFolders(prev => ({ ...prev, [parentFolder.id]: true }));
+      setExpandedFolders((prev) => ({ ...prev, [parentFolder.id]: true }));
     }
 
     setActiveFile(fullPath);
     activeFileRef.current = fullPath;
     setShowNewFileInput(false);
-    setNewFileName('');
+    setNewFileName("");
     setTargetFolderId(null);
 
     if (socketRef.current) {
-      socketRef.current.emit('file_created', { workspaceId: wsId, file: newFileObj });
-      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      socketRef.current.emit("file_created", {
+        workspaceId: wsId,
+        file: newFileObj,
+      });
+      socketRef.current.emit("files_updated", {
+        workspaceId: wsId,
+        files: updatedFiles,
+      });
     }
 
     // Intercept File Creation Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Created file "${cleanName}"`, {
-      fileId: fullPath,
-      linesAdded: boilerplate.split('\n').length,
-      totalLines: boilerplate.split('\n').length
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.FILE_CREATE,
+      `Created file "${cleanName}"`,
+      {
+        fileId: fullPath,
+        linesAdded: boilerplate.split("\n").length,
+        totalLines: boilerplate.split("\n").length,
+      },
+    );
 
-    showToast(`📄 Created ${cleanName}`, 'success');
+    showToast(`📄 Created ${cleanName}`, "success");
     triggerAutoSave();
-    recordHistoryLog('file', `File Created: ${cleanName}`, `Created workspace file ${fullPath}.`);
+    recordHistoryLog(
+      "file",
+      `File Created: ${cleanName}`,
+      `Created workspace file ${fullPath}.`,
+    );
   };
 
   // 2. Create Folder Handler (Root or inside target folder)
@@ -1212,12 +1670,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const cleanName = newFolderName.trim();
     if (!cleanName) return;
 
-    const parentFolder = customFiles.find(f => f.isFolder && (f.id === targetFolderId || f.path === targetFolderId));
+    const parentFolder = customFiles.find(
+      (f) =>
+        f.isFolder && (f.id === targetFolderId || f.path === targetFolderId),
+    );
     const parentPath = parentFolder ? parentFolder.path : null;
     const fullPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
 
-    if (customFiles.some(f => f.id === fullPath || f.path === fullPath)) {
-      showToast(`Folder "${fullPath}" already exists.`, 'error');
+    if (customFiles.some((f) => f.id === fullPath || f.path === fullPath)) {
+      showToast(`Folder "${fullPath}" already exists.`, "error");
       return;
     }
 
@@ -1227,35 +1688,46 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       path: fullPath,
       parentId: parentFolder ? parentFolder.id : null,
       isFolder: true,
-      iconColor: 'text-purple-400'
+      iconColor: "text-purple-400",
     });
 
     const updatedFiles = [...customFiles, newFolderObj];
     setCustomFiles(updatedFiles);
     customFilesRef.current = updatedFiles;
 
-    setExpandedFolders(prev => ({
+    setExpandedFolders((prev) => ({
       ...prev,
       ...(parentFolder ? { [parentFolder.id]: true } : {}),
-      [fullPath]: true
+      [fullPath]: true,
     }));
 
     setShowNewFolderInput(false);
-    setNewFolderName('');
+    setNewFolderName("");
     setTargetFolderId(null);
 
     if (socketRef.current) {
-      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      socketRef.current.emit("files_updated", {
+        workspaceId: wsId,
+        files: updatedFiles,
+      });
     }
 
     // Intercept Folder Creation Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Created folder "${cleanName}"`, {
-      fileId: fullPath
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.FILE_CREATE,
+      `Created folder "${cleanName}"`,
+      {
+        fileId: fullPath,
+      },
+    );
 
-    showToast(`📁 Created folder ${cleanName}`, 'success');
+    showToast(`📁 Created folder ${cleanName}`, "success");
     triggerAutoSave();
-    recordHistoryLog('file', `Folder Created: ${cleanName}`, `Created folder ${fullPath}.`);
+    recordHistoryLog(
+      "file",
+      `Folder Created: ${cleanName}`,
+      `Created folder ${fullPath}.`,
+    );
   };
 
   // 3. Rename Handler (File or Folder with path cascading)
@@ -1266,33 +1738,54 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     if (!cleanName || cleanName === itemToRename.name) {
       setRenamingFileId(null);
-      setRenamingFileName('');
+      setRenamingFileName("");
       return;
     }
 
-    const parentFolder = customFiles.find(f => f.isFolder && f.id === itemToRename.parentId);
+    const parentFolder = customFiles.find(
+      (f) => f.isFolder && f.id === itemToRename.parentId,
+    );
     const parentPath = parentFolder ? parentFolder.path : null;
     const newPath = parentPath ? `${parentPath}/${cleanName}` : cleanName;
 
-    if (customFiles.some(f => f.id !== oldId && (f.id === newPath || f.path === newPath))) {
-      showToast(`An item named "${cleanName}" already exists.`, 'error');
+    if (
+      customFiles.some(
+        (f) => f.id !== oldId && (f.id === newPath || f.path === newPath),
+      )
+    ) {
+      showToast(`An item named "${cleanName}" already exists.`, "error");
       return;
     }
 
     let updatedFiles = [];
     if (itemToRename.isFolder) {
-      const prefixOld = oldId + '/';
-      const prefixNew = newPath + '/';
+      const prefixOld = oldId + "/";
+      const prefixNew = newPath + "/";
 
-      updatedFiles = customFiles.map(f => {
+      updatedFiles = customFiles.map((f) => {
         if (f.id === oldId) {
-          return normalizeFileItem({ ...f, id: newPath, name: cleanName, path: newPath });
+          return normalizeFileItem({
+            ...f,
+            id: newPath,
+            name: cleanName,
+            path: newPath,
+          });
         }
         if (f.id.startsWith(prefixOld) || f.path?.startsWith(prefixOld)) {
           const subPath = f.path.substring(prefixOld.length);
           const updatedPath = prefixNew + subPath;
-          const updatedParentId = f.parentId === oldId ? newPath : (f.parentId?.startsWith(prefixOld) ? prefixNew + f.parentId.substring(prefixOld.length) : f.parentId);
-          return normalizeFileItem({ ...f, id: updatedPath, path: updatedPath, parentId: updatedParentId });
+          const updatedParentId =
+            f.parentId === oldId
+              ? newPath
+              : f.parentId?.startsWith(prefixOld)
+                ? prefixNew + f.parentId.substring(prefixOld.length)
+                : f.parentId;
+          return normalizeFileItem({
+            ...f,
+            id: updatedPath,
+            path: updatedPath,
+            parentId: updatedParentId,
+          });
         }
         if (f.parentId === oldId) {
           return normalizeFileItem({ ...f, parentId: newPath });
@@ -1302,9 +1795,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
       // Cascading update for content map
       const updatedContentMap = { ...filesContentRef.current };
-      Object.keys(updatedContentMap).forEach(key => {
+      Object.keys(updatedContentMap).forEach((key) => {
         if (key === oldId || key.startsWith(prefixOld)) {
-          const newKey = key === oldId ? newPath : prefixNew + key.substring(prefixOld.length);
+          const newKey =
+            key === oldId
+              ? newPath
+              : prefixNew + key.substring(prefixOld.length);
           updatedContentMap[newKey] = updatedContentMap[key];
           delete updatedContentMap[key];
         }
@@ -1312,19 +1808,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       filesContentRef.current = updatedContentMap;
       setFilesContent(updatedContentMap);
 
-      if (activeFileRef.current && (activeFileRef.current === oldId || activeFileRef.current.startsWith(prefixOld))) {
-        const newActive = activeFileRef.current === oldId ? newPath : prefixNew + activeFileRef.current.substring(prefixOld.length);
+      if (
+        activeFileRef.current &&
+        (activeFileRef.current === oldId ||
+          activeFileRef.current.startsWith(prefixOld))
+      ) {
+        const newActive =
+          activeFileRef.current === oldId
+            ? newPath
+            : prefixNew + activeFileRef.current.substring(prefixOld.length);
         setActiveFile(newActive);
         activeFileRef.current = newActive;
       }
 
-      setExpandedFolders(prev => {
+      setExpandedFolders((prev) => {
         const next = { ...prev };
         if (next[oldId]) {
           next[newPath] = true;
           delete next[oldId];
         }
-        Object.keys(next).forEach(k => {
+        Object.keys(next).forEach((k) => {
           if (k.startsWith(prefixOld)) {
             const newK = prefixNew + k.substring(prefixOld.length);
             next[newK] = next[k];
@@ -1335,21 +1838,44 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
 
       if (socketRef.current) {
-        socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+        socketRef.current.emit("files_updated", {
+          workspaceId: wsId,
+          files: updatedFiles,
+        });
       }
 
       // Intercept Folder Rename Action (CT-164 & CT-167)
-      interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Renamed folder ${itemToRename.name} → ${cleanName}`, {
-        fileId: newPath
-      });
+      interceptTelemetry(
+        TELEMETRY_ACTION_TYPES.FILE_SWITCH,
+        `Renamed folder ${itemToRename.name} → ${cleanName}`,
+        {
+          fileId: newPath,
+        },
+      );
 
-      showToast(`📁 Renamed folder ${itemToRename.name} → ${cleanName}`, 'success');
+      showToast(
+        `📁 Renamed folder ${itemToRename.name} → ${cleanName}`,
+        "success",
+      );
     } else {
       const iconColor = getLanguageInfo(cleanName).color;
-      updatedFiles = customFiles.map(f => f.id === oldId ? normalizeFileItem({ ...f, id: newPath, name: cleanName, path: newPath, iconColor }) : f);
+      updatedFiles = customFiles.map((f) =>
+        f.id === oldId
+          ? normalizeFileItem({
+              ...f,
+              id: newPath,
+              name: cleanName,
+              path: newPath,
+              iconColor,
+            })
+          : f,
+      );
 
       const updatedContentMap = { ...filesContentRef.current };
-      const content = updatedContentMap[oldId] !== undefined ? updatedContentMap[oldId] : getStarterBoilerplate(oldId);
+      const content =
+        updatedContentMap[oldId] !== undefined
+          ? updatedContentMap[oldId]
+          : getStarterBoilerplate(oldId);
       delete updatedContentMap[oldId];
       updatedContentMap[newPath] = content;
       filesContentRef.current = updatedContentMap;
@@ -1361,24 +1887,39 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
 
       if (socketRef.current) {
-        socketRef.current.emit('file_renamed', { workspaceId: wsId, oldFileId: oldId, newFileId: newPath });
-        socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+        socketRef.current.emit("file_renamed", {
+          workspaceId: wsId,
+          oldFileId: oldId,
+          newFileId: newPath,
+        });
+        socketRef.current.emit("files_updated", {
+          workspaceId: wsId,
+          files: updatedFiles,
+        });
       }
 
       // Intercept File Rename Action (CT-164 & CT-167)
-      interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Renamed ${itemToRename.name} → ${cleanName}`, {
-        fileId: newPath
-      });
+      interceptTelemetry(
+        TELEMETRY_ACTION_TYPES.FILE_SWITCH,
+        `Renamed ${itemToRename.name} → ${cleanName}`,
+        {
+          fileId: newPath,
+        },
+      );
 
-      showToast(`✏️ Renamed ${itemToRename.name} → ${cleanName}`, 'success');
+      showToast(`✏️ Renamed ${itemToRename.name} → ${cleanName}`, "success");
     }
 
     setCustomFiles(updatedFiles);
     customFilesRef.current = updatedFiles;
     setRenamingFileId(null);
-    setRenamingFileName('');
+    setRenamingFileName("");
     triggerAutoSave();
-    recordHistoryLog('file', `Renamed: ${itemToRename.name} -> ${cleanName}`, `Renamed ${oldId} to ${newPath}.`);
+    recordHistoryLog(
+      "file",
+      `Renamed: ${itemToRename.name} -> ${cleanName}`,
+      `Renamed ${oldId} to ${newPath}.`,
+    );
   };
 
   // 4. Delete Handler (Recursive for folders)
@@ -1387,51 +1928,77 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const targetId = itemToDelete.id || itemToDelete.path;
 
     if (customFiles.length <= 1) {
-      showToast('Cannot delete the last item in the workspace.', 'error');
+      showToast("Cannot delete the last item in the workspace.", "error");
       return;
     }
 
-    if (!window.confirm(`Delete ${itemToDelete.isFolder ? 'folder' : 'file'} "${itemToDelete.name}"${itemToDelete.isFolder ? ' and all its contents' : ''}?`)) return;
+    if (
+      !window.confirm(
+        `Delete ${itemToDelete.isFolder ? "folder" : "file"} "${itemToDelete.name}"${itemToDelete.isFolder ? " and all its contents" : ""}?`,
+      )
+    )
+      return;
 
     let idsToDelete = [];
     if (itemToDelete.isFolder) {
-      const prefix = targetId + '/';
-      idsToDelete = customFiles.filter(f => f.id === targetId || f.id.startsWith(prefix) || f.path?.startsWith(prefix)).map(f => f.id);
+      const prefix = targetId + "/";
+      idsToDelete = customFiles
+        .filter(
+          (f) =>
+            f.id === targetId ||
+            f.id.startsWith(prefix) ||
+            f.path?.startsWith(prefix),
+        )
+        .map((f) => f.id);
     } else {
       idsToDelete = [targetId];
     }
 
-    const updatedFiles = customFiles.filter(f => !idsToDelete.includes(f.id));
+    const updatedFiles = customFiles.filter((f) => !idsToDelete.includes(f.id));
     setCustomFiles(updatedFiles);
     customFilesRef.current = updatedFiles;
 
     const updatedContentMap = { ...filesContentRef.current };
-    idsToDelete.forEach(id => delete updatedContentMap[id]);
+    idsToDelete.forEach((id) => delete updatedContentMap[id]);
     filesContentRef.current = updatedContentMap;
     setFilesContent(updatedContentMap);
 
     if (idsToDelete.includes(activeFileRef.current)) {
-      const remainingFile = updatedFiles.find(f => !f.isFolder);
-      const nextActive = remainingFile ? remainingFile.id : 'index.js';
+      const remainingFile = updatedFiles.find((f) => !f.isFolder);
+      const nextActive = remainingFile ? remainingFile.id : "index.js";
       setActiveFile(nextActive);
       activeFileRef.current = nextActive;
     }
 
     if (socketRef.current) {
       if (!itemToDelete.isFolder) {
-        socketRef.current.emit('file_deleted', { workspaceId: wsId, fileId: targetId });
+        socketRef.current.emit("file_deleted", {
+          workspaceId: wsId,
+          fileId: targetId,
+        });
       }
-      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      socketRef.current.emit("files_updated", {
+        workspaceId: wsId,
+        files: updatedFiles,
+      });
     }
 
     // Intercept File/Folder Deletion Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_DELETE, `Deleted ${itemToDelete.isFolder ? 'folder' : 'file'} "${itemToDelete.name}"`, {
-      fileId: targetId
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.FILE_DELETE,
+      `Deleted ${itemToDelete.isFolder ? "folder" : "file"} "${itemToDelete.name}"`,
+      {
+        fileId: targetId,
+      },
+    );
 
-    showToast(`🗑 Deleted "${itemToDelete.name}"`, 'warning');
+    showToast(`🗑 Deleted "${itemToDelete.name}"`, "warning");
     triggerAutoSave();
-    recordHistoryLog('file', `Deleted: ${itemToDelete.name}`, `Removed ${targetId} from workspace.`);
+    recordHistoryLog(
+      "file",
+      `Deleted: ${itemToDelete.name}`,
+      `Removed ${targetId} from workspace.`,
+    );
   };
 
   // 5. Duplicate File Handler
@@ -1440,20 +2007,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (fileItem.isFolder) return;
 
     const oldId = fileItem.id;
-    const parts = fileItem.name.split('.');
+    const parts = fileItem.name.split(".");
     let newName;
     if (parts.length > 1) {
       const ext = parts.pop();
-      newName = `${parts.join('.')}_copy.${ext}`;
+      newName = `${parts.join(".")}_copy.${ext}`;
     } else {
       newName = `${fileItem.name}_copy`;
     }
 
-    const parentFolder = customFiles.find(f => f.isFolder && f.id === fileItem.parentId);
+    const parentFolder = customFiles.find(
+      (f) => f.isFolder && f.id === fileItem.parentId,
+    );
     const parentPath = parentFolder ? parentFolder.path : null;
     let newPath = parentPath ? `${parentPath}/${newName}` : newName;
 
-    if (customFiles.some(f => f.id === newPath)) {
+    if (customFiles.some((f) => f.id === newPath)) {
       newName = `${fileItem.name}_copy_${Date.now().toString().slice(-4)}`;
       newPath = parentPath ? `${parentPath}/${newName}` : newName;
     }
@@ -1465,33 +2034,49 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       path: newPath,
       parentId: fileItem.parentId || null,
       isFolder: false,
-      iconColor
+      iconColor,
     });
 
-    const existingContent = filesContentRef.current[oldId] !== undefined ? filesContentRef.current[oldId] : getStarterBoilerplate(oldId);
+    const existingContent =
+      filesContentRef.current[oldId] !== undefined
+        ? filesContentRef.current[oldId]
+        : getStarterBoilerplate(oldId);
     const updatedFiles = [...customFiles, newFileObj];
 
     setCustomFiles(updatedFiles);
     customFilesRef.current = updatedFiles;
-    filesContentRef.current = { ...filesContentRef.current, [newPath]: existingContent };
-    setFilesContent(prev => ({ ...prev, [newPath]: existingContent }));
+    filesContentRef.current = {
+      ...filesContentRef.current,
+      [newPath]: existingContent,
+    };
+    setFilesContent((prev) => ({ ...prev, [newPath]: existingContent }));
 
     setActiveFile(newPath);
     activeFileRef.current = newPath;
 
     if (socketRef.current) {
-      socketRef.current.emit('file_created', { workspaceId: wsId, file: newFileObj });
-      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      socketRef.current.emit("file_created", {
+        workspaceId: wsId,
+        file: newFileObj,
+      });
+      socketRef.current.emit("files_updated", {
+        workspaceId: wsId,
+        files: updatedFiles,
+      });
     }
 
     // Intercept File Duplication Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `Duplicated "${fileItem.name}" → "${newName}"`, {
-      fileId: newPath,
-      linesAdded: existingContent.split('\n').length,
-      totalLines: existingContent.split('\n').length
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.FILE_CREATE,
+      `Duplicated "${fileItem.name}" → "${newName}"`,
+      {
+        fileId: newPath,
+        linesAdded: existingContent.split("\n").length,
+        totalLines: existingContent.split("\n").length,
+      },
+    );
 
-    showToast(`📋 Duplicated ${fileItem.name} → ${newName}`, 'success');
+    showToast(`📋 Duplicated ${fileItem.name} → ${newName}`, "success");
     triggerAutoSave();
   };
 
@@ -1499,19 +2084,23 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const handleDragStart = (e, item) => {
     e.stopPropagation();
     setDraggedItem(item);
-    e.dataTransfer.setData('text/plain', item.id);
-    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData("text/plain", item.id);
+    e.dataTransfer.effectAllowed = "move";
   };
 
   const handleDragOver = (e, targetFolder) => {
     e.preventDefault();
     e.stopPropagation();
     if (!draggedItem) return;
-    if (targetFolder && (draggedItem.id === targetFolder.id || targetFolder.path.startsWith(draggedItem.id + '/'))) {
+    if (
+      targetFolder &&
+      (draggedItem.id === targetFolder.id ||
+        targetFolder.path.startsWith(draggedItem.id + "/"))
+    ) {
       return;
     }
-    setDragOverFolderId(targetFolder ? targetFolder.id : 'root');
-    e.dataTransfer.dropEffect = 'move';
+    setDragOverFolderId(targetFolder ? targetFolder.id : "root");
+    e.dataTransfer.dropEffect = "move";
   };
 
   const handleDrop = (e, targetFolder) => {
@@ -1526,40 +2115,64 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const newParentId = targetFolder ? targetFolder.id : null;
     if (itemToMove.parentId === newParentId) return;
 
-    if (targetFolder && (itemToMove.id === targetFolder.id || targetFolder.path.startsWith(itemToMove.id + '/'))) {
-      showToast('Cannot move a folder into itself.', 'error');
+    if (
+      targetFolder &&
+      (itemToMove.id === targetFolder.id ||
+        targetFolder.path.startsWith(itemToMove.id + "/"))
+    ) {
+      showToast("Cannot move a folder into itself.", "error");
       return;
     }
 
     const oldId = itemToMove.id;
     const newParentPath = targetFolder ? targetFolder.path : null;
-    const newPath = newParentPath ? `${newParentPath}/${itemToMove.name}` : itemToMove.name;
+    const newPath = newParentPath
+      ? `${newParentPath}/${itemToMove.name}`
+      : itemToMove.name;
 
-    if (customFiles.some(f => f.id !== oldId && f.id === newPath)) {
-      showToast(`Item "${itemToMove.name}" already exists in ${targetFolder ? targetFolder.name : 'root'}.`, 'error');
+    if (customFiles.some((f) => f.id !== oldId && f.id === newPath)) {
+      showToast(
+        `Item "${itemToMove.name}" already exists in ${targetFolder ? targetFolder.name : "root"}.`,
+        "error",
+      );
       return;
     }
 
     let updatedFiles = [];
     if (itemToMove.isFolder) {
-      const prefixOld = oldId + '/';
-      const prefixNew = newPath + '/';
+      const prefixOld = oldId + "/";
+      const prefixNew = newPath + "/";
 
-      updatedFiles = customFiles.map(f => {
+      updatedFiles = customFiles.map((f) => {
         if (f.id === oldId) {
-          return normalizeFileItem({ ...f, id: newPath, path: newPath, parentId: newParentId });
+          return normalizeFileItem({
+            ...f,
+            id: newPath,
+            path: newPath,
+            parentId: newParentId,
+          });
         }
         if (f.id.startsWith(prefixOld)) {
           const subPath = f.path.substring(prefixOld.length);
           const updatedPath = prefixNew + subPath;
-          const updatedParentId = f.parentId === oldId ? newPath : (f.parentId?.startsWith(prefixOld) ? prefixNew + f.parentId.substring(prefixOld.length) : f.parentId);
-          return normalizeFileItem({ ...f, id: updatedPath, path: updatedPath, parentId: updatedParentId });
+          const updatedParentId =
+            f.parentId === oldId
+              ? newPath
+              : f.parentId?.startsWith(prefixOld)
+                ? prefixNew + f.parentId.substring(prefixOld.length)
+                : f.parentId;
+          return normalizeFileItem({
+            ...f,
+            id: updatedPath,
+            path: updatedPath,
+            parentId: updatedParentId,
+          });
         }
         return f;
       });
 
       const updatedContentMap = { ...filesContentRef.current };
-      Object.keys(updatedContentMap).forEach(key => {
+      Object.keys(updatedContentMap).forEach((key) => {
         if (key.startsWith(prefixOld)) {
           const newKey = prefixNew + key.substring(prefixOld.length);
           updatedContentMap[newKey] = updatedContentMap[key];
@@ -1569,16 +2182,32 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       filesContentRef.current = updatedContentMap;
       setFilesContent(updatedContentMap);
 
-      if (activeFileRef.current && activeFileRef.current.startsWith(prefixOld)) {
-        const newActive = prefixNew + activeFileRef.current.substring(prefixOld.length);
+      if (
+        activeFileRef.current &&
+        activeFileRef.current.startsWith(prefixOld)
+      ) {
+        const newActive =
+          prefixNew + activeFileRef.current.substring(prefixOld.length);
         setActiveFile(newActive);
         activeFileRef.current = newActive;
       }
     } else {
-      updatedFiles = customFiles.map(f => f.id === oldId ? normalizeFileItem({ ...f, id: newPath, path: newPath, parentId: newParentId }) : f);
+      updatedFiles = customFiles.map((f) =>
+        f.id === oldId
+          ? normalizeFileItem({
+              ...f,
+              id: newPath,
+              path: newPath,
+              parentId: newParentId,
+            })
+          : f,
+      );
 
       const updatedContentMap = { ...filesContentRef.current };
-      const content = updatedContentMap[oldId] !== undefined ? updatedContentMap[oldId] : getStarterBoilerplate(oldId);
+      const content =
+        updatedContentMap[oldId] !== undefined
+          ? updatedContentMap[oldId]
+          : getStarterBoilerplate(oldId);
       delete updatedContentMap[oldId];
       updatedContentMap[newPath] = content;
       filesContentRef.current = updatedContentMap;
@@ -1593,14 +2222,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setCustomFiles(updatedFiles);
     customFilesRef.current = updatedFiles;
     if (targetFolder) {
-      setExpandedFolders(prev => ({ ...prev, [targetFolder.id]: true }));
+      setExpandedFolders((prev) => ({ ...prev, [targetFolder.id]: true }));
     }
 
     if (socketRef.current) {
-      socketRef.current.emit('files_updated', { workspaceId: wsId, files: updatedFiles });
+      socketRef.current.emit("files_updated", {
+        workspaceId: wsId,
+        files: updatedFiles,
+      });
     }
 
-    showToast(`🚚 Moved "${itemToMove.name}" to ${targetFolder ? targetFolder.name : 'root'}`, 'success');
+    showToast(
+      `🚚 Moved "${itemToMove.name}" to ${targetFolder ? targetFolder.name : "root"}`,
+      "success",
+    );
     triggerAutoSave();
   };
 
@@ -1608,16 +2243,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const handleExplorerKeyDown = (e) => {
     if (showNewFileInput || showNewFolderInput || renamingFileId) return;
 
-    if (e.key === 'F2' && selectedItem) {
+    if (e.key === "F2" && selectedItem) {
       e.preventDefault();
-      const item = customFiles.find(f => f.id === selectedItem);
+      const item = customFiles.find((f) => f.id === selectedItem);
       if (item) {
         setRenamingFileId(item.id);
         setRenamingFileName(item.name);
       }
-    } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItem) {
+    } else if ((e.key === "Delete" || e.key === "Backspace") && selectedItem) {
       e.preventDefault();
-      const item = customFiles.find(f => f.id === selectedItem);
+      const item = customFiles.find((f) => f.id === selectedItem);
       if (item) {
         handleDeleteItem(item, e);
       }
@@ -1627,10 +2262,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   // Helper to compute visible tree rows with depth indentation
   const getVisibleTreeItems = () => {
     const fileMap = new Map();
-    customFiles.forEach(f => fileMap.set(f.id, f));
+    customFiles.forEach((f) => fileMap.set(f.id, f));
 
     const getChildren = (pId) => {
-      const children = customFiles.filter(f => (f.parentId || null) === pId);
+      const children = customFiles.filter((f) => (f.parentId || null) === pId);
       children.sort((a, b) => {
         if (a.isFolder && !b.isFolder) return -1;
         if (!a.isFolder && b.isFolder) return 1;
@@ -1642,7 +2277,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const visibleList = [];
     const traverse = (pId, depth = 0) => {
       const children = getChildren(pId);
-      children.forEach(item => {
+      children.forEach((item) => {
         visibleList.push({ ...item, depth });
         if (item.isFolder && expandedFolders[item.id]) {
           traverse(item.id, depth + 1);
@@ -1653,8 +2288,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     traverse(null, 0);
 
     // If there are orphan items whose parentId is invalid, append at root
-    const renderedIds = new Set(visibleList.map(i => i.id));
-    customFiles.forEach(f => {
+    const renderedIds = new Set(visibleList.map((i) => i.id));
+    customFiles.forEach((f) => {
       if (!renderedIds.has(f.id)) {
         visibleList.push({ ...f, depth: 0 });
       }
@@ -1665,14 +2300,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Live Code Execution State & Custom Input / Execution History (CT-Task)
   const [isExecuting, setIsExecuting] = useState(false);
-  const [executionStatus, setExecutionStatus] = useState('idle'); // 'idle' | 'running' | 'success' | 'error' | 'compile_error' | 'timeout'
+  const [executionStatus, setExecutionStatus] = useState("idle"); // 'idle' | 'running' | 'success' | 'error' | 'compile_error' | 'timeout'
   const [executionResult, setExecutionResult] = useState(null);
   const [isOutputPanelOpen, setIsOutputPanelOpen] = useState(false);
   const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
 
   // Custom Input (stdin) & Output Console Tabbed Navigation State
-  const [customInput, setCustomInput] = useState('');
-  const [outputTab, setOutputTab] = useState('output'); // 'output' | 'input' | 'history' | 'telemetry'
+  const [customInput, setCustomInput] = useState("");
+  const [outputTab, setOutputTab] = useState("output"); // 'output' | 'input' | 'history' | 'telemetry'
   const [executionHistoryList, setExecutionHistoryList] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
 
@@ -1683,27 +2318,40 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   const [telemetryCopiedHash, setTelemetryCopiedHash] = useState(null);
 
   const fetchWorkspaceTelemetry = useCallback(async () => {
-    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    if (
+      !wsId ||
+      wsId === "demo-workspace" ||
+      !token ||
+      telemetryFailedRef.current ||
+      workspaceNotFoundRef.current
+    )
+      return;
     setIsTelemetryLoading(true);
     try {
       const [contribRes, verifyRes] = await Promise.all([
-        axios.get(`${API_BASE}/workspaces/${wsId}/contributions`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(err => {
-          console.warn('Contributions fetch notice:', err.message);
-          return null;
-        }),
-        axios.get(`${API_BASE}/workspaces/${wsId}/proof-of-work/verify`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(err => {
-          console.warn('Verification fetch notice:', err.message);
-          return null;
-        })
+        axios
+          .get(`${API_BASE}/workspaces/${wsId}/contributions`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          .catch((err) => {
+            if (err.response?.status === 404) telemetryFailedRef.current = true;
+            console.warn("Contributions fetch notice:", err.message);
+            return null;
+          }),
+        axios
+          .get(`${API_BASE}/workspaces/${wsId}/proof-of-work/verify`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          .catch((err) => {
+            if (err.response?.status === 404) telemetryFailedRef.current = true;
+            console.warn("Verification fetch notice:", err.message);
+            return null;
+          }),
       ]);
       if (contribRes?.data) setTelemetryData(contribRes.data);
       if (verifyRes?.data) setTelemetryVerification(verifyRes.data);
     } catch (err) {
-      console.error('Failed to fetch workspace telemetry:', err);
+      console.error("Failed to fetch workspace telemetry:", err);
     } finally {
       setIsTelemetryLoading(false);
     }
@@ -1715,31 +2363,39 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Fetch Workspace Execution History on Load or Workspace ID Change
   useEffect(() => {
-    if (!wsId || wsId === 'demo-workspace') return;
+    if (!wsId || wsId === "demo-workspace") return;
     let isMounted = true;
     const fetchExecutions = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/workspaces/${wsId}/executions`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const res = await axios.get(
+          `${API_BASE}/workspaces/${wsId}/executions`,
+          {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          },
+        );
         if (isMounted && Array.isArray(res.data?.executions)) {
           setExecutionHistoryList(res.data.executions);
         }
       } catch (err) {
-        console.warn('Workspace execution history fetch notice:', err.message);
+        if (err.response?.status === 404) {
+          workspaceNotFoundRef.current = true;
+        }
+        console.warn("Workspace execution history fetch notice:", err.message);
       }
     };
     fetchExecutions();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [wsId, token]);
 
   const handleRunActiveCode = async () => {
     if (!activeFile || isExecuting) return;
 
     // Folders can't be run
-    const activeFileObj = customFiles.find(f => f.id === activeFile);
+    const activeFileObj = customFiles.find((f) => f.id === activeFile);
     if (activeFileObj?.isFolder) {
-      showToast('📁 Cannot run a folder — select a file first.', 'warning');
+      showToast("📁 Cannot run a folder — select a file first.", "warning");
       return;
     }
 
@@ -1747,8 +2403,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (!detectedLanguage) {
       const extension = getFileExtension(activeFile);
       showToast(
-        extension ? `Unsupported programming language: ${extension}` : 'Unable to determine programming language.',
-        'warning'
+        extension
+          ? `Unsupported programming language: ${extension}`
+          : "Unable to determine programming language.",
+        "warning",
       );
       return;
     }
@@ -1756,54 +2414,68 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const codeToRun = getActiveFileContent();
     const language = getMonacoLanguage(activeFile);
 
-    if (!codeToRun || codeToRun.trim() === '') {
-      showToast(`📄 ${activeFile} is empty — nothing to run.`, 'warning');
+    if (!codeToRun || codeToRun.trim() === "") {
+      showToast(`📄 ${activeFile} is empty — nothing to run.`, "warning");
       return;
     }
 
     setIsExecuting(true);
-    setExecutionStatus('running');
+    setExecutionStatus("running");
     setIsOutputPanelOpen(true);
     setIsOutputPanelMinimized(false);
-    setOutputTab('output');
+    setOutputTab("output");
     setExecutionResult({
-      stdout: '',
-      stderr: '',
-      compileOutput: '',
+      stdout: "",
+      stderr: "",
+      compileOutput: "",
       exitCode: null,
       executionTimeMs: null,
       filename: activeFile,
       language,
       timestamp: new Date().toISOString(),
-      stdin: customInput
+      stdin: customInput,
     });
 
     // Intercept Code Run Telemetry Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.RUN_CODE, `Executed ${activeFile} (${getLanguageInfo(activeFile).name})`, {
-      fileId: activeFile,
-      totalLines: codeToRun.split('\n').length
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.RUN_CODE,
+      `Executed ${activeFile} (${getLanguageInfo(activeFile).name})`,
+      {
+        fileId: activeFile,
+        totalLines: codeToRun.split("\n").length,
+      },
+    );
 
     try {
-      const response = await axios.post(`${API_BASE}/execute`, {
-        fileId: activeFile,
-        sourceCode: codeToRun,
-        language,
-        runtime: detectedLanguage.runtime,
-        code: codeToRun,
-        filename: activeFile,
-        stdin: customInput,
-        workspaceId: wsId !== 'demo-workspace' ? wsId : null
-      }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
+      const response = await axios.post(
+        `${API_BASE}/execute`,
+        {
+          fileId: activeFile,
+          sourceCode: codeToRun,
+          language,
+          runtime: detectedLanguage.runtime,
+          code: codeToRun,
+          filename: activeFile,
+          stdin: customInput,
+          workspaceId: wsId !== "demo-workspace" ? wsId : null,
+        },
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
 
       const data = response.data;
-      const status = data.status || (data.exitCode === 0 ? 'success' : (data.isCompileError ? 'compile_error' : 'error'));
+      const status =
+        data.status ||
+        (data.exitCode === 0
+          ? "success"
+          : data.isCompileError
+            ? "compile_error"
+            : "error");
       const exitCode = data.exitCode ?? 0;
-      const stdout = data.stdout || '';
-      const stderr = data.stderr || '';
-      const compileOutput = data.compileOutput || '';
+      const stdout = data.stdout || "";
+      const stderr = data.stderr || "";
+      const compileOutput = data.compileOutput || "";
 
       setExecutionStatus(status);
       const resObj = {
@@ -1816,7 +2488,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         language,
         timestamp: data.timestamp || new Date().toISOString(),
         isTimeout: data.isTimeout || false,
-        stdin: customInput
+        stdin: customInput,
       };
       setExecutionResult(resObj);
 
@@ -1833,52 +2505,73 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         status,
         exitCode,
         executionTimeMs: data.executionTimeMs ?? null,
-        timestamp: data.timestamp || new Date().toISOString()
+        timestamp: data.timestamp || new Date().toISOString(),
       };
-      setExecutionHistoryList(prev => [newHistoryLog, ...prev]);
+      setExecutionHistoryList((prev) => [newHistoryLog, ...prev]);
 
-      if (status === 'success') {
-        const preview = stdout ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? '…' : ''}` : '';
-        showToast(`✅ ${activeFile} ran successfully (exit 0)${preview}`, 'success', 4000);
-      } else if (status === 'compile_error') {
-        showToast(`⚠️ ${activeFile} compilation failed`, 'warning', 6000);
-      } else if (status === 'timeout') {
-        showToast(`⏱️ ${activeFile} execution timed out`, 'warning', 6000);
+      if (status === "success") {
+        const preview = stdout
+          ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? "…" : ""}`
+          : "";
+        showToast(
+          `✅ ${activeFile} ran successfully (exit 0)${preview}`,
+          "success",
+          4000,
+        );
+      } else if (status === "compile_error") {
+        showToast(`⚠️ ${activeFile} compilation failed`, "warning", 6000);
+      } else if (status === "timeout") {
+        showToast(`⏱️ ${activeFile} execution timed out`, "warning", 6000);
       } else {
         const errPreview = stderr
-          ? stderr.split('\n')[0].substring(0, 100)
-          : (stdout ? stdout.split('\n')[0].substring(0, 100) : `Exit code ${exitCode}`);
-        showToast(`⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`, 'error', 6000);
+          ? stderr.split("\n")[0].substring(0, 100)
+          : stdout
+            ? stdout.split("\n")[0].substring(0, 100)
+            : `Exit code ${exitCode}`;
+        showToast(
+          `⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`,
+          "error",
+          6000,
+        );
       }
 
-      recordHistoryLog('execution', `Code Executed: ${activeFile}`, `Ran ${activeFile} (${language}) — status: ${status}, exit code ${exitCode}.`);
-
+      recordHistoryLog(
+        "execution",
+        `Code Executed: ${activeFile}`,
+        `Ran ${activeFile} (${language}) — status: ${status}, exit code ${exitCode}.`,
+      );
     } catch (err) {
-      console.error('Execution Failed:', err);
+      console.error("Execution Failed:", err);
 
-      let errMsg = '';
+      let errMsg = "";
       if (!err.response) {
-        errMsg = 'Cannot reach execution server. Make sure the backend is running on port 5000.';
+        errMsg =
+          "Cannot reach execution server. Make sure the backend is running on port 5000.";
       } else if (err.response?.status === 400) {
-        errMsg = err.response.data?.message || 'Invalid code or unsupported language.';
+        errMsg =
+          err.response.data?.message || "Invalid code or unsupported language.";
       } else if (err.response?.status === 503) {
-        errMsg = 'Execution service is unavailable. Try again in a moment.';
+        errMsg = "Execution service is unavailable. Try again in a moment.";
       } else {
-        errMsg = err.response?.data?.message || err.response?.data?.error || err.message || 'Unknown execution error.';
+        errMsg =
+          err.response?.data?.message ||
+          err.response?.data?.error ||
+          err.message ||
+          "Unknown execution error.";
       }
 
-      setExecutionStatus('error');
+      setExecutionStatus("error");
       setExecutionResult({
-        stdout: '',
+        stdout: "",
         stderr: errMsg,
-        compileOutput: '',
+        compileOutput: "",
         exitCode: 1,
         executionTimeMs: null,
         filename: activeFile,
         language,
         timestamp: new Date().toISOString(),
         isSystemError: true,
-        stdin: customInput
+        stdin: customInput,
       });
 
       const errHistoryLog = {
@@ -1887,24 +2580,27 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         language,
         code: codeToRun,
         stdin: customInput,
-        stdout: '',
+        stdout: "",
         stderr: errMsg,
-        compileOutput: '',
-        status: 'error',
+        compileOutput: "",
+        status: "error",
         exitCode: 1,
         executionTimeMs: null,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       };
-      setExecutionHistoryList(prev => [errHistoryLog, ...prev]);
+      setExecutionHistoryList((prev) => [errHistoryLog, ...prev]);
 
-      showToast(`✗ ${errMsg}`, 'error', 7000);
-      recordHistoryLog('execution', `Execution Error: ${activeFile}`, `Failed to run ${activeFile}: ${errMsg}`);
+      showToast(`✗ ${errMsg}`, "error", 7000);
+      recordHistoryLog(
+        "execution",
+        `Execution Error: ${activeFile}`,
+        `Failed to run ${activeFile}: ${errMsg}`,
+      );
     } finally {
       setIsExecuting(false);
       fetchWorkspaceTelemetry();
     }
   };
-
 
   // Log real-time workspace session enter & history event once per session entrance
   const sessionLoggedRef = useRef(false);
@@ -1916,46 +2612,64 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     const startSessionInDB = async () => {
       try {
         const savedKey = `ct-workspace-history-${wsId}`;
-        const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
-        const recentStart = existing.find(l => (l.type === 'session' || l.title === 'Session Started') && (Date.now() - new Date(l.timestamp).getTime()) < 120000);
+        const existing = JSON.parse(localStorage.getItem(savedKey) || "[]");
+        const recentStart = existing.find(
+          (l) =>
+            (l.type === "session" || l.title === "Session Started") &&
+            Date.now() - new Date(l.timestamp).getTime() < 120000,
+        );
 
         if (!recentStart) {
           const startLog = {
             id: `h-${Date.now()}`,
-            type: 'session',
-            title: 'Session Started',
-            details: `Developer ${currentUser.name || 'Maryam Shaikh'} connected to live workspace session.`,
-            user: currentUser.name || 'Maryam Shaikh',
-            timestamp: new Date().toISOString()
+            type: "session",
+            title: "Session Started",
+            details: `Developer ${currentUser.name || "Maryam Shaikh"} connected to live workspace session.`,
+            user: currentUser.name || "Maryam Shaikh",
+            timestamp: new Date().toISOString(),
           };
-          localStorage.setItem(savedKey, JSON.stringify([startLog, ...existing]));
+          localStorage.setItem(
+            savedKey,
+            JSON.stringify([startLog, ...existing]),
+          );
 
-          if (token && wsId !== 'demo-workspace') {
-            await axios.post(`${API_BASE}/workspaces/${wsId}/session`, {
-              role: 'editor',
-              currentFileId: activeFile
-            }, {
-              headers: { Authorization: `Bearer ${token}` }
-            }).catch(() => { });
+          if (
+            token &&
+            wsId !== "demo-workspace" &&
+            !workspaceNotFoundRef.current
+          ) {
+            await axios
+              .post(
+                `${API_BASE}/workspaces/${wsId}/session`,
+                {
+                  role: "editor",
+                  currentFileId: activeFile,
+                },
+                {
+                  headers: { Authorization: `Bearer ${token}` },
+                },
+              )
+              .catch(() => {});
 
-            await axios.post(`${API_BASE}/workspaces/${wsId}/history`, startLog, {
-              headers: { Authorization: `Bearer ${token}` }
-            }).catch(() => { });
+            await axios
+              .post(`${API_BASE}/workspaces/${wsId}/history`, startLog, {
+                headers: { Authorization: `Bearer ${token}` },
+              })
+              .catch(() => {});
           }
         }
       } catch (err) {
-        console.warn('Session start logging notice:', err.message);
+        console.warn("Session start logging notice:", err.message);
       }
     };
 
     startSessionInDB();
   }, [wsId]);
 
-
   // Collapsible Members Panel State
   const [isMembersCollapsed, setIsMembersCollapsed] = useState(() => {
     try {
-      return localStorage.getItem('ct-workspace-members-collapsed') === 'true';
+      return localStorage.getItem("ct-workspace-members-collapsed") === "true";
     } catch (e) {
       return false;
     }
@@ -1963,8 +2677,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('ct-workspace-members-collapsed', isMembersCollapsed.toString());
-    } catch (e) { }
+      localStorage.setItem(
+        "ct-workspace-members-collapsed",
+        isMembersCollapsed.toString(),
+      );
+    } catch (e) {}
   }, [isMembersCollapsed]);
 
   // Helper to record activity history events dynamically in DB & LocalStorage
@@ -1974,32 +2691,35 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       type,
       title,
       details,
-      user: currentUser.name || 'Maryam Shaikh',
-      timestamp: new Date().toISOString()
+      user: currentUser.name || "Maryam Shaikh",
+      timestamp: new Date().toISOString(),
     };
 
     try {
       const savedKey = `ct-workspace-history-${wsId}`;
-      const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
+      const existing = JSON.parse(localStorage.getItem(savedKey) || "[]");
       localStorage.setItem(savedKey, JSON.stringify([newLog, ...existing]));
-    } catch (e) { }
+    } catch (e) {}
 
-    if (token && wsId && wsId !== 'demo-workspace') {
+    if (token && wsId && wsId !== "demo-workspace") {
       try {
-        await axios.post(`${API_BASE}/workspaces/${wsId}/history`, {
-          type,
-          title,
-          details,
-          user: currentUser.name || 'Maryam Shaikh'
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        await axios.post(
+          `${API_BASE}/workspaces/${wsId}/history`,
+          {
+            type,
+            title,
+            details,
+            user: currentUser.name || "Maryam Shaikh",
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
       } catch (err) {
-        console.warn('History log DB post error:', err.message);
+        console.warn("History log DB post error:", err.message);
       }
     }
   };
-
 
   // Persistent Session Start Timestamp
   const sessionStartRef = useRef(null);
@@ -2010,7 +2730,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         sessionStartRef.current = parseInt(saved, 10);
       } else {
         const now = Date.now();
-        localStorage.setItem(`ct-workspace-session-start-${wsId}`, now.toString());
+        localStorage.setItem(
+          `ct-workspace-session-start-${wsId}`,
+          now.toString(),
+        );
         sessionStartRef.current = now;
       }
     } catch (e) {
@@ -2020,7 +2743,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   const [sessionSeconds, setSessionSeconds] = useState(() => {
     try {
-      return Math.max(0, Math.floor((Date.now() - sessionStartRef.current) / 1000));
+      return Math.max(
+        0,
+        Math.floor((Date.now() - sessionStartRef.current) / 1000),
+      );
     } catch (e) {
       return 0;
     }
@@ -2028,8 +2754,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   const [isSessionRunning, setIsSessionRunning] = useState(() => {
     try {
-      const saved = localStorage.getItem(`ct-workspace-session-running-${wsId}`);
-      return saved !== 'false';
+      const saved = localStorage.getItem(
+        `ct-workspace-session-running-${wsId}`,
+      );
+      return saved !== "false";
     } catch (e) {
       return true;
     }
@@ -2037,59 +2765,67 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem(`ct-workspace-session-running-${wsId}`, isSessionRunning.toString());
-    } catch (e) { }
+      localStorage.setItem(
+        `ct-workspace-session-running-${wsId}`,
+        isSessionRunning.toString(),
+      );
+    } catch (e) {}
   }, [isSessionRunning, wsId]);
 
-  const [autoSaveStatus, setAutoSaveStatus] = useState('Auto-saved just now');
+  const [autoSaveStatus, setAutoSaveStatus] = useState("Auto-saved just now");
   const [copiedCode, setCopiedCode] = useState(false);
 
   // CT-164 & CT-167: Telemetry & Active Duration State
-  const [dossierContributors, setDossierContributors] = useState(INITIAL_TEAM_CONTRIBUTIONS);
-  const [dossierSummary, setDossierSummary] = useState(TELEMETRY_SUMMARY_CONFIG);
+  const [dossierContributors, setDossierContributors] = useState([]);
+  const [dossierSummary, setDossierSummary] = useState({
+    ...TELEMETRY_SUMMARY_CONFIG,
+    sessionId: `#ws-${String(wsId).slice(-6)}`,
+  });
   const [telemetryEvents, setTelemetryEvents] = useState([]);
-  const [showTelemetryDrawer, setShowTelemetryDrawer] = useState(false);
-  const [telemetryDrawerTab, setTelemetryDrawerTab] = useState('contributors'); // 'contributors' | 'stream'
+  const [showTelemetryDrawer, setShowTelemetryDrawer] = useState(() => {
+    try {
+      return localStorage.getItem("ct-telemetry-drawer-open") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "ct-telemetry-drawer-open",
+        showTelemetryDrawer ? "true" : "false",
+      );
+    } catch {}
+  }, [showTelemetryDrawer]);
+  const [telemetryDrawerTab, setTelemetryDrawerTab] = useState(() => {
+    try {
+      return localStorage.getItem("ct-telemetry-drawer-tab") || "contributors";
+    } catch {
+      return "contributors";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("ct-telemetry-drawer-tab", telemetryDrawerTab);
+    } catch {}
+  }, [telemetryDrawerTab]);
   const [activeContributionSecs, setActiveContributionSecs] = useState(0);
   const [isUserActive, setIsUserActive] = useState(true);
   const trackerRef = useRef(null);
 
+  useEffect(() => {
+    setDossierContributors([]);
+    setDossierSummary({
+      ...TELEMETRY_SUMMARY_CONFIG,
+      sessionId: `#ws-${String(wsId).slice(-6)}`,
+      totalLines: "0 lines",
+      currentSequence: null,
+    });
+  }, [wsId]);
+
   // Workspace Session Management State
   const [mySession, setMySession] = useState(null);
-  const [activeSessions, setActiveSessions] = useState([
-    {
-      _id: 's1',
-      userId: { _id: currentUser.id || 'u1', name: currentUser.name || 'Maryam Shaikh', role: 'admin' },
-      status: 'online',
-      currentFileId: 'index.js',
-      role: 'admin',
-      lastActiveAt: new Date()
-    },
-    {
-      _id: 's2',
-      userId: { _id: 'u2', name: 'Alex Johnson', role: 'editor' },
-      status: 'online',
-      currentFileId: 'server.js',
-      role: 'editor',
-      lastActiveAt: new Date()
-    },
-    {
-      _id: 's3',
-      userId: { _id: 'u3', name: 'Sarah Chen', role: 'editor' },
-      status: 'away',
-      currentFileId: 'styles.css',
-      role: 'editor',
-      lastActiveAt: new Date(Date.now() - 6 * 60 * 1000)
-    },
-    {
-      _id: 's4',
-      userId: { _id: 'u4', name: 'Meet Patel', role: 'viewer' },
-      status: 'offline',
-      currentFileId: null,
-      role: 'viewer',
-      leftAt: new Date(Date.now() - 30 * 60 * 1000)
-    }
-  ]);
+  const [activeSessions, setActiveSessions] = useState([]);
   const socketRef = useRef(null);
 
   // 1. Live Session Duration Timer (Accurate timestamp delta calculation)
@@ -2101,7 +2837,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setSessionSeconds(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
 
     const timer = setInterval(() => {
-      setSessionSeconds(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
+      setSessionSeconds(
+        Math.max(0, Math.floor((Date.now() - startTime) / 1000)),
+      );
     }, 1000);
     return () => clearInterval(timer);
   }, [isSessionRunning, wsId]);
@@ -2120,7 +2858,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       },
       onStateChange: ({ isActive }) => {
         setIsUserActive(isActive);
-      }
+      },
     });
 
     trackerRef.current = tracker;
@@ -2132,44 +2870,50 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   }, [wsId]);
 
   // Intercept & Broadcast Workspace Telemetry Action (CT-164 + CT-167)
-  const interceptTelemetry = useCallback((actionType, details = '', metrics = {}) => {
-    if (trackerRef.current) {
-      trackerRef.current.recordActivity();
-    }
+  const interceptTelemetry = useCallback(
+    (actionType, details = "", metrics = {}) => {
+      if (trackerRef.current) {
+        trackerRef.current.recordActivity();
+      }
 
-    const envelope = createTelemetryEnvelope({
-      actionType,
-      workspaceId: wsId,
-      user: {
-        id: currentUserId,
-        name: currentUser.name || 'Maryam Shaikh',
-        role: workspaceRole,
-        color: myPeerColor
-      },
-      fileId: activeFileRef.current,
-      details,
-      metrics
-    });
+      const envelope = createTelemetryEnvelope({
+        actionType,
+        workspaceId: wsId,
+        user: {
+          id: currentUserId,
+          name: currentUser.name || "Maryam Shaikh",
+          role: workspaceRole,
+          color: myPeerColor,
+        },
+        fileId: activeFileRef.current,
+        details,
+        metrics,
+      });
 
-    setTelemetryEvents(prev => [envelope, ...prev.slice(0, 24)]);
+      setTelemetryEvents((prev) => [envelope, ...prev.slice(0, 24)]);
 
-    if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit('telemetry:action', envelope);
-    }
+      if (socketRef.current && socketRef.current.connected) {
+        socketRef.current.emit("telemetry:action", envelope);
+      }
 
-    return envelope;
-  }, [wsId, currentUserId, currentUser, workspaceRole, myPeerColor]);
+      return envelope;
+    },
+    [wsId, currentUserId, currentUser, workspaceRole, myPeerColor],
+  );
 
   const formatSessionTime = (totalSec) => {
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
     const secs = totalSec % 60;
-    const pad = (n) => String(n).padStart(2, '0');
-    return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+    const pad = (n) => String(n).padStart(2, "0");
+    return hrs > 0
+      ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}`
+      : `${pad(mins)}:${pad(secs)}`;
   };
 
   // 2. Room Code Copying
-  const wsCode = activeWorkspace?.roomCode || activeWorkspace?.inviteCode || 'CT-EDMAV8';
+  const wsCode =
+    activeWorkspace?.roomCode || activeWorkspace?.inviteCode || "CT-EDMAV8";
   const handleCopyCode = () => {
     navigator.clipboard.writeText(wsCode);
     setCopiedCode(true);
@@ -2178,11 +2922,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
   // Reconnection State Sync Handler (CT-89)
   const syncWorkspaceState = async () => {
-    if (!wsId || wsId === 'demo-workspace' || !token) return;
+    if (!wsId || wsId === "demo-workspace" || !token) return;
     try {
       // 1. Fetch latest workspace details and files from backend
       const res = await axios.get(`${API_BASE}/workspaces/${wsId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.data?.workspace) {
         const latestWs = res.data.workspace;
@@ -2190,9 +2934,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         currentWorkspaceRef.current = latestWs;
 
         if (Array.isArray(latestWs.files) && latestWs.files.length > 0) {
-          setFilesContent(prev => {
+          setFilesContent((prev) => {
             const next = { ...prev };
-            latestWs.files.forEach(f => {
+            latestWs.files.forEach((f) => {
               const fname = f.name || f.id;
               if (fname && f.content !== undefined) {
                 // If this file is currently open in Monaco and model content differs, sync smoothly
@@ -2204,11 +2948,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     const pos = editor.getPosition();
                     isRemoteUpdateRef.current = true;
                     try {
-                      editor.executeEdits('reconnect-sync', [{
-                        range: model.getFullModelRange(),
-                        text: f.content,
-                        forceMoveMarkers: true
-                      }]);
+                      editor.executeEdits("reconnect-sync", [
+                        {
+                          range: model.getFullModelRange(),
+                          text: f.content,
+                          forceMoveMarkers: true,
+                        },
+                      ]);
                       if (sel && !sel.isEmpty()) editor.setSelection(sel);
                       else if (pos) editor.setPosition(pos);
                     } finally {
@@ -2217,8 +2963,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   }
                 }
                 next[fname] = f.content;
-                if (typeof f.version === 'number') {
-                  fileVersionsRef.current[fname] = Math.max(fileVersionsRef.current[fname] || 0, f.version);
+                if (typeof f.version === "number") {
+                  fileVersionsRef.current[fname] = Math.max(
+                    fileVersionsRef.current[fname] || 0,
+                    f.version,
+                  );
                 }
               }
             });
@@ -2229,14 +2978,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
 
       // 2. Fetch latest active sessions
-      const sessionRes = await axios.get(`${API_BASE}/workspaces/${wsId}/session/all`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const sessionRes = await axios.get(
+        `${API_BASE}/workspaces/${wsId}/session/all`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
       if (sessionRes.data?.sessions && sessionRes.data.sessions.length > 0) {
         setActiveSessions(sessionRes.data.sessions);
       }
     } catch (syncErr) {
-      console.warn('[Sync] State sync after reconnect failed:', syncErr.message);
+      console.warn(
+        "[Sync] State sync after reconnect failed:",
+        syncErr.message,
+      );
     }
   };
 
@@ -2244,10 +2999,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   useEffect(() => {
     const handleOffline = () => {
       wasDisconnectedRef.current = true;
-      setConnectionStatus('disconnected');
+      setConnectionStatus("disconnected");
     };
     const handleOnline = () => {
-      setConnectionStatus('reconnecting');
+      setConnectionStatus("reconnecting");
       if (socketRef.current) {
         if (!socketRef.current.connected) {
           socketRef.current.connect();
@@ -2257,46 +3012,59 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       }
     };
 
-    window.addEventListener('offline', handleOffline);
-    window.addEventListener('online', handleOnline);
+    window.addEventListener("offline", handleOffline);
+    window.addEventListener("online", handleOnline);
     return () => {
-      window.removeEventListener('offline', handleOffline);
-      window.removeEventListener('online', handleOnline);
+      window.removeEventListener("offline", handleOffline);
+      window.removeEventListener("online", handleOnline);
     };
   }, [wsId]);
 
   // 3. Workspace Session Lifecycle (REST + Socket.IO Presence Engine)
   useEffect(() => {
-    if (!token) return;
+    if (
+      !token ||
+      !wsId ||
+      wsId === "demo-workspace" ||
+      workspaceNotFoundRef.current
+    )
+      return;
 
     // A. Start / Enter Session via REST API
     const enterSession = async () => {
       try {
-        const res = await axios.post(`${API_BASE}/workspaces/${wsId}/session`, {
-          role: activeWorkspace?.role || 'editor',
-          currentFileId: activeFile
-        }, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await axios.post(
+          `${API_BASE}/workspaces/${wsId}/session`,
+          {
+            role: activeWorkspace?.role || "editor",
+            currentFileId: activeFile,
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         if (res.data?.session) {
           setMySession(res.data.session);
         }
       } catch (err) {
-        console.warn('Session start via REST failed:', err.message);
+        console.warn("Session start via REST failed:", err.message);
       }
     };
 
     // B. Fetch All Active Workspace Sessions via REST
     const fetchWorkspaceSessions = async () => {
       try {
-        const res = await axios.get(`${API_BASE}/workspaces/${wsId}/session/all`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        const res = await axios.get(
+          `${API_BASE}/workspaces/${wsId}/session/all`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
         if (res.data?.sessions && res.data.sessions.length > 0) {
           setActiveSessions(res.data.sessions);
         }
       } catch (err) {
-        console.warn('Fetch workspace sessions failed:', err.message);
+        console.warn("Fetch workspace sessions failed:", err.message);
       }
     };
 
@@ -2306,111 +3074,121 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     // C. Initialize Socket.IO Real-Time Presence
     try {
       const socket = io(BACKEND_URL, {
-        transports: ['websocket', 'polling'],
-        reconnection: true
+        transports: ["websocket", "polling"],
+        reconnection: true,
       });
       socketRef.current = socket;
 
-      socket.on('connect', () => {
-        console.log('[Socket.IO] Connected to presence server:', socket.id);
-        socket.emit('joinWorkspace', {
+      socket.on("connect", () => {
+        console.log("[Socket.IO] Connected to presence server:", socket.id);
+        socket.emit("joinWorkspace", {
           workspaceId: wsId,
           user: currentUser,
           currentFileId: activeFileRef.current,
-          role: workspaceRole
+          role: workspaceRole,
         });
 
         // Immediately request initial telemetry dossier on connect (CT-167)
-        socket.emit('telemetry:request_dossier', { workspaceId: wsId });
+        socket.emit("telemetry:request_dossier", { workspaceId: wsId });
 
         if (wasDisconnectedRef.current) {
-          setConnectionStatus('reconnected');
+          setConnectionStatus("reconnected");
           syncWorkspaceState();
 
-          if (reconnectToastTimerRef.current) clearTimeout(reconnectToastTimerRef.current);
+          if (reconnectToastTimerRef.current)
+            clearTimeout(reconnectToastTimerRef.current);
           reconnectToastTimerRef.current = setTimeout(() => {
-            setConnectionStatus('connected');
+            setConnectionStatus("connected");
             wasDisconnectedRef.current = false;
           }, 3000);
         } else {
-          setConnectionStatus('connected');
+          setConnectionStatus("connected");
         }
       });
 
-      socket.on('disconnect', (reason) => {
-        console.warn('[Socket.IO] Disconnected:', reason);
+      socket.on("disconnect", (reason) => {
+        console.warn("[Socket.IO] Disconnected:", reason);
         wasDisconnectedRef.current = true;
-        if (reason !== 'io client disconnect') {
-          setConnectionStatus('reconnecting');
+        if (reason !== "io client disconnect") {
+          setConnectionStatus("reconnecting");
         }
       });
 
-      socket.on('connect_error', () => {
+      socket.on("connect_error", () => {
         wasDisconnectedRef.current = true;
-        setConnectionStatus('reconnecting');
+        setConnectionStatus("reconnecting");
       });
 
-      socket.io.on('reconnect_attempt', () => {
+      socket.io.on("reconnect_attempt", () => {
         wasDisconnectedRef.current = true;
-        setConnectionStatus('reconnecting');
+        setConnectionStatus("reconnecting");
       });
 
-      socket.io.on('reconnect_failed', () => {
+      socket.io.on("reconnect_failed", () => {
         wasDisconnectedRef.current = true;
-        setConnectionStatus('disconnected');
+        setConnectionStatus("disconnected");
       });
 
       // CT-167: Socket Telemetry Dossier Sync & Live Action Stream
-      socket.on('telemetry:dossier_sync', (data) => {
+      socket.on("telemetry:dossier_sync", (data) => {
         if (data?.contributors && Array.isArray(data.contributors)) {
           setDossierContributors(data.contributors);
         }
         if (data?.summary) {
-          setDossierSummary(prev => ({ ...prev, ...data.summary }));
+          setDossierSummary((prev) => ({ ...prev, ...data.summary }));
         }
       });
 
-      socket.on('telemetry:stream', (event) => {
+      socket.on("telemetry:stream", (event) => {
         if (!event) return;
-        setTelemetryEvents(prev => [event, ...prev.slice(0, 24)]);
+        setTelemetryEvents((prev) => [event, ...prev.slice(0, 24)]);
       });
 
-      socket.on('code_change_error', ({ message }) => {
-        console.warn('[Socket Guard Alert]:', message);
-        setAutoSaveStatus(message || 'Viewing mode: Editing disabled');
+      socket.on("code_change_error", ({ message }) => {
+        console.warn("[Socket Guard Alert]:", message);
+        setAutoSaveStatus(message || "Viewing mode: Editing disabled");
       });
 
-      socket.on('code_conflict', ({ fileId, serverVersion, message }) => {
-        console.warn('[Socket Conflict]:', message, 'for file', fileId, 'server version:', serverVersion);
-        if (typeof serverVersion === 'number') {
+      socket.on("code_conflict", ({ fileId, serverVersion, message }) => {
+        console.warn(
+          "[Socket Conflict]:",
+          message,
+          "for file",
+          fileId,
+          "server version:",
+          serverVersion,
+        );
+        if (typeof serverVersion === "number") {
           fileVersionsRef.current[fileId] = serverVersion;
-          setFileVersions(prev => ({ ...prev, [fileId]: serverVersion }));
+          setFileVersions((prev) => ({ ...prev, [fileId]: serverVersion }));
         }
       });
 
-      socket.on('presenceUpdate', ({ sessions }) => {
+      socket.on("presenceUpdate", ({ sessions }) => {
         if (sessions && sessions.length > 0) {
           setActiveSessions(sessions);
         }
       });
 
-      socket.on('fileOpened', ({ userId, fileId }) => {
-        setActiveSessions(prev => prev.map(s => {
-          const sUid = s.userId?._id || s.userId?.id || s.userId;
-          if (sUid === userId) {
-            return { ...s, currentFileId: fileId, lastActiveAt: new Date() };
-          }
-          return s;
-        }));
+      socket.on("fileOpened", ({ userId, fileId }) => {
+        setActiveSessions((prev) =>
+          prev.map((s) => {
+            const sUid = s.userId?._id || s.userId?.id || s.userId;
+            if (sUid === userId) {
+              return { ...s, currentFileId: fileId, lastActiveAt: new Date() };
+            }
+            return s;
+          }),
+        );
 
         if (userId && peerCursorsRef.current[userId]) {
-          setPeerCursors(prev => {
+          setPeerCursors((prev) => {
             const next = {
               ...prev,
               [userId]: {
                 ...prev[userId],
-                fileId
-              }
+                fileId,
+              },
             };
             peerCursorsRef.current = next;
             return next;
@@ -2424,26 +3202,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         const peerUid = data.userId || data.user?.id || data.user?._id;
         if (!peerUid || peerUid === currentUserId) return;
 
-        setPeerCursors(prev => {
+        setPeerCursors((prev) => {
           const next = {
             ...prev,
             [peerUid]: {
               ...data,
               userId: peerUid,
-              lastUpdatedAt: Date.now()
-            }
+              lastUpdatedAt: Date.now(),
+            },
           };
           peerCursorsRef.current = next;
           return next;
         });
       };
 
-      socket.on('cursor_position_updated', handleRemoteCursor);
-      socket.on('cursor_updated', handleRemoteCursor);
+      socket.on("cursor_position_updated", handleRemoteCursor);
+      socket.on("cursor_updated", handleRemoteCursor);
 
-      socket.on('userLeft', ({ userId }) => {
+      socket.on("userLeft", ({ userId }) => {
         if (!userId) return;
-        setPeerCursors(prev => {
+        setPeerCursors((prev) => {
           const next = { ...prev };
           delete next[userId];
           peerCursorsRef.current = next;
@@ -2452,37 +3230,57 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
 
       // Real-time Collaborative Code Synchronization with Version Counter (CT-85, CT-89)
-      socket.on('code_updated', ({ workspaceId, fileId, content, version }) => {
+      socket.on("code_updated", ({ workspaceId, fileId, content, version }) => {
         if (workspaceId && workspaceId !== wsId) return;
         if (!fileId) return;
 
         // Version counter check to avoid packet conflicts (CT-89)
         const currentVer = fileVersionsRef.current[fileId] || 0;
-        if (typeof version === 'number') {
+        if (typeof version === "number") {
           if (version < currentVer) {
-            console.warn(`[Version Control] Dropping stale packet for ${fileId}. Incoming (${version}) < local (${currentVer})`);
+            console.warn(
+              `[Version Control] Dropping stale packet for ${fileId}. Incoming (${version}) < local (${currentVer})`,
+            );
             return;
           }
           fileVersionsRef.current[fileId] = version;
-          setFileVersions(prev => ({ ...prev, [fileId]: version }));
+          setFileVersions((prev) => ({ ...prev, [fileId]: version }));
         }
 
         // 1. Update in-memory file content map
-        setFilesContent(prev => ({
+        setFilesContent((prev) => ({
           ...prev,
-          [fileId]: content
+          [fileId]: content,
         }));
 
         // 2. Keep workspace file list in sync
-        setCurrentWorkspace(prev => {
+        setCurrentWorkspace((prev) => {
           if (!prev) return prev;
-          const baseFiles = (prev.files && prev.files.length > 0) ? prev.files : DEFAULT_WORKSPACE_FILES;
-          const fileIndex = baseFiles.findIndex(f => (f.name || f.id) === fileId);
+          const baseFiles =
+            prev.files && prev.files.length > 0
+              ? prev.files
+              : DEFAULT_WORKSPACE_FILES;
+          const fileIndex = baseFiles.findIndex(
+            (f) => (f.name || f.id) === fileId,
+          );
           let updatedFiles;
           if (fileIndex >= 0) {
-            updatedFiles = baseFiles.map((f, i) => i === fileIndex ? { ...f, content, version: version || f.version } : f);
+            updatedFiles = baseFiles.map((f, i) =>
+              i === fileIndex
+                ? { ...f, content, version: version || f.version }
+                : f,
+            );
           } else {
-            updatedFiles = [...baseFiles, { id: fileId, name: fileId, language: getMonacoLanguage(fileId), content, version: version || 1 }];
+            updatedFiles = [
+              ...baseFiles,
+              {
+                id: fileId,
+                name: fileId,
+                language: getMonacoLanguage(fileId),
+                content,
+                version: version || 1,
+              },
+            ];
           }
           return { ...prev, files: updatedFiles };
         });
@@ -2501,40 +3299,60 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             isRemoteUpdateRef.current = true;
             try {
               // Apply remote edits without disposing model or recreating view
-              editor.executeEdits('remote-sync', [{
-                range: model.getFullModelRange(),
-                text: content,
-                forceMoveMarkers: true
-              }]);
+              editor.executeEdits("remote-sync", [
+                {
+                  range: model.getFullModelRange(),
+                  text: content,
+                  forceMoveMarkers: true,
+                },
+              ]);
 
               // Restore cursor and selection, safely clamped to valid boundaries in updated document
               if (currentSelection && !currentSelection.isEmpty()) {
                 const lineCount = model.getLineCount();
-                const startLine = Math.min(Math.max(1, currentSelection.selectionStartLineNumber || 1), lineCount);
-                const startCol = Math.min(Math.max(1, currentSelection.selectionStartColumn || 1), model.getLineMaxColumn(startLine));
-                const endLine = Math.min(Math.max(1, currentSelection.positionLineNumber || 1), lineCount);
-                const endCol = Math.min(Math.max(1, currentSelection.positionColumn || 1), model.getLineMaxColumn(endLine));
+                const startLine = Math.min(
+                  Math.max(1, currentSelection.selectionStartLineNumber || 1),
+                  lineCount,
+                );
+                const startCol = Math.min(
+                  Math.max(1, currentSelection.selectionStartColumn || 1),
+                  model.getLineMaxColumn(startLine),
+                );
+                const endLine = Math.min(
+                  Math.max(1, currentSelection.positionLineNumber || 1),
+                  lineCount,
+                );
+                const endCol = Math.min(
+                  Math.max(1, currentSelection.positionColumn || 1),
+                  model.getLineMaxColumn(endLine),
+                );
 
                 editor.setSelection({
                   selectionStartLineNumber: startLine,
                   selectionStartColumn: startCol,
                   positionLineNumber: endLine,
-                  positionColumn: endCol
+                  positionColumn: endCol,
                 });
               } else if (currentPosition) {
                 const lineCount = model.getLineCount();
-                const validLine = Math.min(Math.max(1, currentPosition.lineNumber || 1), lineCount);
+                const validLine = Math.min(
+                  Math.max(1, currentPosition.lineNumber || 1),
+                  lineCount,
+                );
                 const maxCol = model.getLineMaxColumn(validLine);
-                const validCol = Math.min(Math.max(1, currentPosition.column || 1), maxCol);
+                const validCol = Math.min(
+                  Math.max(1, currentPosition.column || 1),
+                  maxCol,
+                );
 
                 editor.setPosition({ lineNumber: validLine, column: validCol });
               }
 
               // Preserve scroll position so viewport doesn't jump
-              if (typeof scrollTop === 'number') {
+              if (typeof scrollTop === "number") {
                 editor.setScrollTop(scrollTop);
               }
-              if (typeof scrollLeft === 'number') {
+              if (typeof scrollLeft === "number") {
                 editor.setScrollLeft(scrollLeft);
               }
             } finally {
@@ -2545,10 +3363,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
 
       // Real-time Collaborative Language Change Listener
-      socket.on('language_updated', ({ fileId, language }) => {
+      socket.on("language_updated", ({ fileId, language }) => {
         if (!fileId || !language) return;
 
-        if (editorRef.current && monacoRef.current && activeFileRef.current === fileId) {
+        if (
+          editorRef.current &&
+          monacoRef.current &&
+          activeFileRef.current === fileId
+        ) {
           const model = editorRef.current.getModel();
           if (model) {
             monacoRef.current.editor.setModelLanguage(model, language);
@@ -2557,35 +3379,46 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       });
 
       // Real-time Collaborative File Operation Listeners
-      socket.on('file_created', ({ file }) => {
+      socket.on("file_created", ({ file }) => {
         if (!file) return;
         const normFile = normalizeFileItem(file);
-        setCustomFiles(prev => {
-          if (prev.some(f => f.id === normFile.id)) return prev;
+        setCustomFiles((prev) => {
+          if (prev.some((f) => f.id === normFile.id)) return prev;
           return [...prev, normFile];
         });
         const fname = normFile.id;
-        if (!normFile.isFolder && filesContentRef.current[fname] === undefined) {
+        if (
+          !normFile.isFolder &&
+          filesContentRef.current[fname] === undefined
+        ) {
           const boilerplate = getStarterBoilerplate(normFile.name);
-          filesContentRef.current = { ...filesContentRef.current, [fname]: boilerplate };
-          setFilesContent(prev => ({ ...prev, [fname]: boilerplate }));
+          filesContentRef.current = {
+            ...filesContentRef.current,
+            [fname]: boilerplate,
+          };
+          setFilesContent((prev) => ({ ...prev, [fname]: boilerplate }));
         }
       });
 
-      socket.on('file_deleted', ({ fileId }) => {
+      socket.on("file_deleted", ({ fileId }) => {
         if (!fileId) return;
-        setCustomFiles(prev => prev.filter(f => f.id !== fileId && !f.id.startsWith(fileId + '/')));
+        setCustomFiles((prev) =>
+          prev.filter((f) => f.id !== fileId && !f.id.startsWith(fileId + "/")),
+        );
         const updatedContent = { ...filesContentRef.current };
         delete updatedContent[fileId];
-        Object.keys(updatedContent).forEach(k => {
-          if (k.startsWith(fileId + '/')) delete updatedContent[k];
+        Object.keys(updatedContent).forEach((k) => {
+          if (k.startsWith(fileId + "/")) delete updatedContent[k];
         });
         filesContentRef.current = updatedContent;
         setFilesContent(updatedContent);
 
-        if (activeFileRef.current === fileId || activeFileRef.current.startsWith(fileId + '/')) {
-          setCustomFiles(latest => {
-            const next = latest.find(f => !f.isFolder)?.id || 'index.js';
+        if (
+          activeFileRef.current === fileId ||
+          activeFileRef.current.startsWith(fileId + "/")
+        ) {
+          setCustomFiles((latest) => {
+            const next = latest.find((f) => !f.isFolder)?.id || "index.js";
             setActiveFile(next);
             activeFileRef.current = next;
             return latest;
@@ -2593,12 +3426,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }
       });
 
-      socket.on('file_renamed', ({ oldFileId, newFileId }) => {
+      socket.on("file_renamed", ({ oldFileId, newFileId }) => {
         if (!oldFileId || !newFileId) return;
-        setCustomFiles(prev => prev.map(f => (f.id === oldFileId || f.path === oldFileId) ? normalizeFileItem({ ...f, id: newFileId, path: newFileId, name: newFileId.split('/').pop() }) : f));
+        setCustomFiles((prev) =>
+          prev.map((f) =>
+            f.id === oldFileId || f.path === oldFileId
+              ? normalizeFileItem({
+                  ...f,
+                  id: newFileId,
+                  path: newFileId,
+                  name: newFileId.split("/").pop(),
+                })
+              : f,
+          ),
+        );
 
         const updatedContentMap = { ...filesContentRef.current };
-        const content = updatedContentMap[oldFileId] !== undefined ? updatedContentMap[oldFileId] : getStarterBoilerplate(oldFileId);
+        const content =
+          updatedContentMap[oldFileId] !== undefined
+            ? updatedContentMap[oldFileId]
+            : getStarterBoilerplate(oldFileId);
         delete updatedContentMap[oldFileId];
         updatedContentMap[newFileId] = content;
         filesContentRef.current = updatedContentMap;
@@ -2610,14 +3457,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         }
       });
 
-      socket.on('files_updated', ({ files }) => {
+      socket.on("files_updated", ({ files }) => {
         if (!files || !Array.isArray(files)) return;
         const normalized = files.map(normalizeFileItem);
         setCustomFiles(normalized);
 
-        setFilesContent(prev => {
+        setFilesContent((prev) => {
           const next = { ...prev };
-          normalized.forEach(f => {
+          normalized.forEach((f) => {
             if (!f.isFolder && next[f.id] === undefined) {
               next[f.id] = getStarterBoilerplate(f.name);
             }
@@ -2626,58 +3473,62 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           return next;
         });
 
-        if (!normalized.some(f => f.id === activeFileRef.current)) {
-          const nextActive = normalized.find(f => !f.isFolder)?.id || 'index.js';
+        if (!normalized.some((f) => f.id === activeFileRef.current)) {
+          const nextActive =
+            normalized.find((f) => !f.isFolder)?.id || "index.js";
           setActiveFile(nextActive);
           activeFileRef.current = nextActive;
         }
       });
-
     } catch (err) {
-      console.warn('Socket.IO connection error:', err.message);
+      console.warn("Socket.IO connection error:", err.message);
     }
 
     // D. 30-Second Activity Heartbeat Ping
     const heartbeatInterval = setInterval(async () => {
       try {
-        await axios.patch(`${API_BASE}/workspaces/${wsId}/session/activity`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setAutoSaveStatus('Session synced');
-        setTimeout(() => setAutoSaveStatus('Auto-saved just now'), 3000);
+        await axios.patch(
+          `${API_BASE}/workspaces/${wsId}/session/activity`,
+          {},
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          },
+        );
+        setAutoSaveStatus("Session synced");
+        setTimeout(() => setAutoSaveStatus("Auto-saved just now"), 3000);
 
         if (socketRef.current) {
-          socketRef.current.emit('activityUpdate', {
+          socketRef.current.emit("activityUpdate", {
             workspaceId: wsId,
-            userId: currentUser.id || currentUser._id
+            userId: currentUser.id || currentUser._id,
           });
 
           // Heartbeat to Sync Session Duration & Active Contribution Time (CT-164 & CT-167)
           if (trackerRef.current) {
             const metrics = trackerRef.current.getMetrics();
-            socketRef.current.emit('telemetry:heartbeat', {
+            socketRef.current.emit("telemetry:heartbeat", {
               workspaceId: wsId,
               user: {
                 id: currentUserId,
-                name: currentUser.name || 'Developer',
+                name: currentUser.name || "Developer",
                 role: workspaceRole,
-                color: myPeerColor
+                color: myPeerColor,
               },
-              metrics
+              metrics,
             });
           }
         }
       } catch (err) {
-        console.warn('Heartbeat ping failed:', err.message);
+        console.warn("Heartbeat ping failed:", err.message);
       }
     }, 30000);
 
     return () => {
       clearInterval(heartbeatInterval);
       if (socketRef.current) {
-        socketRef.current.emit('leaveWorkspace', {
+        socketRef.current.emit("leaveWorkspace", {
           workspaceId: wsId,
-          userId: currentUser.id || currentUser._id
+          userId: currentUser.id || currentUser._id,
         });
         socketRef.current.disconnect();
       }
@@ -2688,7 +3539,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
   useEffect(() => {
     const handleBeforeUnload = () => {
       const startTime = sessionStartRef.current || Date.now();
-      const durationSec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
+      const durationSec = Math.max(
+        0,
+        Math.floor((Date.now() - startTime) / 1000),
+      );
       const hrs = Math.floor(durationSec / 3600);
       const mins = Math.floor((durationSec % 3600) / 60);
       const secs = durationSec % 60;
@@ -2698,23 +3552,23 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
       const endLog = {
         id: `h-${Date.now()}`,
-        type: 'session-end',
-        title: 'Session Completed',
+        type: "session-end",
+        title: "Session Completed",
         details: `Workspace session completed after ${durationStr}.`,
-        user: currentUser.name || 'Maryam Shaikh',
+        user: currentUser.name || "Maryam Shaikh",
         timestamp: new Date().toISOString(),
-        sessionDuration: durationStr
+        sessionDuration: durationStr,
       };
 
       try {
         const savedKey = `ct-workspace-history-${wsId}`;
-        const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
+        const existing = JSON.parse(localStorage.getItem(savedKey) || "[]");
         localStorage.setItem(savedKey, JSON.stringify([endLog, ...existing]));
-      } catch (e) { }
+      } catch (e) {}
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [wsId, currentUser.name]);
 
   // 4. File Switch Handler (Updates Session `currentFileId`)
@@ -2729,34 +3583,47 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setActiveFile(fileId);
 
     // Intercept Active File Switch Telemetry Action (CT-164 & CT-167)
-    interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_SWITCH, `Switched active editor tab to "${fileId}"`, {
-      fileId
-    });
+    interceptTelemetry(
+      TELEMETRY_ACTION_TYPES.FILE_SWITCH,
+      `Switched active editor tab to "${fileId}"`,
+      {
+        fileId,
+      },
+    );
 
     if (!token) return;
 
     try {
-      await axios.patch(`${API_BASE}/workspaces/${wsId}/session/file`, {
-        fileId
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.patch(
+        `${API_BASE}/workspaces/${wsId}/session/file`,
+        {
+          fileId,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
 
       if (socketRef.current) {
-        socketRef.current.emit('fileOpened', {
+        socketRef.current.emit("fileOpened", {
           workspaceId: wsId,
           userId: currentUser.id || currentUser._id,
-          fileId
+          fileId,
         });
       }
     } catch (err) {
-      console.warn('File update failed:', err.message);
+      console.warn("File update failed:", err.message);
     }
   };
 
   // 5. Leave Workspace Handler (Ends Session & Stores Duration)
   const handleResetSession = () => {
-    if (!window.confirm('Reset the session timer? Your workspace files will remain unchanged.')) return;
+    if (
+      !window.confirm(
+        "Reset the session timer? Your workspace files will remain unchanged.",
+      )
+    )
+      return;
 
     const now = Date.now();
     sessionStartRef.current = now;
@@ -2764,55 +3631,73 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     setIsSessionRunning(true);
 
     try {
-      localStorage.setItem(`ct-workspace-session-start-${wsId}`, now.toString());
-      localStorage.setItem(`ct-workspace-session-running-${wsId}`, 'true');
+      localStorage.setItem(
+        `ct-workspace-session-start-${wsId}`,
+        now.toString(),
+      );
+      localStorage.setItem(`ct-workspace-session-running-${wsId}`, "true");
       localStorage.removeItem(`ct-workspace-session-sec-${wsId}`);
     } catch (err) {
-      console.warn('Session timer reset could not be persisted:', err.message);
+      console.warn("Session timer reset could not be persisted:", err.message);
     }
 
-    recordHistoryLog('session', 'Session Timer Reset', 'The workspace session timer was reset without changing project files.');
-    showToast('Session timer reset', 'info');
+    recordHistoryLog(
+      "session",
+      "Session Timer Reset",
+      "The workspace session timer was reset without changing project files.",
+    );
+    showToast("Session timer reset", "info");
   };
 
   const handleResetActiveFile = () => {
     if (!canEditFiles || isViewer) {
-      showToast('Viewing mode: File editing is disabled', 'warning');
+      showToast("Viewing mode: File editing is disabled", "warning");
       return;
     }
 
-    const defaultContent = DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
-    if (!window.confirm(`Reset "${activeFile}" to its starter content?`)) return;
+    const defaultContent =
+      DEFAULT_FILES_CONTENT[activeFile] || getStarterBoilerplate(activeFile);
+    if (!window.confirm(`Reset "${activeFile}" to its starter content?`))
+      return;
 
     handleEditorChange(defaultContent);
-    showToast(`${activeFile} reset to starter content`, 'info');
-    recordHistoryLog('file', `Reset: ${activeFile}`, `Restored ${activeFile} to its starter content.`);
+    showToast(`${activeFile} reset to starter content`, "info");
+    recordHistoryLog(
+      "file",
+      `Reset: ${activeFile}`,
+      `Restored ${activeFile} to its starter content.`,
+    );
   };
 
   const handleFormatDocument = async () => {
     if (!canEditFiles || isViewer) {
-      showToast('Viewing mode: Formatting is disabled', 'warning');
+      showToast("Viewing mode: Formatting is disabled", "warning");
       return;
     }
 
-    const formatAction = editorRef.current?.getAction('editor.action.formatDocument');
+    const formatAction = editorRef.current?.getAction(
+      "editor.action.formatDocument",
+    );
     if (!formatAction) {
-      showToast('Formatting is not available for this file', 'warning');
+      showToast("Formatting is not available for this file", "warning");
       return;
     }
 
     try {
       await formatAction.run();
-      showToast('Document formatted', 'success');
+      showToast("Document formatted", "success");
     } catch (err) {
-      console.warn('Document formatting failed:', err.message);
-      showToast('Unable to format this file', 'warning');
+      console.warn("Document formatting failed:", err.message);
+      showToast("Unable to format this file", "warning");
     }
   };
 
   const handleLeaveWorkspace = async () => {
     const startTime = sessionStartRef.current || Date.now();
-    const durationSec = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
+    const durationSec = Math.max(
+      0,
+      Math.floor((Date.now() - startTime) / 1000),
+    );
     const hrs = Math.floor(durationSec / 3600);
     const mins = Math.floor((durationSec % 3600) / 60);
     const secs = durationSec % 60;
@@ -2822,30 +3707,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
     const endLog = {
       id: `h-${Date.now()}`,
-      type: 'session-end',
-      title: 'Session Completed',
+      type: "session-end",
+      title: "Session Completed",
       details: `Workspace session completed after ${durationStr}.`,
-      user: currentUser.name || 'Maryam Shaikh',
+      user: currentUser.name || "Maryam Shaikh",
       timestamp: new Date().toISOString(),
-      sessionDuration: durationStr
+      sessionDuration: durationStr,
     };
 
     try {
       const savedKey = `ct-workspace-history-${wsId}`;
-      const existing = JSON.parse(localStorage.getItem(savedKey) || '[]');
+      const existing = JSON.parse(localStorage.getItem(savedKey) || "[]");
       localStorage.setItem(savedKey, JSON.stringify([endLog, ...existing]));
-    } catch (e) { }
+    } catch (e) {}
 
-    if (token && wsId && wsId !== 'demo-workspace') {
+    if (token && wsId && wsId !== "demo-workspace") {
       try {
         await axios.post(`${API_BASE}/workspaces/${wsId}/history`, endLog, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
         await axios.delete(`${API_BASE}/workspaces/${wsId}/session`, {
-          headers: { Authorization: `Bearer ${token}` }
+          headers: { Authorization: `Bearer ${token}` },
         });
       } catch (err) {
-        console.warn('Leave session error:', err.message);
+        console.warn("Leave session error:", err.message);
       }
     }
 
@@ -2855,12 +3740,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       localStorage.removeItem(`ct-workspace-session-running-${wsId}`);
       localStorage.removeItem(`ct-workspace-active-file-${wsId}`);
       localStorage.removeItem(`ct-workspace-files-${wsId}`);
-    } catch (e) { }
+    } catch (e) {}
 
     if (socketRef.current) {
-      socketRef.current.emit('leaveWorkspace', {
+      socketRef.current.emit("leaveWorkspace", {
         workspaceId: wsId,
-        userId: currentUser.id || currentUser._id
+        userId: currentUser.id || currentUser._id,
       });
       socketRef.current.disconnect();
     }
@@ -2868,33 +3753,42 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (onBackToHome) onBackToHome();
   };
 
-  const wsTitle = currentWorkspace?.title || currentWorkspace?.name || 'Project Workspace';
-  const wsFiles = (currentWorkspace?.files && currentWorkspace.files.length > 0)
-    ? currentWorkspace.files.map(f => ({ id: f.name || f.id, name: f.name, iconColor: 'text-yellow-400' }))
-    : [
-      { id: 'index.js', name: 'index.js', iconColor: 'text-yellow-400' },
-      { id: 'server.js', name: 'server.js', iconColor: 'text-cyan-400' },
-      { id: 'styles.css', name: 'styles.css', iconColor: 'text-sky-400' },
-      { id: 'package.json', name: 'package.json', iconColor: 'text-emerald-400' },
-      { id: 'README.md', name: 'README.md', iconColor: 'text-purple-400' }
-    ];
+  const wsTitle =
+    currentWorkspace?.title || currentWorkspace?.name || "Project Workspace";
+  const wsFiles =
+    currentWorkspace?.files && currentWorkspace.files.length > 0
+      ? currentWorkspace.files.map((f) => ({
+          id: f.name || f.id,
+          name: f.name,
+          iconColor: "text-yellow-400",
+        }))
+      : [
+          { id: "index.js", name: "index.js", iconColor: "text-yellow-400" },
+          { id: "server.js", name: "server.js", iconColor: "text-cyan-400" },
+          { id: "styles.css", name: "styles.css", iconColor: "text-sky-400" },
+          {
+            id: "package.json",
+            name: "package.json",
+            iconColor: "text-emerald-400",
+          },
+          { id: "README.md", name: "README.md", iconColor: "text-purple-400" },
+        ];
 
   return (
     <div className="w-full h-screen overflow-hidden flex flex-col bg-[#08090E] text-white">
-
       {/* Workspace Session Top Navbar (STUCK AT TOP AS PRIMARY WORKSPACE NAVBAR) */}
       <header
         className="sticky top-0 z-50 w-full bg-[#12131F]/95 backdrop-blur-2xl border-b border-white/15 shadow-xl flex items-center justify-between flex-wrap shrink-0"
-        style={{ padding: '14px 36px', minHeight: '68px', gap: '16px' }}
+        style={{ padding: "14px 36px", minHeight: "68px", gap: "24px" }}
       >
         {/* Left: Back to Home + Workspace Title + Room Code */}
-        <div className="flex items-center flex-wrap" style={{ gap: '16px' }}>
+        <div className="flex items-center flex-wrap" style={{ gap: "24px" }}>
           {onBackToHome && (
             <button
               type="button"
               onClick={onBackToHome}
               className="flex items-center text-xs font-mono font-bold text-gray-200 hover:text-white bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 rounded-full transition-all cursor-pointer"
-              style={{ padding: '10px 22px', gap: '10px' }}
+              style={{ padding: "10px 22px", gap: "10px" }}
               title="Return to Home Dashboard"
             >
               <ArrowLeft size={15} className="text-purple-400" />
@@ -2902,11 +3796,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             </button>
           )}
 
-          {onBackToHome && <div className="h-5 w-[1px] bg-white/15 hidden sm:block" />}
+          {onBackToHome && (
+            <div className="h-5 w-[1px] bg-white/15 hidden sm:block" />
+          )}
 
-          <div className="flex items-center" style={{ gap: '10px' }}>
+          <div className="flex items-center" style={{ gap: "10px" }}>
             <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-            <h3 className="text-base font-extrabold text-white tracking-tight flex items-center" style={{ gap: '8px' }}>
+            <h3
+              className="text-base font-extrabold text-white tracking-tight flex items-center"
+              style={{ gap: "8px" }}
+            >
               <span>{wsTitle}</span>
             </h3>
           </div>
@@ -2915,35 +3814,68 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
           <button
             type="button"
             className="flex items-center text-xs font-mono font-semibold text-gray-200 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 rounded-full transition-all cursor-pointer"
-            style={{ padding: '10px 22px', gap: '10px' }}
+            style={{ padding: "10px 22px", gap: "10px" }}
             onClick={handleCopyCode}
             title="Click to copy room code"
           >
             <KeyRound size={14} className="text-purple-400" />
-            <span>Room: <strong className="text-white font-bold">{wsCode}</strong></span>
-            {copiedCode ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} className="text-gray-400" />}
+            <span>
+              Room: <strong className="text-white font-bold">{wsCode}</strong>
+            </span>
+            {copiedCode ? (
+              <Check size={14} className="text-emerald-400" />
+            ) : (
+              <Copy size={14} className="text-gray-400" />
+            )}
           </button>
         </div>
 
         {/* Center Info: Session Clock, Active Contribution & Auto-Save */}
-        <div className="hidden lg:flex items-center flex-wrap" style={{ gap: '12px' }}>
-          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
+        <div
+          className="hidden lg:flex items-center flex-wrap"
+          style={{ gap: "12px" }}
+        >
+          <div
+            className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm"
+            style={{ padding: "8px 14px", gap: "8px" }}
+          >
             <Clock size={14} className="text-purple-400" />
-            <span>Session: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
+            <span>
+              Session:{" "}
+              <strong className="text-white font-bold">
+                {formatSessionTime(sessionSeconds)}
+              </strong>
+            </span>
           </div>
 
           {/* Active Contribution Time (CT-164) */}
-          <div className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }} title="Active Contribution Time (Typing, Running & Interacting)">
-            <Activity size={14} className={isUserActive ? "text-emerald-400 animate-pulse" : "text-gray-400"} />
-            <span>Active: <strong className="text-emerald-300 font-bold">{formatActiveDuration(activeContributionSecs)}</strong></span>
+          <div
+            className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm"
+            style={{ padding: "8px 14px", gap: "8px" }}
+            title="Active Contribution Time (Typing, Running & Interacting)"
+          >
+            <Activity
+              size={14}
+              className={
+                isUserActive
+                  ? "text-emerald-400 animate-pulse"
+                  : "text-gray-400"
+              }
+            />
+            <span>
+              Active:{" "}
+              <strong className="text-emerald-300 font-bold">
+                {formatActiveDuration(activeContributionSecs)}
+              </strong>
+            </span>
           </div>
 
           {/* Live Telemetry Drawer Toggle Button (CT-167) */}
           <button
             type="button"
-            onClick={() => setShowTelemetryDrawer(prev => !prev)}
-            className={`flex items-center text-xs font-mono font-semibold rounded-xl transition-all cursor-pointer shadow-sm border ${showTelemetryDrawer ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]' : 'bg-white/[0.08] hover:bg-white/[0.12] border-white/15 text-gray-200'}`}
-            style={{ padding: '8px 14px', gap: '8px' }}
+            onClick={() => setShowTelemetryDrawer((prev) => !prev)}
+            className={`flex items-center text-xs font-mono font-semibold rounded-xl transition-all cursor-pointer shadow-sm border ${showTelemetryDrawer ? "bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-[0_0_12px_rgba(6,182,212,0.3)]" : "bg-white/[0.08] hover:bg-white/[0.12] border-white/15 text-gray-200"}`}
+            style={{ padding: "8px 14px", gap: "8px" }}
             title="Toggle Live Telemetry & Contribution Dossier"
           >
             <Radio size={14} className="text-cyan-400 animate-pulse" />
@@ -2955,20 +3887,37 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             )}
           </button>
 
-          <div className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm" style={{ padding: '8px 14px', gap: '8px' }}>
+          <div
+            className="flex items-center text-xs font-mono text-gray-300 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm"
+            style={{ padding: "8px 14px", gap: "8px" }}
+          >
             <Save size={14} className="text-emerald-400" />
             <span>{autoSaveStatus}</span>
           </div>
 
           {currentWorkspace?.settings?.isPublic ? (
-            <span className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Globe size={14} /> Public</span>
+            <span
+              className="text-xs font-mono text-cyan-300 bg-cyan-500/20 border border-cyan-500/35 rounded-xl flex items-center shadow-sm"
+              style={{ padding: "8px 12px", gap: "6px" }}
+            >
+              <Globe size={14} /> Public
+            </span>
           ) : (
-            <span className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm" style={{ padding: '8px 12px', gap: '6px' }}><Lock size={14} /> Private</span>
+            <span
+              className="text-xs font-mono text-purple-200 bg-purple-500/20 border border-purple-500/35 rounded-xl flex items-center shadow-sm"
+              style={{ padding: "8px 12px", gap: "6px" }}
+            >
+              <Lock size={14} /> Private
+            </span>
           )}
 
           {/* Viewer Mode Badge (CT-89) */}
           {isViewer && (
-            <div className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse" style={{ padding: '8px 12px', gap: '6px' }} title="Viewer Mode: You have read-only access to this workspace. Code editing is locked.">
+            <div
+              className="flex items-center text-xs font-mono font-bold text-amber-300 bg-amber-500/20 border border-amber-500/40 rounded-xl shadow-sm animate-pulse"
+              style={{ padding: "8px 12px", gap: "6px" }}
+              title="Viewer Mode: You have read-only access to this workspace. Code editing is locked."
+            >
               <Lock size={14} className="text-amber-400" />
               <span>Viewer (Read-Only)</span>
             </div>
@@ -2976,13 +3925,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         </div>
 
         {/* Right Actions: Start / Record Session & Leave Session Controls */}
-        <div className="flex items-center" style={{ gap: '14px' }}>
+        <div className="flex items-center" style={{ gap: "14px" }}>
           {isSessionRunning ? (
             <button
               type="button"
               onClick={() => setIsSessionRunning(false)}
               className="flex items-center bg-emerald-500/20 hover:bg-amber-500/25 border border-emerald-500/40 hover:border-amber-500/40 text-emerald-300 hover:text-amber-300 rounded-full text-xs font-bold transition-all cursor-pointer"
-              style={{ padding: '10px 22px', gap: '10px' }}
+              style={{ padding: "10px 22px", gap: "10px" }}
               title="Click to pause session timer"
             >
               <Zap size={15} className="text-emerald-400 animate-pulse" />
@@ -2993,7 +3942,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               type="button"
               onClick={() => setIsSessionRunning(true)}
               className="flex items-center bg-purple-500/20 hover:bg-purple-500/35 border border-purple-500/40 text-purple-300 rounded-full text-xs font-bold transition-all cursor-pointer"
-              style={{ padding: '10px 22px', gap: '10px' }}
+              style={{ padding: "10px 22px", gap: "10px" }}
               title="Click to start session duration timer"
             >
               <Clock size={15} className="text-purple-400" />
@@ -3016,7 +3965,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             type="button"
             onClick={() => setIsScaffoldModalOpen(true)}
             className="flex items-center bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
-            style={{ padding: '10px 22px', gap: '10px' }}
+            style={{ padding: "10px 22px", gap: "10px" }}
             title="Scaffold React, FastAPI, Django, or Express Project Framework"
           >
             <Sparkles size={15} className="text-cyan-400 animate-pulse" />
@@ -3027,7 +3976,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             type="button"
             onClick={() => setIsSettingsModalOpen(true)}
             className="flex items-center bg-white/10 hover:bg-purple-500/25 border border-white/15 hover:border-purple-500/40 text-gray-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
-            style={{ padding: '10px 22px', gap: '10px' }}
+            style={{ padding: "10px 22px", gap: "10px" }}
             title="Workspace Settings & History Log"
           >
             <Settings size={15} className="text-purple-400" />
@@ -3039,45 +3988,57 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             type="button"
             onClick={handleRunActiveCode}
             disabled={isExecuting || isViewer}
-            className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer ${isExecuting
-              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400 cursor-wait'
-              : isViewer
-                ? 'bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50'
-                : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white'
-              }`}
-            style={{ padding: '10px 22px', gap: '10px' }}
-            title={isViewer ? 'Viewers cannot run code' : `Run ${activeFile} (${getLanguageInfo(activeFile).name})`}
+            className={`flex items-center border rounded-full text-xs font-bold transition-all cursor-pointer ${
+              isExecuting
+                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-400 cursor-wait"
+                : isViewer
+                  ? "bg-white/5 border-white/10 text-gray-500 cursor-not-allowed opacity-50"
+                  : "bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white"
+            }`}
+            style={{ padding: "10px 22px", gap: "10px" }}
+            title={
+              isViewer
+                ? "Viewers cannot run code"
+                : `Run ${activeFile} (${getLanguageInfo(activeFile).name})`
+            }
           >
             {isExecuting ? (
               <Loader2 size={15} className="animate-spin text-emerald-400" />
             ) : (
               <Play size={15} className="text-emerald-400" />
             )}
-            <span>{isExecuting ? 'Running...' : 'Run Code'}</span>
+            <span>{isExecuting ? "Running..." : "Run Code"}</span>
           </button>
 
           <button
             type="button"
             className="flex items-center bg-red-500/25 hover:bg-red-500/35 border border-red-500/50 text-red-200 rounded-full text-xs font-bold transition-all cursor-pointer"
-            style={{ padding: '10px 22px', gap: '10px' }}
+            style={{ padding: "10px 22px", gap: "10px" }}
             onClick={handleLeaveWorkspace}
             title="Leave this workspace session"
           >
             <LogOut size={14} />
             <span>Leave Session</span>
           </button>
-
         </div>
       </header>
 
       {/* Dynamic Connection Status / Reconnecting Banner (CT-89) */}
-      {connectionStatus === 'reconnecting' && (
+      {connectionStatus === "reconnecting" && (
         <div className="w-full bg-gradient-to-r from-amber-600/90 via-orange-600/90 to-amber-600/90 text-white px-6 py-2.5 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-amber-400/40 animate-pulse shrink-0 z-40">
-          <div className="flex items-center gap-3">
-            <RefreshCw size={15} className="animate-spin text-amber-200 shrink-0" />
+          <div className="flex items-center gap-4">
+            <RefreshCw
+              size={15}
+              className="animate-spin text-amber-200 shrink-0"
+            />
             <span className="flex items-center gap-2">
-              <strong className="font-extrabold uppercase tracking-wide">Reconnecting...</strong>
-              <span className="hidden sm:inline text-amber-100 font-normal">Connection to collaborative session lost. Attempting to restore sync...</span>
+              <strong className="font-extrabold uppercase tracking-wide">
+                Reconnecting...
+              </strong>
+              <span className="hidden sm:inline text-amber-100 font-normal">
+                Connection to collaborative session lost. Attempting to restore
+                sync...
+              </span>
             </span>
           </div>
           <button
@@ -3093,19 +4054,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         </div>
       )}
 
-      {connectionStatus === 'disconnected' && (
+      {connectionStatus === "disconnected" && (
         <div className="w-full bg-gradient-to-r from-red-600/95 via-rose-600/95 to-red-600/95 text-white px-6 py-2.5 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-red-400/40 shrink-0 z-40">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <WifiOff size={15} className="text-red-200 shrink-0" />
             <span className="flex items-center gap-2">
-              <strong className="font-extrabold uppercase tracking-wide">Disconnected</strong>
-              <span className="hidden sm:inline text-red-100 font-normal">You are offline. Live changes are being saved locally to localStorage backup.</span>
+              <strong className="font-extrabold uppercase tracking-wide">
+                Disconnected
+              </strong>
+              <span className="hidden sm:inline text-red-100 font-normal">
+                You are offline. Live changes are being saved locally to
+                localStorage backup.
+              </span>
             </span>
           </div>
           <button
             type="button"
             onClick={() => {
-              setConnectionStatus('reconnecting');
+              setConnectionStatus("reconnecting");
               if (socketRef.current) socketRef.current.connect();
               syncWorkspaceState();
             }}
@@ -3116,11 +4082,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         </div>
       )}
 
-      {connectionStatus === 'reconnected' && (
+      {connectionStatus === "reconnected" && (
         <div className="w-full bg-gradient-to-r from-emerald-600/90 via-teal-600/90 to-emerald-600/90 text-white px-6 py-2 flex items-center justify-between text-xs font-mono font-semibold shadow-lg backdrop-blur-md border-b border-emerald-400/40 shrink-0 z-40 transition-opacity">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <CheckCircle2 size={15} className="text-emerald-200 shrink-0" />
-            <span><strong>Reconnected!</strong> Workspace synchronized with live peers.</span>
+            <span>
+              <strong>Reconnected!</strong> Workspace synchronized with live
+              peers.
+            </span>
           </div>
         </div>
       )}
@@ -3131,21 +4100,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
         className="w-full flex-1 min-h-0 flex flex-col justify-start overflow-hidden bg-[#0D0E15]"
       >
         {/* IDE Split View (100% FULL SCREEN WIDTH & HEIGHT) */}
-        <div
-          className="flex flex-col md:flex-row w-full flex-1 min-h-0 overflow-hidden bg-[#0D0E15]"
-        >
-
+        <div className="flex flex-col md:flex-row w-full flex-1 min-h-0 overflow-hidden bg-[#0D0E15]">
           {/* LEFT SIDEBAR: File Explorer & Active Members List (FIXED TO SIDE, NO OUTER SCROLL) */}
-          <div
-            className="w-full md:w-72 lg:w-80 shrink-0 border-r border-white/15 bg-[#12131F] flex flex-col justify-between overflow-hidden select-none h-full"
-          >
-
+          <div className="w-full md:w-72 lg:w-80 shrink-0 border-r border-white/15 bg-[#12131F] flex flex-col justify-between overflow-hidden select-none h-full">
             {/* Top Explorer Section (Flex grow & Scrollable for all files) */}
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Explorer Header */}
               <div
                 className="border-b border-white/15 flex items-center justify-between bg-white/[0.03] shrink-0"
-                style={{ height: '52px', paddingLeft: '24px', paddingRight: '16px' }}
+                style={{
+                  height: "52px",
+                  paddingLeft: "24px",
+                  paddingRight: "16px",
+                }}
               >
                 <span className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2.5">
                   <Folder size={15} className="text-purple-400" />
@@ -3157,7 +4124,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => {
                         setTargetFolderId(null);
-                        setShowNewFileInput(prev => !prev);
+                        setShowNewFileInput((prev) => !prev);
                         setShowNewFolderInput(false);
                       }}
                       className="hover:text-purple-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
@@ -3171,7 +4138,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => {
                         setTargetFolderId(null);
-                        setShowNewFolderInput(prev => !prev);
+                        setShowNewFolderInput((prev) => !prev);
                         setShowNewFileInput(false);
                       }}
                       className="hover:text-indigo-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
@@ -3192,7 +4159,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     type="button"
                     onClick={() => {
                       syncWorkspaceState();
-                      showToast('🔄 Resynced explorer', 'info');
+                      showToast("🔄 Resynced explorer", "info");
                     }}
                     className="hover:text-emerald-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
                     title="Refresh Explorer"
@@ -3205,31 +4172,37 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               {/* File List Tree Container (VS Code / Antigravity Style Hierarchy & Drag-and-Drop) */}
               <div
                 className="overflow-y-auto flex-1 flex flex-col focus:outline-none select-none"
-                style={{ padding: '10px 10px', gap: '2px' }}
+                style={{ padding: "10px 10px", gap: "2px" }}
                 tabIndex={0}
                 onKeyDown={handleExplorerKeyDown}
                 onContextMenu={(e) => handleContextMenu(e, null)}
                 onDragOver={(e) => handleDragOver(e, null)}
                 onDrop={(e) => handleDrop(e, null)}
               >
-
                 {/* Inline New File Row at Root */}
                 {showNewFileInput && targetFolderId === null && (
                   <form
                     onSubmit={handleCreateFile}
                     className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
-                    style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
+                    style={{
+                      padding: "6px 10px",
+                      gap: "8px",
+                      marginLeft: "8px",
+                    }}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <FileCode size={15} className="text-purple-400 shrink-0" />
+                      <FileCode
+                        size={15}
+                        className="text-purple-400 shrink-0"
+                      />
                       <input
                         type="text"
                         value={newFileName}
                         onChange={(e) => setNewFileName(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
+                          if (e.key === "Escape") {
                             setShowNewFileInput(false);
-                            setNewFileName('');
+                            setNewFileName("");
                           }
                         }}
                         placeholder="filename.js (Enter)"
@@ -3249,7 +4222,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         type="button"
                         onClick={() => {
                           setShowNewFileInput(false);
-                          setNewFileName('');
+                          setNewFileName("");
                         }}
                         className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
                         title="Cancel (Esc)"
@@ -3265,7 +4238,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   <form
                     onSubmit={handleCreateFolder}
                     className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
-                    style={{ padding: '6px 10px', gap: '8px', marginLeft: '8px' }}
+                    style={{
+                      padding: "6px 10px",
+                      gap: "8px",
+                      marginLeft: "8px",
+                    }}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <Folder size={15} className="text-indigo-400 shrink-0" />
@@ -3274,9 +4251,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         value={newFolderName}
                         onChange={(e) => setNewFolderName(e.target.value)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
+                          if (e.key === "Escape") {
                             setShowNewFolderInput(false);
-                            setNewFolderName('');
+                            setNewFolderName("");
                           }
                         }}
                         placeholder="foldername (Enter)"
@@ -3296,7 +4273,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         type="button"
                         onClick={() => {
                           setShowNewFolderInput(false);
-                          setNewFolderName('');
+                          setNewFolderName("");
                         }}
                         className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
                         title="Cancel (Esc)"
@@ -3309,19 +4286,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                 {/* Render Visible Tree Items */}
                 {getVisibleTreeItems().map((item) => {
-                  const isSelected = selectedItem === item.id || activeFile === item.id;
+                  const isSelected =
+                    selectedItem === item.id || activeFile === item.id;
                   const isExpanded = !!expandedFolders[item.id];
                   const isDragOver = dragOverFolderId === item.id;
-                  const peersInFile = activeSessions.filter(s => s.status !== 'offline' && s.currentFileId === item.id);
+                  const peersInFile = activeSessions.filter(
+                    (s) =>
+                      s.status !== "offline" && s.currentFileId === item.id,
+                  );
                   const isRenamingThis = renamingFileId === item.id;
-                  const paddingLeft = (item.depth * 14) + 12;
+                  const paddingLeft = item.depth * 14 + 12;
 
                   return (
                     <React.Fragment key={item.id}>
                       <div
                         draggable={canEditFiles && !isRenamingThis}
                         onDragStart={(e) => handleDragStart(e, item)}
-                        onDragOver={(e) => item.isFolder && handleDragOver(e, item)}
+                        onDragOver={(e) =>
+                          item.isFolder && handleDragOver(e, item)
+                        }
                         onDrop={(e) => item.isFolder && handleDrop(e, item)}
                         onContextMenu={(e) => handleContextMenu(e, item)}
                         onClick={(e) => {
@@ -3332,13 +4315,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             handleSelectFile(item.id);
                           }
                         }}
-                        className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${isDragOver
-                          ? 'bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50'
-                          : isSelected
-                            ? 'bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md'
-                            : 'text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent'
-                          }`}
-                        style={{ paddingLeft: `${paddingLeft}px`, paddingRight: '12px', paddingTop: '9px', paddingBottom: '9px' }}
+                        className={`w-full flex items-center justify-between rounded-xl text-xs font-mono transition-all text-left group cursor-pointer border ${
+                          isDragOver
+                            ? "bg-purple-500/30 border-purple-400 ring-2 ring-purple-500/50"
+                            : isSelected
+                              ? "bg-purple-600/25 text-white border-purple-500/40 font-semibold shadow-md"
+                              : "text-gray-300 hover:text-white hover:bg-white/[0.06] border-transparent"
+                        }`}
+                        style={{
+                          paddingLeft: `${paddingLeft}px`,
+                          paddingRight: "12px",
+                          paddingTop: "9px",
+                          paddingBottom: "9px",
+                        }}
                       >
                         {/* Inline Renaming Input Form */}
                         {isRenamingThis ? (
@@ -3350,18 +4339,31 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             <input
                               type="text"
                               value={renamingFileName}
-                              onChange={(e) => setRenamingFileName(e.target.value)}
+                              onChange={(e) =>
+                                setRenamingFileName(e.target.value)
+                              }
                               onKeyDown={(e) => {
-                                if (e.key === 'Escape') {
+                                if (e.key === "Escape") {
                                   setRenamingFileId(null);
-                                  setRenamingFileName('');
+                                  setRenamingFileName("");
                                 }
                               }}
                               autoFocus
                               className="w-full bg-[#0D0E15] border border-purple-500/80 rounded-lg px-2 py-1 text-xs text-white outline-none font-mono focus:ring-1 focus:ring-purple-400"
                             />
-                            <button type="submit" className="text-purple-400 hover:text-purple-300 p-0.5"><Check size={14} /></button>
-                            <button type="button" onClick={() => setRenamingFileId(null)} className="text-gray-400 hover:text-white p-0.5"><X size={14} /></button>
+                            <button
+                              type="submit"
+                              className="text-purple-400 hover:text-purple-300 p-0.5"
+                            >
+                              <Check size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRenamingFileId(null)}
+                              className="text-gray-400 hover:text-white p-0.5"
+                            >
+                              <X size={14} />
+                            </button>
                           </form>
                         ) : (
                           <>
@@ -3372,19 +4374,31 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                   onClick={(e) => toggleFolder(item.id, e)}
                                   className="text-purple-400 hover:text-white shrink-0 p-0.5"
                                 >
-                                  {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  {isExpanded ? (
+                                    <ChevronDown size={14} />
+                                  ) : (
+                                    <ChevronRight size={14} />
+                                  )}
                                 </span>
                               ) : (
                                 <span className="w-3.5 shrink-0" />
                               )}
 
                               {item.isFolder ? (
-                                <Folder size={15} className="shrink-0 text-purple-400" />
+                                <Folder
+                                  size={15}
+                                  className="shrink-0 text-purple-400"
+                                />
                               ) : (
-                                <FileCode size={15} className={`shrink-0 ${item.iconColor || 'text-yellow-400'}`} />
+                                <FileCode
+                                  size={15}
+                                  className={`shrink-0 ${item.iconColor || "text-yellow-400"}`}
+                                />
                               )}
 
-                              <span className="truncate text-xs font-medium">{item.name}</span>
+                              <span className="truncate text-xs font-medium">
+                                {item.name}
+                              </span>
                             </div>
 
                             {/* Right Side: Hover Quick Action Buttons & Peer Indicators */}
@@ -3395,9 +4409,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                     <span
                                       key={pidx}
                                       className="w-5 h-5 rounded-full bg-purple-500 text-white font-mono text-[10px] font-bold flex items-center justify-center border border-[#12131F] shadow-sm"
-                                      title={`${p.userId?.name || 'Peer'} is viewing ${item.name}`}
+                                      title={`${p.userId?.name || "Peer"} is viewing ${item.name}`}
                                     >
-                                      {(p.userId?.name || 'P')[0].toUpperCase()}
+                                      {(p.userId?.name || "P")[0].toUpperCase()}
                                     </span>
                                   ))}
                                 </div>
@@ -3414,7 +4428,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                           setTargetFolderId(item.id);
                                           setShowNewFileInput(true);
                                           setShowNewFolderInput(false);
-                                          setExpandedFolders(prev => ({ ...prev, [item.id]: true }));
+                                          setExpandedFolders((prev) => ({
+                                            ...prev,
+                                            [item.id]: true,
+                                          }));
                                         }}
                                         className="hover:text-purple-300 p-1 rounded hover:bg-white/10"
                                         title="New File inside folder"
@@ -3428,7 +4445,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                           setTargetFolderId(item.id);
                                           setShowNewFolderInput(true);
                                           setShowNewFileInput(false);
-                                          setExpandedFolders(prev => ({ ...prev, [item.id]: true }));
+                                          setExpandedFolders((prev) => ({
+                                            ...prev,
+                                            [item.id]: true,
+                                          }));
                                         }}
                                         className="hover:text-indigo-300 p-1 rounded hover:bg-white/10"
                                         title="New Folder inside folder"
@@ -3439,7 +4459,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={(e) => handleDuplicateFile(item, e)}
+                                      onClick={(e) =>
+                                        handleDuplicateFile(item, e)
+                                      }
                                       className="hover:text-cyan-300 p-1 rounded hover:bg-white/10"
                                       title="Duplicate File"
                                     >
@@ -3476,97 +4498,119 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       </div>
 
                       {/* Inline New File / Folder inside this Folder */}
-                      {item.isFolder && isExpanded && targetFolderId === item.id && showNewFileInput && (
-                        <form
-                          onSubmit={handleCreateFile}
-                          className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
-                          style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <FileCode size={15} className="text-purple-400 shrink-0" />
-                            <input
-                              type="text"
-                              value={newFileName}
-                              onChange={(e) => setNewFileName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Escape') {
+                      {item.isFolder &&
+                        isExpanded &&
+                        targetFolderId === item.id &&
+                        showNewFileInput && (
+                          <form
+                            onSubmit={handleCreateFile}
+                            className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-purple-500/70 focus-within:border-purple-400 focus-within:ring-1 focus-within:ring-purple-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                            style={{
+                              padding: "6px 10px",
+                              gap: "8px",
+                              marginLeft: `${paddingLeft + 16}px`,
+                            }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <FileCode
+                                size={15}
+                                className="text-purple-400 shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={newFileName}
+                                onChange={(e) => setNewFileName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") {
+                                    setShowNewFileInput(false);
+                                    setNewFileName("");
+                                  }
+                                }}
+                                placeholder="filename.js (Enter)"
+                                autoFocus
+                                className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="submit"
+                                className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
+                                title="Create File (Enter)"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setShowNewFileInput(false);
-                                  setNewFileName('');
-                                }
-                              }}
-                              placeholder="filename.js (Enter)"
-                              autoFocus
-                              className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="submit"
-                              className="text-purple-400 hover:text-purple-300 hover:bg-purple-500/20 p-1 rounded-lg transition-all cursor-pointer"
-                              title="Create File (Enter)"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowNewFileInput(false);
-                                setNewFileName('');
-                              }}
-                              className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
-                              title="Cancel (Esc)"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </form>
-                      )}
+                                  setNewFileName("");
+                                }}
+                                className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
+                                title="Cancel (Esc)"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </form>
+                        )}
 
-                      {item.isFolder && isExpanded && targetFolderId === item.id && showNewFolderInput && (
-                        <form
-                          onSubmit={handleCreateFolder}
-                          className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
-                          style={{ padding: '6px 10px', gap: '8px', marginLeft: `${paddingLeft + 16}px` }}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 flex-1">
-                            <Folder size={15} className="text-indigo-400 shrink-0" />
-                            <input
-                              type="text"
-                              value={newFolderName}
-                              onChange={(e) => setNewFolderName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Escape') {
-                                  setShowNewFolderInput(false);
-                                  setNewFolderName('');
+                      {item.isFolder &&
+                        isExpanded &&
+                        targetFolderId === item.id &&
+                        showNewFolderInput && (
+                          <form
+                            onSubmit={handleCreateFolder}
+                            className="w-full flex items-center justify-between rounded-xl bg-[#0D0E15] border border-indigo-500/70 focus-within:border-indigo-400 focus-within:ring-1 focus-within:ring-indigo-500/40 shadow-lg shrink-0 animate-fadeIn transition-all my-1"
+                            style={{
+                              padding: "6px 10px",
+                              gap: "8px",
+                              marginLeft: `${paddingLeft + 16}px`,
+                            }}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Folder
+                                size={15}
+                                className="text-indigo-400 shrink-0"
+                              />
+                              <input
+                                type="text"
+                                value={newFolderName}
+                                onChange={(e) =>
+                                  setNewFolderName(e.target.value)
                                 }
-                              }}
-                              placeholder="foldername (Enter)"
-                              autoFocus
-                              className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
-                            />
-                          </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button
-                              type="submit"
-                              className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
-                              title="Create Folder (Enter)"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setShowNewFolderInput(false);
-                                setNewFolderName('');
-                              }}
-                              className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
-                              title="Cancel (Esc)"
-                            >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        </form>
-                      )}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Escape") {
+                                    setShowNewFolderInput(false);
+                                    setNewFolderName("");
+                                  }
+                                }}
+                                placeholder="foldername (Enter)"
+                                autoFocus
+                                className="w-full bg-transparent border-0 outline-none focus:outline-none focus:ring-0 text-xs text-white placeholder-gray-500 font-mono p-0"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="submit"
+                                className="text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/20 p-1 rounded-lg transition-all cursor-pointer"
+                                title="Create Folder (Enter)"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowNewFolderInput(false);
+                                  setNewFolderName("");
+                                }}
+                                className="text-gray-400 hover:text-white hover:bg-white/10 p-1 rounded-lg transition-all cursor-pointer"
+                                title="Cancel (Esc)"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </form>
+                        )}
                     </React.Fragment>
                   );
                 })}
@@ -3577,13 +4621,23 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             {contextMenu.visible && (
               <div
                 className="fixed z-[9999] bg-[#161726]/95 border border-purple-500/30 rounded-xl shadow-2xl backdrop-blur-xl py-1.5 min-w-[190px] text-xs font-mono select-none animate-fadeIn"
-                style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+                style={{
+                  top: `${contextMenu.y}px`,
+                  left: `${contextMenu.x}px`,
+                }}
                 onClick={(e) => e.stopPropagation()}
               >
                 {contextMenu.item ? (
                   <>
                     <div className="px-3 py-1 text-[10px] uppercase font-bold text-purple-300 border-b border-white/10 truncate max-w-[210px] flex items-center gap-1.5">
-                      {contextMenu.item.isFolder ? <Folder size={12} className="text-purple-400" /> : <FileCode size={12} className={contextMenu.item.iconColor} />}
+                      {contextMenu.item.isFolder ? (
+                        <Folder size={12} className="text-purple-400" />
+                      ) : (
+                        <FileCode
+                          size={12}
+                          className={contextMenu.item.iconColor}
+                        />
+                      )}
                       <span className="truncate">{contextMenu.item.name}</span>
                     </div>
 
@@ -3595,8 +4649,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             setTargetFolderId(contextMenu.item.id);
                             setShowNewFileInput(true);
                             setShowNewFolderInput(false);
-                            setExpandedFolders(prev => ({ ...prev, [contextMenu.item.id]: true }));
-                            setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                            setExpandedFolders((prev) => ({
+                              ...prev,
+                              [contextMenu.item.id]: true,
+                            }));
+                            setContextMenu({
+                              visible: false,
+                              x: 0,
+                              y: 0,
+                              item: null,
+                            });
                           }}
                           className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                         >
@@ -3610,8 +4672,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             setTargetFolderId(contextMenu.item.id);
                             setShowNewFolderInput(true);
                             setShowNewFileInput(false);
-                            setExpandedFolders(prev => ({ ...prev, [contextMenu.item.id]: true }));
-                            setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                            setExpandedFolders((prev) => ({
+                              ...prev,
+                              [contextMenu.item.id]: true,
+                            }));
+                            setContextMenu({
+                              visible: false,
+                              x: 0,
+                              y: 0,
+                              item: null,
+                            });
                           }}
                           className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                         >
@@ -3625,7 +4695,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         type="button"
                         onClick={() => {
                           handleDuplicateFile(contextMenu.item);
-                          setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                          setContextMenu({
+                            visible: false,
+                            x: 0,
+                            y: 0,
+                            item: null,
+                          });
                         }}
                         className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                       >
@@ -3639,7 +4714,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       onClick={() => {
                         setRenamingFileId(contextMenu.item.id);
                         setRenamingFileName(contextMenu.item.name);
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center justify-between px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                     >
@@ -3647,14 +4727,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         <Edit2 size={14} className="text-yellow-400" />
                         <span>Rename</span>
                       </div>
-                      <span className="text-[10px] text-gray-400 font-mono">F2</span>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        F2
+                      </span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => {
                         handleDeleteItem(contextMenu.item);
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center justify-between px-3 py-2 text-red-400 hover:text-red-200 hover:bg-red-500/20 text-left transition-all cursor-pointer"
                     >
@@ -3662,7 +4749,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         <Trash2 size={14} />
                         <span>Delete</span>
                       </div>
-                      <span className="text-[10px] text-gray-400 font-mono">Del</span>
+                      <span className="text-[10px] text-gray-400 font-mono">
+                        Del
+                      </span>
                     </button>
                   </>
                 ) : (
@@ -3673,7 +4762,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         setTargetFolderId(null);
                         setShowNewFileInput(true);
                         setShowNewFolderInput(false);
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                     >
@@ -3687,7 +4781,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         setTargetFolderId(null);
                         setShowNewFolderInput(true);
                         setShowNewFileInput(false);
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                     >
@@ -3701,7 +4800,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => {
                         collapseAllFolders();
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                     >
@@ -3713,8 +4817,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       type="button"
                       onClick={() => {
                         syncWorkspaceState();
-                        showToast('🔄 Explorer refreshed', 'info');
-                        setContextMenu({ visible: false, x: 0, y: 0, item: null });
+                        showToast("🔄 Explorer refreshed", "info");
+                        setContextMenu({
+                          visible: false,
+                          x: 0,
+                          y: 0,
+                          item: null,
+                        });
                       }}
                       className="w-full flex items-center gap-2.5 px-3 py-2 text-gray-200 hover:text-white hover:bg-purple-600/30 text-left transition-all cursor-pointer"
                     >
@@ -3727,17 +4836,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             )}
 
             {/* SIDEBAR BOTTOM: Active Session Members Panel (PROPER SPACING & COLLAPSIBLE TOGGLE) */}
-            <div
-              className="border-t border-white/15 bg-[#0E0F17] flex flex-col shrink-0 transition-all"
-            >
+            <div className="border-t border-white/15 bg-[#0E0F17] flex flex-col shrink-0 transition-all">
               <button
                 type="button"
-                onClick={() => setIsMembersCollapsed(prev => !prev)}
+                onClick={() => setIsMembersCollapsed((prev) => !prev)}
                 className="w-full flex items-center justify-between cursor-pointer select-none hover:bg-white/[0.05] transition-all border-b border-white/5"
-                style={{ padding: '18px 24px' }}
-                title={isMembersCollapsed ? "Click to expand session members" : "Click to collapse session members"}
+                style={{ padding: "18px 24px" }}
+                title={
+                  isMembersCollapsed
+                    ? "Click to expand session members"
+                    : "Click to collapse session members"
+                }
               >
-                <div className="flex items-center" style={{ gap: '10px' }}>
+                <div className="flex items-center" style={{ gap: "10px" }}>
                   <Users size={16} className="text-purple-400 shrink-0" />
                   <span className="text-xs font-mono font-bold text-purple-200 uppercase tracking-wider truncate">
                     Session Members
@@ -3749,15 +4860,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   {/* Overlapping mini avatar stack when collapsed */}
                   {isMembersCollapsed && (
                     <div className="hidden sm:flex items-center -space-x-2 ml-2 shrink-0">
-                      {activeSessions.slice(0, 3).map((s, sidx) => (
-                        <span
-                          key={sidx}
-                          className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white text-[10px] font-mono font-bold flex items-center justify-center border-2 border-[#0E0F17] shadow-sm"
-                          title={s.userId?.name || 'Member'}
-                        >
-                          {(s.userId?.name || 'U')[0].toUpperCase()}
-                        </span>
-                      ))}
+                      {activeSessions.slice(0, 3).map((s, sidx) => {
+                        const sName =
+                          (s.userId &&
+                            typeof s.userId === "object" &&
+                            s.userId.name) ||
+                          s.userName ||
+                          s.displayName ||
+                          "Member";
+                        return (
+                          <span
+                            key={sidx}
+                            className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white text-[10px] font-mono font-bold flex items-center justify-center border-2 border-[#0E0F17] shadow-sm"
+                            title={sName}
+                          >
+                            {sName[0].toUpperCase()}
+                          </span>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -3772,72 +4892,171 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               </button>
 
               {!isMembersCollapsed && (
-                <div className="flex flex-col max-h-56 overflow-y-auto" style={{ padding: '16px 20px 20px 20px', gap: '12px' }}>
-                  {activeSessions.map((session, idx) => {
-                    const uName = session.userId?.name || `User ${idx + 1}`;
-                    const isMe = (session.userId?._id || session.userId?.id || session.userId) === (currentUser.id || currentUser._id);
-                    const statusColor = session.status === 'online' ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]' : session.status === 'away' ? 'bg-amber-400' : 'bg-gray-500';
+                <div
+                  className="flex flex-col max-h-56 overflow-y-auto"
+                  style={{ padding: "16px 20px 20px 20px", gap: "12px" }}
+                >
+                  {activeSessions.length > 0 ? (
+                    activeSessions.map((session, idx) => {
+                      const rawUserId = session.userId;
+                      const populatedName =
+                        (rawUserId &&
+                          typeof rawUserId === "object" &&
+                          rawUserId.name) ||
+                        session.userName ||
+                        session.displayName ||
+                        null;
+                      const isMe =
+                        (session.userId?._id ||
+                          session.userId?.id ||
+                          session.userId) ===
+                        (currentUser.id || currentUser._id);
+                      const uName =
+                        populatedName ||
+                        (isMe ? currentUser.name || "You" : "Member");
+                      const statusColor =
+                        session.status === "online"
+                          ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]"
+                          : session.status === "away"
+                            ? "bg-amber-400"
+                            : "bg-gray-500";
 
-                    return (
-                      <div
-                        key={session._id || idx}
-                        className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.08] transition-all shadow-md group"
-                        style={{ padding: '14px 18px' }}
-                      >
-                        <div className="flex items-center" style={{ gap: '14px' }}>
-                          <div className="relative flex items-center justify-center shrink-0">
-                            <span className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white font-mono text-xs font-bold flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-                              {uName[0].toUpperCase()}
-                            </span>
-                            <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0E0F17] ${statusColor}`} />
-                          </div>
-
-                          <div className="min-w-0 flex flex-col" style={{ gap: '4px' }}>
-                            <div className="flex items-center" style={{ gap: '8px' }}>
-                              <span className="text-xs md:text-sm font-bold text-white truncate">{uName}</span>
-                              {isMe && (
-                                <span
-                                  className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
-                                  style={{
-                                    padding: '2px 10px',
-                                    fontSize: '11px',
-                                    lineHeight: '1.2',
-                                    height: 'fit-content',
-                                    width: 'fit-content',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  You
-                                </span>
-                              )}
+                      return (
+                        <div
+                          key={session._id || idx}
+                          className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.08] transition-all shadow-md group"
+                          style={{ padding: "14px 18px" }}
+                        >
+                          <div
+                            className="flex items-center"
+                            style={{ gap: "14px" }}
+                          >
+                            <div className="relative flex items-center justify-center shrink-0">
+                              <span className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white font-mono text-xs font-bold flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
+                                {uName[0].toUpperCase()}
+                              </span>
+                              <span
+                                className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0E0F17] ${statusColor}`}
+                              />
                             </div>
 
-                            <div className="flex items-center text-xs font-mono text-gray-400" style={{ gap: '8px' }}>
-                              <span className="flex items-center gap-1.5 truncate text-purple-300 font-medium">
-                                <FileCode size={13} className="text-purple-400 shrink-0" />
-                                <span className="truncate">{session.currentFileId || 'index.js'}</span>
-                              </span>
-                              <span className="text-gray-600">•</span>
-                              <span className="capitalize text-gray-400">{session.role || 'editor'}</span>
+                            <div
+                              className="min-w-0 flex flex-col"
+                              style={{ gap: "4px" }}
+                            >
+                              <div
+                                className="flex items-center"
+                                style={{ gap: "8px" }}
+                              >
+                                <span className="text-xs md:text-sm font-bold text-white truncate">
+                                  {uName}
+                                </span>
+                                {isMe && (
+                                  <span
+                                    className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
+                                    style={{
+                                      padding: "2px 10px",
+                                      fontSize: "11px",
+                                      lineHeight: "1.2",
+                                      height: "fit-content",
+                                      width: "fit-content",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    You
+                                  </span>
+                                )}
+                              </div>
+
+                              <div
+                                className="flex items-center text-xs font-mono text-gray-400"
+                                style={{ gap: "8px" }}
+                              >
+                                <span className="flex items-center gap-1.5 truncate text-purple-300 font-medium">
+                                  <FileCode
+                                    size={13}
+                                    className="text-purple-400 shrink-0"
+                                  />
+                                  <span className="truncate">
+                                    {session.currentFileId || "index.js"}
+                                  </span>
+                                </span>
+                                <span className="text-gray-600">•</span>
+                                <span className="capitalize text-gray-400">
+                                  {session.role || "editor"}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
+                      );
+                    })
+                  ) : (
+                    <div
+                      className="flex items-center gap-6 rounded-xl bg-white/[0.04] border border-white/10"
+                      style={{ padding: "24px 32px" }}
+                    >
+                      <div className="relative flex items-center justify-center shrink-0">
+                        <span className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 via-indigo-600 to-cyan-500 text-white font-mono text-xs font-bold flex items-center justify-center shadow-lg">
+                          {(currentUser?.name || "Y")[0].toUpperCase()}
+                        </span>
+                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0E0F17] bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.9)]" />
                       </div>
-                    );
-                  })}
+                      <div
+                        className="min-w-0 flex flex-col"
+                        style={{ gap: "6px" }}
+                      >
+                        <div
+                          className="flex items-center"
+                          style={{ gap: "10px" }}
+                        >
+                          <span className="text-xs md:text-sm font-bold text-white truncate">
+                            {currentUser?.name || "You"}
+                          </span>
+                          <span
+                            className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
+                            style={{
+                              padding: "3px 14px",
+                              fontSize: "11px",
+                              lineHeight: "1.2",
+                              height: "fit-content",
+                              width: "fit-content",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            You
+                          </span>
+                        </div>
+                        <div
+                          className="flex items-center text-xs font-mono text-gray-400"
+                          style={{ gap: "8px" }}
+                        >
+                          <span className="flex items-center gap-1.5 truncate text-purple-300 font-medium">
+                            <FileCode
+                              size={13}
+                              className="text-purple-400 shrink-0"
+                            />
+                            <span className="truncate">
+                              {activeFile || "index.js"}
+                            </span>
+                          </span>
+                          <span className="text-gray-600">•</span>
+                          <span className="capitalize text-gray-400">
+                            {activeWorkspace?.role || "editor"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-
           </div>
 
           {/* RIGHT MAIN PANEL: Code Editor Window (Fills remaining width & height) */}
           <div className="flex-1 flex flex-col bg-[#0D0E15] min-w-0 h-full">
-
             {/* Top Editor Window Header (Tabs + Active Editors) */}
-            <div
-              className="ct-editor-window-header"
-            >
+            <div className="ct-editor-window-header">
               {/* Left Side: Window Controls + Active File Tabs */}
               <div className="ct-editor-tab-area">
                 <div className="ct-editor-window-controls" aria-hidden="true">
@@ -3848,36 +5067,61 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                 <div className="ct-editor-tab-scroller">
                   <div className="ct-editor-tabs">
-                  {customFiles.filter(f => !f.isFolder).map((file) => {
-                    // Always use canonical id (path-based) as the active file key
-                    const isTabActive = activeFile === file.id || activeFile === file.path;
-                    const displayName = file.name || file.id.split('/').pop() || file.id;
-                    return (
-                      <button
-                        key={file.id}
-                        className={`ct-editor-file-tab ${isTabActive ? 'active' : ''}`}
-                        onClick={() => handleSelectFile(file.id)}
-                      >
-                        <FileCode size={14} className={file.iconColor || 'text-yellow-400'} />
-                        <span>{displayName}</span>
-                      </button>
-                    );
-                  })}
+                    {customFiles
+                      .filter((f) => !f.isFolder)
+                      .map((file) => {
+                        // Always use canonical id (path-based) as the active file key
+                        const isTabActive =
+                          activeFile === file.id || activeFile === file.path;
+                        const displayName =
+                          file.name || file.id.split("/").pop() || file.id;
+                        return (
+                          <button
+                            key={file.id}
+                            className={`ct-editor-file-tab ${isTabActive ? "active" : ""}`}
+                            onClick={() => handleSelectFile(file.id)}
+                          >
+                            <FileCode
+                              size={14}
+                              className={file.iconColor || "text-yellow-400"}
+                            />
+                            <span>{displayName}</span>
+                          </button>
+                        );
+                      })}
                   </div>
                 </div>
               </div>
 
               {/* Automatic Programming Language Indicator Badge (Derived from File Extension) */}
               {(() => {
-                const langInfo = detectedActiveLanguage || getLanguageInfo(activeFile);
+                const langInfo =
+                  detectedActiveLanguage || getLanguageInfo(activeFile);
                 return (
                   <div
-                    className={`ct-editor-language-badge ${detectedActiveLanguage ? 'supported' : ''} ${detectedActiveLanguage ? '' : langInfo.bg}`}
-                    title={detectedActiveLanguage ? `Language: ${detectedActiveLanguage.name} (${detectedActiveLanguage.extension})` : 'This file cannot be executed'}
+                    className={`ct-editor-language-badge ${detectedActiveLanguage ? "supported" : ""} ${detectedActiveLanguage ? "" : langInfo.bg}`}
+                    title={
+                      detectedActiveLanguage
+                        ? `Language: ${detectedActiveLanguage.name} (${detectedActiveLanguage.extension})`
+                        : "This file cannot be executed"
+                    }
                   >
-                    <Code2 size={14} className={detectedActiveLanguage ? 'text-emerald-400' : langInfo.color} />
-                    <span className="font-bold">{detectedActiveLanguage ? detectedActiveLanguage.name : 'Unsupported file'}</span>
-                    <span className="text-[10px] opacity-75 font-mono font-normal">{detectedActiveLanguage?.extension || 'No runtime'}</span>
+                    <Code2
+                      size={14}
+                      className={
+                        detectedActiveLanguage
+                          ? "text-emerald-400"
+                          : langInfo.color
+                      }
+                    />
+                    <span className="font-bold">
+                      {detectedActiveLanguage
+                        ? detectedActiveLanguage.name
+                        : "Unsupported file"}
+                    </span>
+                    <span className="text-[10px] opacity-75 font-mono font-normal">
+                      {detectedActiveLanguage?.extension || "No runtime"}
+                    </span>
                   </div>
                 );
               })()}
@@ -3885,7 +5129,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               {/* Active Peers Pills (Fixed Right Container with Border Separator) */}
               <div className="ct-editor-active-editors hidden lg:flex">
                 <Users size={15} className="text-purple-400 shrink-0" />
-                <span className="text-xs font-mono text-gray-400 shrink-0">Active Editors:</span>
+                <span className="text-xs font-mono text-gray-400 shrink-0">
+                  Active Editors:
+                </span>
                 <div className="ct-editor-peer-list">
                   {isViewer && (
                     <div className="ct-editor-peer-pill read-only">
@@ -3893,32 +5139,45 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                       <span>Read-Only</span>
                     </div>
                   )}
-                  {activeSessions.filter(s => s.status !== 'offline').map((s, idx) => {
-                    const uid = s.userId?._id || s.userId?.id || s.userId || `peer-${idx}`;
-                    const name = s.userId?.name || `Peer ${idx + 1}`;
-                    const color = getPeerColor(uid, idx);
-                    const isMe = uid === currentUserId;
-                    const peerCur = peerCursors[uid];
-                    const isOnSameFile = (peerCur?.fileId === activeFile) || (s.currentFileId === activeFile);
-                    const posInfo = peerCur?.position ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}` : null;
+                  {activeSessions
+                    .filter((s) => s.status !== "offline")
+                    .map((s, idx) => {
+                      const uid =
+                        s.userId?._id ||
+                        s.userId?.id ||
+                        s.userId ||
+                        `peer-${idx}`;
+                      const name = s.userId?.name || `Peer ${idx + 1}`;
+                      const color = getPeerColor(uid, idx);
+                      const isMe = uid === currentUserId;
+                      const peerCur = peerCursors[uid];
+                      const isOnSameFile =
+                        peerCur?.fileId === activeFile ||
+                        s.currentFileId === activeFile;
+                      const posInfo = peerCur?.position
+                        ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}`
+                        : null;
 
-                    return (
-                      <div
-                        key={s._id || idx}
-                        className="ct-editor-peer-pill"
-                        style={{ '--peer-color': color }}
-                        title={`${name}${isMe ? ' (You)' : ''}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ''}`}
-                      >
-                        <span className="ct-editor-peer-dot" />
-                        <span>{name}{isMe ? ' (You)' : ''}</span>
-                        {isOnSameFile && posInfo && !isMe && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
-                            {posInfo}
+                      return (
+                        <div
+                          key={s._id || idx}
+                          className="ct-editor-peer-pill"
+                          style={{ "--peer-color": color }}
+                          title={`${name}${isMe ? " (You)" : ""}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ""}`}
+                        >
+                          <span className="ct-editor-peer-dot" />
+                          <span>
+                            {name}
+                            {isMe ? " (You)" : ""}
                           </span>
-                        )}
-                      </div>
-                    );
-                  })}
+                          {isOnSameFile && posInfo && !isMe && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
+                              {posInfo}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
             </div>
@@ -3928,7 +5187,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
               <div className="ct-editor-file-context">
                 <Code2 size={14} className="text-purple-400 shrink-0" />
                 <span className="ct-editor-file-path">{activeFile}</span>
-                <span className={`ct-editor-save-state ${autoSaveStatus.includes('Unsaved') ? 'is-unsaved' : ''}`}>
+                <span
+                  className={`ct-editor-save-state ${autoSaveStatus.includes("Unsaved") ? "is-unsaved" : ""}`}
+                >
                   {autoSaveStatus}
                 </span>
               </div>
@@ -3939,7 +5200,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   onClick={handleFormatDocument}
                   disabled={isViewer}
                   className="ct-editor-action-btn"
-                  title={isViewer ? 'Viewers cannot format code' : 'Format the active document'}
+                  title={
+                    isViewer
+                      ? "Viewers cannot format code"
+                      : "Format the active document"
+                  }
                 >
                   <Code2 size={13} />
                   <span>Format</span>
@@ -3949,7 +5214,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   onClick={handleResetActiveFile}
                   disabled={isViewer}
                   className="ct-editor-action-btn ct-editor-action-btn-muted"
-                  title={isViewer ? 'Viewers cannot reset files' : 'Restore the active file starter content'}
+                  title={
+                    isViewer
+                      ? "Viewers cannot reset files"
+                      : "Restore the active file starter content"
+                  }
                 >
                   <RefreshCw size={13} />
                   <span>Reset File</span>
@@ -3957,12 +5226,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 <button
                   type="button"
                   onClick={triggerAutoSave}
-                  disabled={isViewer || autoSaveStatus === 'Saving...'}
+                  disabled={isViewer || autoSaveStatus === "Saving..."}
                   className="ct-editor-action-btn ct-editor-action-btn-primary"
-                  title={isViewer ? 'Viewers cannot save changes' : 'Save workspace changes now'}
+                  title={
+                    isViewer
+                      ? "Viewers cannot save changes"
+                      : "Save workspace changes now"
+                  }
                 >
                   <Save size={13} />
-                  <span>{autoSaveStatus === 'Saving...' ? 'Saving...' : 'Save'}</span>
+                  <span>
+                    {autoSaveStatus === "Saving..." ? "Saving..." : "Save"}
+                  </span>
                 </button>
               </div>
             </div>
@@ -4003,73 +5278,106 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 }}
                 options={{
                   fontSize: 14,
-                  fontFamily: "'Fira Code', 'Cascadia Code', Consolas, monospace",
+                  fontFamily:
+                    "'Fira Code', 'Cascadia Code', Consolas, monospace",
                   fontLigatures: true,
-                  minimap: { enabled: true, side: 'right' },
+                  minimap: { enabled: true, side: "right" },
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
                   tabSize: 2,
-                  wordWrap: 'on',
+                  wordWrap: "on",
                   scrollBeyondLastColumn: 0,
                   smoothScrolling: true,
-                  cursorBlinking: 'smooth',
+                  cursorBlinking: "smooth",
                   readOnly: isViewer,
                   domReadOnly: isViewer,
-                  lineNumbers: 'on',
-                  renderLineHighlight: 'all',
-                  padding: { top: 14, bottom: 14 }
+                  lineNumbers: "on",
+                  renderLineHighlight: "all",
+                  padding: { top: 14, bottom: 14 },
                 }}
               />
             </div>
 
             {/* Integrated Execution Output & Custom Input Console Panel */}
             {isOutputPanelOpen && (
-              <div className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? 'h-14' : 'h-72 md:h-96'}`}>
+              <div
+                className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? "h-14" : "h-72 md:h-96"}`}
+              >
                 {/* Output Panel Header & Tabs */}
-                <div className="h-14 bg-[#12131F] border-b border-white/10 flex items-center justify-between select-none shrink-0" style={{ paddingLeft: '28px', paddingRight: '20px' }}>
-                  <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="h-14 bg-[#12131F] border-b border-white/10 flex items-center justify-between select-none shrink-0"
+                  style={{ paddingLeft: "28px", paddingRight: "20px" }}
+                >
+                  <div className="flex items-center gap-4 min-w-0">
                     {/* Console Tab 1: Output */}
                     <button
                       type="button"
-                      onClick={() => setOutputTab('output')}
-                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'output'
-                        ? 'bg-purple-500/20 text-purple-200 border border-purple-500/60'
-                        : 'bg-white/5 hover:bg-purple-500/15 text-gray-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40'
-                        }`}
-                      style={{ padding: '8px 22px', gap: '10px' }}
+                      onClick={() => setOutputTab("output")}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                        outputTab === "output"
+                          ? "bg-purple-500/20 text-purple-200 border border-purple-500/60"
+                          : "bg-white/5 hover:bg-purple-500/15 text-gray-300 hover:text-purple-200 border border-white/10 hover:border-purple-500/40"
+                      }`}
+                      style={{ padding: "8px 22px", gap: "10px" }}
                     >
-                      <Terminal size={15} className={outputTab === 'output' ? 'text-purple-300' : 'text-purple-400'} />
+                      <Terminal
+                        size={15}
+                        className={
+                          outputTab === "output"
+                            ? "text-purple-300"
+                            : "text-purple-400"
+                        }
+                      />
                       <span>Output</span>
                     </button>
 
                     {/* Console Tab 2: Input (stdin) */}
                     <button
                       type="button"
-                      onClick={() => setOutputTab('input')}
-                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'input'
-                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/60'
-                        : 'bg-white/5 hover:bg-cyan-500/15 text-gray-300 hover:text-cyan-200 border border-white/10 hover:border-cyan-500/40'
-                        }`}
-                      style={{ padding: '8px 22px', gap: '10px' }}
+                      onClick={() => setOutputTab("input")}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                        outputTab === "input"
+                          ? "bg-cyan-500/20 text-cyan-200 border border-cyan-500/60"
+                          : "bg-white/5 hover:bg-cyan-500/15 text-gray-300 hover:text-cyan-200 border border-white/10 hover:border-cyan-500/40"
+                      }`}
+                      style={{ padding: "8px 22px", gap: "10px" }}
                     >
-                      <FileText size={15} className={outputTab === 'input' ? 'text-cyan-300' : 'text-cyan-400'} />
+                      <FileText
+                        size={15}
+                        className={
+                          outputTab === "input"
+                            ? "text-cyan-300"
+                            : "text-cyan-400"
+                        }
+                      />
                       <span>Input (stdin)</span>
                       {customInput.trim() ? (
-                        <span className="w-2.5 h-2.5 rounded-full bg-cyan-400" title="Custom input active" />
+                        <span
+                          className="w-2.5 h-2.5 rounded-full bg-cyan-400"
+                          title="Custom input active"
+                        />
                       ) : null}
                     </button>
 
                     {/* Console Tab 3: Execution History */}
                     <button
                       type="button"
-                      onClick={() => setOutputTab('history')}
-                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${outputTab === 'history'
-                        ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/60'
-                        : 'bg-white/5 hover:bg-indigo-500/15 text-gray-300 hover:text-indigo-200 border border-white/10 hover:border-indigo-500/40'
-                        }`}
-                      style={{ padding: '8px 22px', gap: '10px' }}
+                      onClick={() => setOutputTab("history")}
+                      className={`flex items-center rounded-full text-xs font-mono font-bold transition-all cursor-pointer ${
+                        outputTab === "history"
+                          ? "bg-indigo-500/20 text-indigo-200 border border-indigo-500/60"
+                          : "bg-white/5 hover:bg-indigo-500/15 text-gray-300 hover:text-indigo-200 border border-white/10 hover:border-indigo-500/40"
+                      }`}
+                      style={{ padding: "8px 22px", gap: "10px" }}
                     >
-                      <History size={15} className={outputTab === 'history' ? 'text-indigo-300' : 'text-indigo-400'} />
+                      <History
+                        size={15}
+                        className={
+                          outputTab === "history"
+                            ? "text-indigo-300"
+                            : "text-indigo-400"
+                        }
+                      />
                       <span>Execution History</span>
                       {executionHistoryList.length > 0 && (
                         <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 text-xs font-bold border border-indigo-400/40 ml-1">
@@ -4081,13 +5389,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     <button
                       type="button"
                       onClick={() => {
-                        setOutputTab('telemetry');
+                        setOutputTab("telemetry");
                         fetchWorkspaceTelemetry();
                       }}
-                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${outputTab === 'telemetry'
-                          ? 'bg-[#0B0C14] text-white border-t border-x border-purple-500/50'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                        }`}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-t-lg text-xs font-mono font-bold transition-all ${
+                        outputTab === "telemetry"
+                          ? "bg-[#0B0C14] text-white border-t border-x border-purple-500/50"
+                          : "text-gray-400 hover:text-gray-200 hover:bg-white/5"
+                      }`}
                     >
                       <ShieldCheck size={13} className="text-purple-400" />
                       <span>Telemetry & Audit</span>
@@ -4099,41 +5408,69 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     </button>
 
                     {/* Active Execution Status Badge */}
-                    {executionStatus === 'running' && (
-                      <div className="flex items-center rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-mono font-bold animate-pulse shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
-                        <Loader2 size={14} className="animate-spin text-blue-400" />
+                    {executionStatus === "running" && (
+                      <div
+                        className="flex items-center rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-300 text-xs font-mono font-bold animate-pulse shrink-0 ml-2"
+                        style={{ padding: "8px 22px", gap: "10px" }}
+                      >
+                        <Loader2
+                          size={14}
+                          className="animate-spin text-blue-400"
+                        />
                         <span>Executing...</span>
                       </div>
                     )}
 
-                    {executionStatus === 'success' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
-                        <CheckCircle2 size={14} className="text-emerald-400" />
-                        <span>Success (Exit 0)</span>
-                        {executionResult.executionTimeMs !== null && (
-                          <span className="text-xs text-emerald-400/80 font-normal">• {executionResult.executionTimeMs}ms</span>
-                        )}
-                      </div>
-                    )}
+                    {executionStatus === "success" &&
+                      executionResult &&
+                      outputTab === "output" && (
+                        <div
+                          className="flex items-center rounded-full bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-mono font-bold shrink-0 ml-2"
+                          style={{ padding: "8px 22px", gap: "10px" }}
+                        >
+                          <CheckCircle2
+                            size={14}
+                            className="text-emerald-400"
+                          />
+                          <span>Success (Exit 0)</span>
+                          {executionResult.executionTimeMs !== null && (
+                            <span className="text-xs text-emerald-400/80 font-normal">
+                              • {executionResult.executionTimeMs}ms
+                            </span>
+                          )}
+                        </div>
+                      )}
 
-                    {executionStatus === 'error' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center rounded-full bg-red-500/20 border border-red-500/50 text-red-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
-                        <AlertTriangle size={14} className="text-red-400" />
-                        <span>Runtime Error (Exit {executionResult.exitCode ?? 1})</span>
-                      </div>
-                    )}
+                    {executionStatus === "error" &&
+                      executionResult &&
+                      outputTab === "output" && (
+                        <div
+                          className="flex items-center rounded-full bg-red-500/20 border border-red-500/50 text-red-300 text-xs font-mono font-bold shrink-0 ml-2"
+                          style={{ padding: "8px 22px", gap: "10px" }}
+                        >
+                          <AlertTriangle size={14} className="text-red-400" />
+                          <span>
+                            Runtime Error (Exit {executionResult.exitCode ?? 1})
+                          </span>
+                        </div>
+                      )}
 
-                    {executionStatus === 'compile_error' && executionResult && outputTab === 'output' && (
-                      <div className="flex items-center rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-mono font-bold shrink-0 ml-2" style={{ padding: '8px 22px', gap: '10px' }}>
-                        <AlertTriangle size={14} className="text-amber-400" />
-                        <span>Compilation Error</span>
-                      </div>
-                    )}
+                    {executionStatus === "compile_error" &&
+                      executionResult &&
+                      outputTab === "output" && (
+                        <div
+                          className="flex items-center rounded-full bg-amber-500/20 border border-amber-500/50 text-amber-300 text-xs font-mono font-bold shrink-0 ml-2"
+                          style={{ padding: "8px 22px", gap: "10px" }}
+                        >
+                          <AlertTriangle size={14} className="text-amber-400" />
+                          <span>Compilation Error</span>
+                        </div>
+                      )}
                   </div>
 
                   {/* Right Header Action Controls */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    {outputTab === 'output' && (
+                  <div className="flex items-center gap-4 shrink-0">
+                    {outputTab === "output" && (
                       <button
                         type="button"
                         onClick={() => setExecutionResult(null)}
@@ -4143,33 +5480,47 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         <Trash2 size={16} />
                       </button>
                     )}
-                    {outputTab === 'history' && executionHistoryList.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setExecutionHistoryList([]);
-                          if (wsId && wsId !== 'demo-workspace') {
-                            try {
-                              await axios.delete(`${API_BASE}/workspaces/${wsId}/executions`, {
-                                headers: token ? { Authorization: `Bearer ${token}` } : {}
-                              });
-                            } catch (e) { }
-                          }
-                          showToast('🗑️ Execution history cleared', 'info');
-                        }}
-                        className="text-gray-300 hover:text-red-400 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
-                        title="Clear Execution History"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
+                    {outputTab === "history" &&
+                      executionHistoryList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            setExecutionHistoryList([]);
+                            if (wsId && wsId !== "demo-workspace") {
+                              try {
+                                await axios.delete(
+                                  `${API_BASE}/workspaces/${wsId}/executions`,
+                                  {
+                                    headers: token
+                                      ? { Authorization: `Bearer ${token}` }
+                                      : {},
+                                  },
+                                );
+                              } catch (e) {}
+                            }
+                            showToast("🗑️ Execution history cleared", "info");
+                          }}
+                          className="text-gray-300 hover:text-red-400 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
+                          title="Clear Execution History"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     <button
                       type="button"
-                      onClick={() => setIsOutputPanelMinimized(prev => !prev)}
+                      onClick={() => setIsOutputPanelMinimized((prev) => !prev)}
                       className="text-gray-300 hover:text-white rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
-                      title={isOutputPanelMinimized ? "Expand Panel" : "Minimize Panel"}
+                      title={
+                        isOutputPanelMinimized
+                          ? "Expand Panel"
+                          : "Minimize Panel"
+                      }
                     >
-                      {isOutputPanelMinimized ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      {isOutputPanelMinimized ? (
+                        <ChevronUp size={16} />
+                      ) : (
+                        <ChevronDown size={16} />
+                      )}
                     </button>
                     <button
                       type="button"
@@ -4184,39 +5535,71 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                 {/* Output Panel Body Tabs */}
                 {!isOutputPanelMinimized && (
-                  <div className="flex-1 overflow-y-auto font-mono text-xs leading-relaxed select-text space-y-6" style={{ padding: '24px 32px' }}>
-
+                  <div
+                    className="flex-1 overflow-y-auto font-mono text-xs leading-relaxed select-text space-y-6"
+                    style={{ padding: "24px 32px" }}
+                  >
                     {/* TAB 1: EXECUTION OUTPUT CONSOLE */}
-                    {outputTab === 'output' && (
+                    {outputTab === "output" && (
                       <div className="space-y-5">
-                        {executionStatus === 'running' && !executionResult?.stdout && !executionResult?.stderr && (
-                          <div className="flex items-center gap-3.5 text-gray-200 py-4 px-6 rounded-2xl bg-blue-500/10 border border-blue-500/30 font-mono text-xs shadow-md">
-                            <Loader2 size={18} className="animate-spin text-blue-400 shrink-0" />
-                            <span>Running <strong>{activeFile}</strong> ({getLanguageInfo(activeFile).name})...</span>
-                          </div>
-                        )}
+                        {executionStatus === "running" &&
+                          !executionResult?.stdout &&
+                          !executionResult?.stderr && (
+                            <div className="flex items-center gap-4.5 text-gray-200 py-4 px-6 rounded-2xl bg-blue-500/10 border border-blue-500/30 font-mono text-xs shadow-md">
+                              <Loader2
+                                size={18}
+                                className="animate-spin text-blue-400 shrink-0"
+                              />
+                              <span>
+                                Running <strong>{activeFile}</strong> (
+                                {getLanguageInfo(activeFile).name})...
+                              </span>
+                            </div>
+                          )}
 
                         {executionResult && (
                           <div className="flex flex-col space-y-5">
                             {/* Card Header Bar - Distinct Padded Pill Container */}
                             <div className="bg-[#141624] border border-white/15 px-7 py-4.5 rounded-2xl flex items-center justify-between flex-wrap gap-4 text-xs font-mono shadow-md">
-                              <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-4">
                                 <span className="w-3 h-3 rounded-full bg-purple-400 animate-pulse shrink-0" />
-                                <span className="font-extrabold text-white text-xs sm:text-sm">Running {executionResult.filename}</span>
-                                <span className="text-gray-400 font-medium">• {getLanguageInfo(executionResult.filename).name}</span>
+                                <span className="font-extrabold text-white text-xs sm:text-sm">
+                                  Running {executionResult.filename}
+                                </span>
+                                <span className="text-gray-400 font-medium">
+                                  •{" "}
+                                  {
+                                    getLanguageInfo(executionResult.filename)
+                                      .name
+                                  }
+                                </span>
                               </div>
-                              <div className="flex items-center gap-3 text-xs text-gray-400">
+                              <div className="flex items-center gap-4 text-xs text-gray-400">
                                 {executionResult.stdin ? (
                                   <span className="px-3.5 py-1 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold">
-                                    stdin attached ({executionResult.stdin.split('\n').length} line{executionResult.stdin.split('\n').length > 1 ? 's' : ''})
+                                    stdin attached (
+                                    {executionResult.stdin.split("\n").length}{" "}
+                                    line
+                                    {executionResult.stdin.split("\n").length >
+                                    1
+                                      ? "s"
+                                      : ""}
+                                    )
                                   </span>
                                 ) : null}
-                                <span className="font-mono">{new Date(executionResult.timestamp).toLocaleTimeString()}</span>
+                                <span className="font-mono">
+                                  {new Date(
+                                    executionResult.timestamp,
+                                  ).toLocaleTimeString()}
+                                </span>
                               </div>
                             </div>
 
                             {/* Card Body Box - Distinct Floating Card with Deep Padding & Line Spacing */}
-                            <div className="bg-[#05060A] border border-white/15 rounded-2xl font-mono text-xs space-y-7 shadow-md" style={{ padding: '32px 36px' }}>
+                            <div
+                              className="bg-[#05060A] border border-white/15 rounded-2xl font-mono text-xs space-y-7 shadow-md"
+                              style={{ padding: "32px 36px" }}
+                            >
                               {/* Compiler Diagnostic Output */}
                               {executionResult.compileOutput && (
                                 <div className="p-6 md:p-7 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
@@ -4230,7 +5613,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                               {/* Standard Output (stdout) - Wrapped in Padded Card Container with Spacious Line Height */}
                               {executionResult.stdout ? (
-                                <div className="rounded-2xl bg-white/[0.03] border border-white/10 text-gray-100 whitespace-pre-wrap font-mono text-xs sm:text-sm leading-[2.6] tracking-wide my-5" style={{ padding: '28px 32px' }}>
+                                <div
+                                  className="rounded-2xl bg-white/[0.03] border border-white/10 text-gray-100 whitespace-pre-wrap font-mono text-xs sm:text-sm leading-[2.6] tracking-wide my-5"
+                                  style={{ padding: "28px 32px" }}
+                                >
                                   {executionResult.stdout}
                                 </div>
                               ) : null}
@@ -4247,64 +5633,91 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               )}
 
                               {/* Empty Output Scenario on Success */}
-                              {executionStatus === 'success' && !executionResult.stdout && !executionResult.stderr && (
-                                <div className="text-gray-500 italic p-6 rounded-2xl bg-white/[0.02] border border-white/5 my-4">
-                                  [Process exited with code 0 — no standard output produced]
-                                </div>
-                              )}
+                              {executionStatus === "success" &&
+                                !executionResult.stdout &&
+                                !executionResult.stderr && (
+                                  <div className="text-gray-500 italic p-6 rounded-2xl bg-white/[0.02] border border-white/5 my-4">
+                                    [Process exited with code 0 — no standard
+                                    output produced]
+                                  </div>
+                                )}
 
                               {/* Timeout Scenario */}
-                              {executionStatus === 'timeout' && (
+                              {executionStatus === "timeout" && (
                                 <div className="p-6 md:p-7 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
                                   <div className="font-bold text-amber-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
                                     <Clock size={16} />
                                     <span>Execution Timeout</span>
                                   </div>
-                                  The program execution timed out before completion.
+                                  The program execution timed out before
+                                  completion.
                                 </div>
                               )}
 
                               {/* Process Completion Footer Row - Independent Capsule Pill Row */}
-                              <div className="mt-7 rounded-full bg-white/[0.06] border border-white/15 flex items-center justify-between flex-wrap gap-5 text-xs text-gray-300" style={{ padding: '14px 24px' }}>
-                                <div className="flex items-center gap-3 font-mono">
+                              <div
+                                className="mt-7 rounded-full bg-white/[0.06] border border-white/15 flex items-center justify-between flex-wrap gap-6 text-xs text-gray-300"
+                                style={{ padding: "14px 24px" }}
+                              >
+                                <div className="flex items-center gap-4 font-mono">
                                   <span className="flex items-center gap-2.5">
-                                    <span className="font-bold text-gray-200">Process finished with exit code</span>
-                                    <strong className={`px-4 py-1.5 rounded-full font-extrabold text-xs ${executionResult.exitCode === 0
-                                        ? 'text-emerald-300 bg-emerald-500/20 border border-emerald-500/50'
-                                        : 'text-red-300 bg-red-500/20 border border-red-500/50'
-                                      }`}>
+                                    <span className="font-bold text-gray-200">
+                                      Process finished with exit code
+                                    </span>
+                                    <strong
+                                      className={`px-4 py-1.5 rounded-full font-extrabold text-xs ${
+                                        executionResult.exitCode === 0
+                                          ? "text-emerald-300 bg-emerald-500/20 border border-emerald-500/50"
+                                          : "text-red-300 bg-red-500/20 border border-red-500/50"
+                                      }`}
+                                    >
                                       {executionResult.exitCode ?? 0}
                                     </strong>
                                   </span>
                                   {executionResult.executionTimeMs !== null && (
-                                    <span className="text-gray-400 font-medium">• in {executionResult.executionTimeMs}ms</span>
+                                    <span className="text-gray-400 font-medium">
+                                      • in {executionResult.executionTimeMs}ms
+                                    </span>
                                   )}
                                 </div>
 
                                 <button
                                   type="button"
-                                  onClick={() => setOutputTab('input')}
+                                  onClick={() => setOutputTab("input")}
                                   className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
-                                  style={{ padding: '8px 22px', gap: '10px' }}
+                                  style={{ padding: "8px 22px", gap: "10px" }}
                                 >
-                                  <FileText size={15} className="text-cyan-400 shrink-0" />
-                                  <span>{customInput.trim() ? 'Edit Custom Input' : '+ Add Custom Input (stdin)'}</span>
+                                  <FileText
+                                    size={15}
+                                    className="text-cyan-400 shrink-0"
+                                  />
+                                  <span>
+                                    {customInput.trim()
+                                      ? "Edit Custom Input"
+                                      : "+ Add Custom Input (stdin)"}
+                                  </span>
                                 </button>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {!executionResult && executionStatus === 'idle' && (
+                        {!executionResult && executionStatus === "idle" && (
                           <div className="text-gray-300 italic p-6 bg-[#05060A] rounded-2xl border border-white/15 flex items-center justify-between flex-wrap gap-4">
-                            <span>Click "Run Code" in the header to execute the active file. Output and errors will appear here.</span>
+                            <span>
+                              Click "Run Code" in the header to execute the
+                              active file. Output and errors will appear here.
+                            </span>
                             <button
                               type="button"
-                              onClick={() => setOutputTab('input')}
+                              onClick={() => setOutputTab("input")}
                               className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
-                              style={{ padding: '8px 22px', gap: '10px' }}
+                              style={{ padding: "8px 22px", gap: "10px" }}
                             >
-                              <FileText size={15} className="text-cyan-400 shrink-0" />
+                              <FileText
+                                size={15}
+                                className="text-cyan-400 shrink-0"
+                              />
                               <span>Configure Custom Input (stdin)</span>
                             </button>
                           </div>
@@ -4313,32 +5726,38 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     )}
 
                     {/* TAB 2: CUSTOM INPUT (STDIN) CONFIGURATION */}
-                    {outputTab === 'input' && (
+                    {outputTab === "input" && (
                       <div className="h-full flex flex-col justify-between space-y-4">
-                        <div className="flex items-center justify-between pb-3 border-b border-white/10 gap-3">
+                        <div className="flex items-center justify-between pb-3 border-b border-white/10 gap-4">
                           <div className="flex items-center gap-2 text-xs font-bold text-cyan-300">
-                            <FileText size={15} className="text-cyan-400 shrink-0" />
+                            <FileText
+                              size={15}
+                              className="text-cyan-400 shrink-0"
+                            />
                             <span>Standard Input (stdin)</span>
                             <span className="text-gray-400 text-[11px] font-normal font-mono hidden sm:inline">
-                              (Pass custom inputs for Python `input()`, C++ `cin`, C `scanf`, Java `Scanner`, etc.)
+                              (Pass custom inputs for Python `input()`, C++
+                              `cin`, C `scanf`, Java `Scanner`, etc.)
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
                             {customInput && (
                               <button
                                 type="button"
-                                onClick={() => setCustomInput('')}
+                                onClick={() => setCustomInput("")}
                                 className="flex items-center rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-gray-200 hover:text-white text-xs font-mono font-semibold transition-all cursor-pointer"
-                                style={{ padding: '8px 20px', gap: '8px' }}
+                                style={{ padding: "8px 20px", gap: "8px" }}
                               >
                                 Clear Input
                               </button>
                             )}
                             <button
                               type="button"
-                              onClick={() => setCustomInput('42\nHello World\n10 20 30')}
+                              onClick={() =>
+                                setCustomInput("42\nHello World\n10 20 30")
+                              }
                               className="flex items-center rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-300 text-xs font-mono font-semibold transition-all cursor-pointer"
-                              style={{ padding: '8px 20px', gap: '8px' }}
+                              style={{ padding: "8px 20px", gap: "8px" }}
                             >
                               Sample Input
                             </button>
@@ -4349,18 +5768,29 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                           value={customInput}
                           onChange={(e) => setCustomInput(e.target.value)}
                           placeholder="Type single-line or multiline standard input (stdin) here...&#10;Example:&#10;10&#10;20&#10;Alice"
-                          className="w-full h-40 bg-[#06070C] border border-cyan-500/30 focus:border-cyan-400 rounded-xl text-xs text-cyan-100 placeholder-gray-500 font-mono outline-none resize-y leading-relaxed my-2" style={{ padding: '16px 20px', lineHeight: '1.8' }}
+                          className="w-full h-40 bg-[#06070C] border border-cyan-500/30 focus:border-cyan-400 rounded-xl text-xs text-cyan-100 placeholder-gray-500 font-mono outline-none resize-y leading-relaxed my-2"
+                          style={{ padding: "16px 20px", lineHeight: "1.8" }}
                         />
 
-                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-gray-400 flex-wrap gap-3">
+                        <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-gray-400 flex-wrap gap-4">
                           <span>
                             {customInput ? (
                               <span className="text-emerald-400 font-bold flex items-center gap-1.5">
                                 <CheckCircle2 size={13} />
-                                <span>Custom input attached ({customInput.split('\n').length} line{customInput.split('\n').length > 1 ? 's' : ''}, {customInput.length} chars)</span>
+                                <span>
+                                  Custom input attached (
+                                  {customInput.split("\n").length} line
+                                  {customInput.split("\n").length > 1
+                                    ? "s"
+                                    : ""}
+                                  , {customInput.length} chars)
+                                </span>
                               </span>
                             ) : (
-                              <span>No stdin specified (execution runs with empty input)</span>
+                              <span>
+                                No stdin specified (execution runs with empty
+                                input)
+                              </span>
                             )}
                           </span>
                           <button
@@ -4368,9 +5798,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             onClick={handleRunActiveCode}
                             disabled={isExecuting || isViewer}
                             className="flex items-center rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/60 hover:border-emerald-400 text-emerald-300 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer disabled:opacity-50"
-                            style={{ padding: '10px 22px', gap: '10px' }}
+                            style={{ padding: "10px 22px", gap: "10px" }}
                           >
-                            {isExecuting ? <Loader2 size={15} className="animate-spin text-emerald-400" /> : <Play size={15} className="text-emerald-400" />}
+                            {isExecuting ? (
+                              <Loader2
+                                size={15}
+                                className="animate-spin text-emerald-400"
+                              />
+                            ) : (
+                              <Play size={15} className="text-emerald-400" />
+                            )}
                             <span>Run Code with Input</span>
                           </button>
                         </div>
@@ -4378,53 +5815,73 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     )}
 
                     {/* TAB 3: EXECUTION HISTORY LOGS */}
-                    {outputTab === 'history' && (
+                    {outputTab === "history" && (
                       <div className="space-y-3">
                         <div className="flex items-center justify-between pb-1 border-b border-white/10">
                           <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
                             <History size={14} className="text-indigo-400" />
                             <span>Execution History Log</span>
                             <span className="text-gray-400 text-[11px] font-normal font-mono">
-                              ({executionHistoryList.length} past execution{executionHistoryList.length === 1 ? '' : 's'} recorded)
+                              ({executionHistoryList.length} past execution
+                              {executionHistoryList.length === 1
+                                ? ""
+                                : "s"}{" "}
+                              recorded)
                             </span>
                           </div>
                         </div>
 
                         {executionHistoryList.length === 0 ? (
                           <div className="text-gray-500 italic py-6 text-center">
-                            No past execution records found for this session. Run code to build history!
+                            No past execution records found for this session.
+                            Run code to build history!
                           </div>
                         ) : (
                           <div className="space-y-2 max-h-48 md:max-h-56 overflow-y-auto pr-1">
                             {executionHistoryList.map((item, idx) => {
-                              const isSelected = selectedHistoryItem?._id === item._id;
-                              const isSuccess = item.status === 'success';
-                              const isCompileErr = item.status === 'compile_error';
-                              const isTimeout = item.status === 'timeout';
+                              const isSelected =
+                                selectedHistoryItem?._id === item._id;
+                              const isSuccess = item.status === "success";
+                              const isCompileErr =
+                                item.status === "compile_error";
+                              const isTimeout = item.status === "timeout";
 
                               const badgeColor = isSuccess
-                                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
                                 : isCompileErr
-                                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                  ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
                                   : isTimeout
-                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                                    : 'bg-red-500/20 text-red-300 border-red-500/40';
+                                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                    : "bg-red-500/20 text-red-300 border-red-500/40";
 
                               return (
                                 <div
                                   key={item._id || idx}
-                                  className={`p-3.5 rounded-xl border transition-all ${isSelected
-                                    ? 'bg-purple-600/20 border-purple-500/60'
-                                    : 'bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]'
-                                    }`}
+                                  className={`p-3.5 rounded-xl border transition-all ${
+                                    isSelected
+                                      ? "bg-purple-600/20 border-purple-500/60"
+                                      : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]"
+                                  }`}
                                 >
-                                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                                  <div className="flex items-center justify-between gap-4 flex-wrap">
                                     <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-                                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeColor}`}>
-                                        {isSuccess ? 'Exit 0' : isCompileErr ? 'Compile Error' : isTimeout ? 'Timeout' : `Exit ${item.exitCode ?? 1}`}
+                                      <span
+                                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeColor}`}
+                                      >
+                                        {isSuccess
+                                          ? "Exit 0"
+                                          : isCompileErr
+                                            ? "Compile Error"
+                                            : isTimeout
+                                              ? "Timeout"
+                                              : `Exit ${item.exitCode ?? 1}`}
                                       </span>
-                                      <span className="font-bold text-gray-200 truncate">{item.filename}</span>
-                                      <span className="text-[11px] text-gray-400 font-mono">({item.language})</span>
+                                      <span className="font-bold text-gray-200 truncate">
+                                        {item.filename}
+                                      </span>
+                                      <span className="text-[11px] text-gray-400 font-mono">
+                                        ({item.language})
+                                      </span>
                                       {item.stdin ? (
                                         <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
                                           +stdin
@@ -4432,18 +5889,34 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                       ) : null}
                                     </div>
 
-                                    <div className="flex items-center gap-3 shrink-0 text-xs text-gray-400 font-mono">
-                                      {item.executionTimeMs !== null && item.executionTimeMs !== undefined && (
-                                        <span className="text-gray-400">{item.executionTimeMs}ms</span>
-                                      )}
-                                      <span>{new Date(item.timestamp).toLocaleTimeString()}</span>
+                                    <div className="flex items-center gap-4 shrink-0 text-xs text-gray-400 font-mono">
+                                      {item.executionTimeMs !== null &&
+                                        item.executionTimeMs !== undefined && (
+                                          <span className="text-gray-400">
+                                            {item.executionTimeMs}ms
+                                          </span>
+                                        )}
+                                      <span>
+                                        {new Date(
+                                          item.timestamp,
+                                        ).toLocaleTimeString()}
+                                      </span>
                                       <button
                                         type="button"
-                                        onClick={() => setSelectedHistoryItem(isSelected ? null : item)}
+                                        onClick={() =>
+                                          setSelectedHistoryItem(
+                                            isSelected ? null : item,
+                                          )
+                                        }
                                         className="flex items-center rounded-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 font-semibold text-xs transition-all cursor-pointer"
-                                        style={{ padding: '6px 18px', gap: '6px' }}
+                                        style={{
+                                          padding: "6px 18px",
+                                          gap: "6px",
+                                        }}
                                       >
-                                        {isSelected ? 'Hide Details' : 'Details'}
+                                        {isSelected
+                                          ? "Hide Details"
+                                          : "Details"}
                                       </button>
                                     </div>
                                   </div>
@@ -4459,7 +5932,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                               type="button"
                                               onClick={() => {
                                                 setCustomInput(item.stdin);
-                                                showToast('📋 Loaded stdin into input editor', 'info');
+                                                showToast(
+                                                  "📋 Loaded stdin into input editor",
+                                                  "info",
+                                                );
                                               }}
                                               className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 text-[11px] font-mono cursor-pointer transition-all"
                                             >
@@ -4474,7 +5950,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.stdout && (
                                         <div>
-                                          <div className="text-emerald-400 font-bold mb-1">Standard Output (stdout):</div>
+                                          <div className="text-emerald-400 font-bold mb-1">
+                                            Standard Output (stdout):
+                                          </div>
                                           <pre className="bg-[#05060A] p-3 rounded-lg text-gray-100 whitespace-pre-wrap font-mono text-xs border border-white/10 max-h-32 overflow-y-auto">
                                             {item.stdout}
                                           </pre>
@@ -4483,7 +5961,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.compileOutput && (
                                         <div>
-                                          <div className="text-amber-400 font-bold mb-1">Compiler Output:</div>
+                                          <div className="text-amber-400 font-bold mb-1">
+                                            Compiler Output:
+                                          </div>
                                           <pre className="bg-[#05060A] p-3 rounded-lg text-amber-200 whitespace-pre-wrap font-mono text-xs border border-amber-500/20 max-h-28 overflow-y-auto">
                                             {item.compileOutput}
                                           </pre>
@@ -4492,7 +5972,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.stderr && (
                                         <div>
-                                          <div className="text-red-400 font-bold mb-1">Standard Error (stderr):</div>
+                                          <div className="text-red-400 font-bold mb-1">
+                                            Standard Error (stderr):
+                                          </div>
                                           <pre className="bg-[#05060A] p-3 rounded-lg text-red-200 whitespace-pre-wrap font-mono text-xs border border-red-500/20 max-h-28 overflow-y-auto">
                                             {item.stderr}
                                           </pre>
@@ -4501,7 +5983,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
 
                                       {item.code && (
                                         <div>
-                                          <div className="text-purple-300 font-bold mb-1">Code Snapshot:</div>
+                                          <div className="text-purple-300 font-bold mb-1">
+                                            Code Snapshot:
+                                          </div>
                                           <pre className="bg-[#05060A] p-3 rounded-lg text-gray-300 whitespace-pre-wrap font-mono text-xs border border-purple-500/20 max-h-28 overflow-y-auto">
                                             {item.code}
                                           </pre>
@@ -4518,25 +6002,35 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     )}
 
                     {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
-                    {outputTab === 'telemetry' && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between pb-2 border-b border-white/10 flex-wrap gap-2">
-                          <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
-                            <ShieldCheck size={15} className="text-purple-400" />
-                            <span>Proof-of-Work Contribution Telemetry & Audit</span>
+                    {outputTab === "telemetry" && (
+                      <div className="space-y-5">
+                        <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-wrap gap-4">
+                          <div className="flex items-center gap-3 text-xs font-bold text-purple-300">
+                            <ShieldCheck
+                              size={15}
+                              className="text-purple-400"
+                            />
+                            <span>
+                              Proof-of-Work Contribution Telemetry & Audit
+                            </span>
                             {telemetryVerification?.isValid ? (
-                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                              <span className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                <CheckCircle2 size={11} /> 100% Cryptographically Verified
+                                <CheckCircle2 size={11} /> 100%
+                                Cryptographically Verified
                               </span>
                             ) : (
-                              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
-                                <AlertTriangle size={11} className="text-rose-400" /> Tamper Warning
+                              <span className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
+                                <AlertTriangle
+                                  size={11}
+                                  className="text-rose-400"
+                                />{" "}
+                                Tamper Warning
                               </span>
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-3">
                             <button
                               type="button"
                               onClick={() => fetchWorkspaceTelemetry()}
@@ -4544,15 +6038,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
                               title="Re-verify blockchain activity chain"
                             >
-                              <RefreshCw size={11} className={isTelemetryLoading ? "animate-spin text-purple-400" : ""} />
+                              <RefreshCw
+                                size={11}
+                                className={
+                                  isTelemetryLoading
+                                    ? "animate-spin text-purple-400"
+                                    : ""
+                                }
+                              />
                               <span>Verify Chain</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => {
-                                const fileName = exportAuditJson(currentWorkspace, telemetryData, telemetryVerification);
-                                showToast(`📄 Exported ${fileName}`, 'success');
+                                const fileName = exportAuditJson(
+                                  currentWorkspace,
+                                  telemetryData,
+                                  telemetryVerification,
+                                );
+                                showToast(`📄 Exported ${fileName}`, "success");
                               }}
                               className="px-2.5 py-1 rounded bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer font-bold"
                               title="Download JSON machine-verifiable audit manifest"
@@ -4564,8 +6069,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                             <button
                               type="button"
                               onClick={() => {
-                                const fileName = exportAuditMarkdown(currentWorkspace, telemetryData, telemetryVerification);
-                                showToast(`📋 Exported ${fileName}`, 'success');
+                                const fileName = exportAuditMarkdown(
+                                  currentWorkspace,
+                                  telemetryData,
+                                  telemetryVerification,
+                                );
+                                showToast(`📋 Exported ${fileName}`, "success");
                               }}
                               className="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
                               title="Download formatted Markdown Certificate"
@@ -4577,29 +6086,42 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         </div>
 
                         {/* Tamper Diagnostic Banner in Output Tab */}
-                        {telemetryVerification && !telemetryVerification.isValid && (
-                          <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-2.5">
-                            <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
-                            <div className="flex-1">
-                              <div className="font-bold text-rose-300">
-                                Cryptographic Tamper Warning Detected
-                              </div>
-                              <div className="text-[11px] text-gray-300 mt-0.5">
-                                {telemetryVerification.tamperDiagnostics?.details || telemetryVerification.error || telemetryVerification.message || 'Stored hash mismatch detected.'}
+                        {telemetryVerification &&
+                          !telemetryVerification.isValid && (
+                            <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-2.5">
+                              <AlertTriangle
+                                size={15}
+                                className="text-rose-400 shrink-0 mt-0.5"
+                              />
+                              <div className="flex-1">
+                                <div className="font-bold text-rose-300">
+                                  Cryptographic Tamper Warning Detected
+                                </div>
+                                <div className="text-[11px] text-gray-300 mt-0.5">
+                                  {telemetryVerification.tamperDiagnostics
+                                    ?.details ||
+                                    telemetryVerification.error ||
+                                    telemetryVerification.message ||
+                                    "Stored hash mismatch detected."}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        )}
+                          )}
 
                         {/* Top Summary Cards */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                           <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
                             <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
-                              <Activity size={11} className="text-emerald-400" />
+                              <Activity
+                                size={11}
+                                className="text-emerald-400"
+                              />
                               <span>TOTAL LINES SYNCED</span>
                             </div>
                             <div className="text-base font-bold text-white mt-1">
-                              {(telemetryData?.summary?.totalLinesChanged ?? 0).toLocaleString()}
+                              {(
+                                telemetryData?.summary?.totalLinesChanged ?? 0
+                              ).toLocaleString()}
                             </div>
                           </div>
 
@@ -4628,8 +6150,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                               <Hash size={11} className="text-amber-400" />
                               <span>LATEST HASH</span>
                             </div>
-                            <div className="text-xs font-mono text-amber-300 mt-1 truncate" title={telemetryData?.summary?.latestBlockHash}>
-                              {telemetryData?.summary?.latestBlockHash ? `${telemetryData.summary.latestBlockHash.slice(0, 6)}...${telemetryData.summary.latestBlockHash.slice(-4)}` : 'GENESIS'}
+                            <div
+                              className="text-xs font-mono text-amber-300 mt-1 truncate"
+                              title={telemetryData?.summary?.latestBlockHash}
+                            >
+                              {telemetryData?.summary?.latestBlockHash
+                                ? `${telemetryData.summary.latestBlockHash.slice(0, 6)}...${telemetryData.summary.latestBlockHash.slice(-4)}`
+                                : "GENESIS"}
                             </div>
                           </div>
                         </div>
@@ -4638,12 +6165,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                           {(telemetryData?.contributors || []).length === 0 ? (
                             <div className="text-gray-500 italic py-4 text-center">
-                              No contribution telemetry recorded yet. Code edits and executions will chain automatically!
+                              No contribution telemetry recorded yet. Code edits
+                              and executions will chain automatically!
                             </div>
                           ) : (
                             telemetryData.contributors.map((c, idx) => {
-                              const shortHash = c.hash || (c.fullHash ? `${c.fullHash.slice(0, 4)}...${c.fullHash.slice(-4)}` : 'GENESIS');
-                              const fullHash = c.fullHash || c.hash || '';
+                              const shortHash =
+                                c.hash ||
+                                (c.fullHash
+                                  ? `${c.fullHash.slice(0, 4)}...${c.fullHash.slice(-4)}`
+                                  : "GENESIS");
+                              const fullHash = c.fullHash || c.hash || "";
                               return (
                                 <div
                                   key={c.id || idx}
@@ -4652,21 +6184,37 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span
                                       className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
-                                      style={{ backgroundColor: `${c.color || '#8B5CF6'}30`, color: c.color || '#8B5CF6' }}
+                                      style={{
+                                        backgroundColor: `${c.color || "#8B5CF6"}30`,
+                                        color: c.color || "#8B5CF6",
+                                      }}
                                     >
-                                      {c.name ? c.name[0] : 'U'}
+                                      {c.name ? c.name[0] : "U"}
                                     </span>
-                                    <span className="font-bold text-gray-200 truncate">{c.name}</span>
+                                    <span className="font-bold text-gray-200 truncate">
+                                      {c.name}
+                                    </span>
                                     <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
-                                      {c.badge || c.role || 'Member'}
+                                      {c.badge || c.role || "Member"}
                                     </span>
                                   </div>
 
                                   <div className="flex items-center gap-4 shrink-0 font-mono">
                                     <div className="text-[11px] text-gray-300">
-                                      <strong>{c.lines?.toLocaleString() || 0}</strong> lines
+                                      <strong>
+                                        {c.lines?.toLocaleString() || 0}
+                                      </strong>{" "}
+                                      lines
                                       <span className="text-[10px] text-gray-500 ml-1">
-                                        (<span className="text-emerald-400">+{c.linesAdded || 0}</span>/<span className="text-rose-400">-{c.linesDeleted || 0}</span>)
+                                        (
+                                        <span className="text-emerald-400">
+                                          +{c.linesAdded || 0}
+                                        </span>
+                                        /
+                                        <span className="text-rose-400">
+                                          -{c.linesDeleted || 0}
+                                        </span>
+                                        )
                                       </span>
                                     </div>
 
@@ -4674,28 +6222,45 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                                       <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
                                         <div
                                           className="h-full rounded-full"
-                                          style={{ width: `${c.percent || 0}%`, backgroundColor: c.color || '#8B5CF6' }}
+                                          style={{
+                                            width: `${c.percent || 0}%`,
+                                            backgroundColor:
+                                              c.color || "#8B5CF6",
+                                          }}
                                         />
                                       </div>
-                                      <span className="text-[10px] text-gray-400 w-7 text-right">{c.percent || 0}%</span>
+                                      <span className="text-[10px] text-gray-400 w-7 text-right">
+                                        {c.percent || 0}%
+                                      </span>
                                     </div>
 
                                     <button
                                       type="button"
                                       onClick={() => {
                                         if (fullHash) {
-                                          navigator.clipboard.writeText(fullHash);
+                                          navigator.clipboard.writeText(
+                                            fullHash,
+                                          );
                                           setTelemetryCopiedHash(shortHash);
-                                          setTimeout(() => setTelemetryCopiedHash(null), 2000);
+                                          setTimeout(
+                                            () => setTelemetryCopiedHash(null),
+                                            2000,
+                                          );
                                         }
                                       }}
                                       className="flex items-center gap-1 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/20 transition-colors"
                                       title={`Full SHA-256: ${fullHash}`}
                                     >
-                                      <Hash size={10} className="text-purple-400" />
+                                      <Hash
+                                        size={10}
+                                        className="text-purple-400"
+                                      />
                                       <span>{shortHash}</span>
                                       {telemetryCopiedHash === shortHash ? (
-                                        <Check size={10} className="text-emerald-400" />
+                                        <Check
+                                          size={10}
+                                          className="text-emerald-400"
+                                        />
                                       ) : (
                                         <Copy size={9} className="opacity-60" />
                                       )}
@@ -4708,7 +6273,6 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                         </div>
                       </div>
                     )}
-
                   </div>
                 )}
               </div>
@@ -4717,32 +6281,153 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             {/* IDE Bottom Status Bar */}
             <div
               className="border-t border-white/15 flex items-center justify-between text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 flex-wrap"
-              style={{ height: '44px', paddingLeft: '28px', paddingRight: '28px', gap: '24px' }}
+              style={{
+                height: "44px",
+                paddingLeft: "28px",
+                paddingRight: "28px",
+                gap: "24px",
+              }}
             >
-              <div className="flex items-center gap-6">
-                <div className="flex items-center gap-2">
-                  <GitCommit size={14} className="text-purple-400 shrink-0" />
-                  <span>Branch: <strong className="text-gray-200">main</strong></span>
+              <div
+                className="border-t border-white/15 flex items-center justify-between flex-wrap text-xs font-mono text-gray-400 bg-[#090A10] shrink-0"
+                style={{
+                  minHeight: "48px",
+                  padding: "8px 24px",
+                  columnGap: "24px",
+                  rowGap: "8px",
+                }}
+              >
+                <div
+                  className="flex items-center flex-wrap"
+                  style={{ gap: "10px" }}
+                >
+                  <div
+                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                  >
+                    <GitCommit size={14} className="text-purple-400 shrink-0" />
+                    <span>
+                      Branch: <strong className="text-gray-200">main</strong>
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                  >
+                    <Code2 size={14} className="text-cyan-400 shrink-0" />
+                    <span>
+                      Active File:{" "}
+                      <strong className="text-white font-bold">
+                        {activeFile}
+                      </strong>
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${isViewer ? "bg-amber-400" : "bg-emerald-400"}`}
+                    />
+                    <span>
+                      Role:{" "}
+                      <strong
+                        className={`capitalize ${isViewer ? "text-amber-300" : "text-emerald-300"}`}
+                      >
+                        {workspaceRole}
+                      </strong>
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Code2 size={14} className="text-cyan-400 shrink-0" />
-                  <span>Active File: <strong className="text-white font-bold">{activeFile}</strong></span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`w-2 h-2 rounded-full ${isViewer ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                  <span>Role: <strong className={`capitalize ${isViewer ? 'text-amber-300' : 'text-emerald-300'}`}>{workspaceRole}</strong></span>
+
+                <div
+                  className="flex items-center flex-wrap"
+                  style={{ gap: "10px" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOutputPanelOpen((prev) => !prev);
+                      setIsOutputPanelMinimized(false);
+                    }}
+                    className={`flex items-center rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${
+                      isOutputPanelOpen
+                        ? "text-purple-300 font-semibold bg-purple-500/10"
+                        : "text-gray-400 hover:text-purple-300 hover:bg-white/5"
+                    }`}
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                    title="Toggle Output Panel"
+                  >
+                    <Terminal size={14} className="text-purple-400 shrink-0" />
+                    <span>Output</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOutputTab("telemetry");
+                      setIsOutputPanelOpen(true);
+                      setIsOutputPanelMinimized(false);
+                      fetchWorkspaceTelemetry();
+                    }}
+                    className={`flex items-center rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${
+                      outputTab === "telemetry" && isOutputPanelOpen
+                        ? "text-purple-300 font-semibold bg-purple-500/10"
+                        : "text-gray-400 hover:text-purple-300 hover:bg-white/5"
+                    }`}
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                    title="View Proof-of-Work Contribution Telemetry"
+                  >
+                    <ShieldCheck
+                      size={14}
+                      className={
+                        telemetryVerification?.isValid
+                          ? "text-emerald-400 shrink-0"
+                          : "text-purple-400 shrink-0"
+                      }
+                    />
+                    <span>
+                      PoW Audit:{" "}
+                      <strong className="text-gray-200">
+                        {telemetryData?.summary?.totalBlocks
+                          ? `${telemetryData.summary.totalBlocks} Blocks`
+                          : "Active"}
+                      </strong>
+                    </span>
+                  </button>
+
+                  <div
+                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                  >
+                    <Zap size={14} className="text-yellow-400 shrink-0" />
+                    <span>
+                      Sync Latency:{" "}
+                      <strong className="text-gray-200">12ms</strong>
+                    </span>
+                  </div>
+                  <div
+                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
+                    style={{ padding: "6px 12px", gap: "8px" }}
+                  >
+                    <ShieldCheck
+                      size={14}
+                      className="text-emerald-400 shrink-0"
+                    />
+                    <span>Workspace Session Engine Active</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-8 px-7">
                 {/* Quick Toggle for Execution Output Panel */}
                 <button
                   type="button"
                   onClick={() => {
-                    setIsOutputPanelOpen(prev => !prev);
+                    setIsOutputPanelOpen((prev) => !prev);
                     setIsOutputPanelMinimized(false);
                   }}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${isOutputPanelOpen ? 'text-purple-300 font-semibold' : 'text-gray-400 hover:text-purple-300'}`}
+                  className={`flex items-center gap-3 px-5 py-3 rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${isOutputPanelOpen ? "text-purple-300 font-semibold bg-purple-500/10" : "text-gray-400 hover:text-purple-300 hover:bg-white/5"}`}
                   title="Toggle Output Panel"
                 >
                   <Terminal size={14} className="text-purple-400 shrink-0" />
@@ -4753,293 +6438,650 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                 <button
                   type="button"
                   onClick={() => {
-                    setOutputTab('telemetry');
+                    setOutputTab("telemetry");
                     setIsOutputPanelOpen(true);
                     setIsOutputPanelMinimized(false);
                     fetchWorkspaceTelemetry();
                   }}
-                  className={`flex items-center gap-1.5 transition-colors cursor-pointer text-xs font-mono ${outputTab === 'telemetry' && isOutputPanelOpen
-                      ? 'text-purple-300 font-semibold'
-                      : 'text-gray-400 hover:text-purple-300'
-                    }`}
+                  className={`flex items-center gap-3 px-5 py-3 rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${
+                    outputTab === "telemetry" && isOutputPanelOpen
+                      ? "text-purple-300 font-semibold bg-purple-500/10"
+                      : "text-gray-400 hover:text-purple-300 hover:bg-white/5"
+                  }`}
                   title="View Proof-of-Work Contribution Telemetry"
                 >
-                  <ShieldCheck size={14} className={telemetryVerification?.isValid ? "text-emerald-400 shrink-0" : "text-purple-400 shrink-0"} />
-                  <span>PoW Audit: <strong className="text-gray-200">{telemetryData?.summary?.totalBlocks ? `${telemetryData.summary.totalBlocks} Blocks` : 'Active'}</strong></span>
+                  <ShieldCheck
+                    size={14}
+                    className={
+                      telemetryVerification?.isValid
+                        ? "text-emerald-400 shrink-0"
+                        : "text-purple-400 shrink-0"
+                    }
+                  />
+                  <span>
+                    PoW Audit:{" "}
+                    <strong className="text-gray-200">
+                      {telemetryData?.summary?.totalBlocks
+                        ? `${telemetryData.summary.totalBlocks} Blocks`
+                        : "Active"}
+                    </strong>
+                  </span>
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-4 px-6 py-4 bg-white/5 rounded-lg border border-white/10">
                   <Zap size={14} className="text-yellow-400 shrink-0" />
-                  <span>Sync Latency: <strong className="text-gray-200">12ms</strong></span>
+                  <span>
+                    Sync Latency:{" "}
+                    <strong className="text-gray-200">12ms</strong>
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={14} className="text-emerald-400 shrink-0" />
+                <div className="flex items-center gap-4 px-6 py-4 bg-white/5 rounded-lg border border-white/10">
+                  <ShieldCheck
+                    size={14}
+                    className="text-emerald-400 shrink-0"
+                  />
                   <span>Workspace Session Engine Active</span>
                 </div>
               </div>
             </div>
-
           </div>
 
-          {/* RIGHT DOCKED SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
+          {/* RIGHT SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
+          {/* RIGHT SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
           {showTelemetryDrawer && (
-            <div className="w-[410px] 2xl:w-[440px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-20 transition-all duration-300 shadow-2xl font-sans">
-
+            <div className="w-[min(450px,90vw)] 2xl:w-[520px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-30 shadow-2xl font-sans transition-all duration-300">
               {/* 1. Panel Header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-[#0B0C16] to-cyan-950/30 shrink-0">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)]">
-                    <ShieldCheck className="text-purple-400" size={17} />
+              <div
+                className="flex items-start justify-between border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-[#0B0C16] to-cyan-950/30 shrink-0"
+                style={{ padding: "20px 24px", gap: "16px" }}
+              >
+                <div
+                  className="flex items-center min-w-0"
+                  style={{ gap: "16px" }}
+                >
+                  <div className="w-12 h-12 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center shadow-[0_0_12px_rgba(168,85,247,0.3)] shrink-0">
+                    <ShieldCheck className="text-purple-400" size={24} />
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-bold text-white tracking-wide">
+                  <div className="min-w-0 flex flex-col" style={{ gap: "8px" }}>
+                    <div
+                      className="flex items-center flex-wrap"
+                      style={{ gap: "8px" }}
+                    >
+                      <h4 className="text-sm font-bold text-white tracking-wide whitespace-nowrap">
                         Live Telemetry & Sync
                       </h4>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-bold border border-emerald-500/30 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span
+                        className="text-[10px] rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-bold border border-emerald-500/30 flex items-center whitespace-nowrap"
+                        style={{ padding: "3px 10px", gap: "6px" }}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                         CT-167
                       </span>
                       {telemetryVerification && (
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold border flex items-center gap-1 ${telemetryVerification.isValid
-                            ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
-                            : 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
-                          }`}>
-                          {telemetryVerification.isValid ? '100% Verified' : 'Tamper Warning'}
+                        <span
+                          className={`text-[10px] rounded-full font-mono font-bold border flex items-center whitespace-nowrap ${
+                            telemetryVerification.isValid
+                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                              : "bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse"
+                          }`}
+                          style={{ padding: "3px 10px" }}
+                        >
+                          {telemetryVerification.isValid
+                            ? "100% Verified"
+                            : "Tamper Warning"}
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-gray-400 font-mono mt-0.5">
-                      <span>{dossierSummary.sessionId}</span>
+                    <div
+                      className="flex items-center flex-wrap text-[11px] text-gray-400 font-mono"
+                      style={{ gap: "10px" }}
+                    >
+                      <span className="truncate max-w-[140px]">
+                        {dossierSummary.sessionId ||
+                          `#ws-${String(wsId).slice(-6)}`}
+                      </span>
                       <span className="text-gray-600">•</span>
-                      <span className="text-cyan-400 font-bold">Seq #{dossierSummary.currentSequence || 100}</span>
+                      <span className="text-cyan-400 font-bold whitespace-nowrap">
+                        Seq #{dossierSummary.currentSequence ?? "—"}
+                      </span>
                     </div>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowTelemetryDrawer(false)}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/10"
+                  className="rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition-all cursor-pointer border border-transparent hover:border-white/10 shrink-0"
+                  style={{ padding: "8px" }}
                   title="Close Telemetry Drawer"
                 >
-                  <X size={17} />
+                  <X size={20} />
                 </button>
               </div>
 
-              {/* 2. Compact Session Status Strip */}
-              <div className="px-5 py-3 bg-white/[0.02] border-b border-white/5 flex items-center justify-between shrink-0 text-xs font-mono">
-                <div className="flex items-center gap-2 text-gray-300">
-                  <Clock size={13} className="text-purple-400 shrink-0" />
-                  <span>Session: <strong className="text-white font-bold">{formatSessionTime(sessionSeconds)}</strong></span>
+              {/* 2. Session Status Strip */}
+              <div
+                className="bg-white/[0.02] border-b border-white/5 flex items-center justify-between shrink-0 text-xs font-mono"
+                style={{ padding: "14px 24px", gap: "16px" }}
+              >
+                <div
+                  className="flex items-center text-gray-300"
+                  style={{ gap: "10px" }}
+                >
+                  <Clock size={16} className="text-purple-400 shrink-0" />
+                  <span className="text-gray-400">Session:</span>
+                  <strong className="text-white font-bold tracking-wide">
+                    {formatSessionTime(sessionSeconds)}
+                  </strong>
                 </div>
-                <div className="flex items-center gap-2 text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isUserActive ? 'bg-emerald-400 animate-ping' : 'bg-gray-500'}`} />
-                  <span>Active: <strong className="text-emerald-300 font-bold">{formatActiveDuration(activeContributionSecs)}</strong></span>
+                <div
+                  className={`flex items-center rounded-lg border text-xs font-mono font-semibold ${
+                    isUserActive
+                      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                      : "text-gray-400 bg-white/5 border-white/10"
+                  }`}
+                  style={{ padding: "6px 12px", gap: "10px" }}
+                >
+                  <span
+                    className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                      isUserActive
+                        ? "bg-emerald-400 animate-ping"
+                        : "bg-gray-500"
+                    }`}
+                  />
+                  <span className="text-gray-400">Active:</span>
+                  <strong
+                    className={
+                      isUserActive ? "text-emerald-300" : "text-gray-300"
+                    }
+                  >
+                    {formatActiveDuration(activeContributionSecs)}
+                  </strong>
                 </div>
               </div>
 
               {/* 3. Segmented Tab Switcher */}
-              <div className="p-3 bg-[#080913] border-b border-white/5 shrink-0">
-                <div className="grid grid-cols-2 gap-1.5 bg-[#121422] p-1 rounded-xl border border-white/10">
-                  <button
-                    type="button"
-                    onClick={() => setTelemetryDrawerTab('contributors')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'contributors'
-                        ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
-                  >
-                    <Users size={13} />
-                    <span>Team Share</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-semibold ${telemetryDrawerTab === 'contributors' ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'}`}>
-                      {dossierContributors.length}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTelemetryDrawerTab('stream')}
-                    className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${telemetryDrawerTab === 'stream'
-                        ? 'bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-md border border-purple-400/30'
-                        : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
-                  >
-                    <Radio size={13} className={telemetryDrawerTab === 'stream' ? 'animate-pulse' : ''} />
-                    <span>Live Stream</span>
-                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-semibold ${telemetryDrawerTab === 'stream' ? 'bg-white/20 text-white' : 'bg-white/10 text-gray-400'}`}>
-                      {telemetryEvents.length}
-                    </span>
-                  </button>
+              <div
+                className="bg-[#080913] border-b border-white/5 shrink-0"
+                style={{ padding: "16px 24px" }}
+              >
+                <div
+                  className="grid grid-cols-2 bg-[#121422] rounded-xl border border-white/10"
+                  style={{ gap: "6px", padding: "6px" }}
+                >
+                  {[
+                    {
+                      id: "contributors",
+                      label: "Team Share",
+                      icon: <Users size={16} />,
+                      count: dossierContributors.length,
+                    },
+                    {
+                      id: "stream",
+                      label: "Live Stream",
+                      icon: (
+                        <Radio
+                          size={16}
+                          className={
+                            telemetryDrawerTab === "stream"
+                              ? "animate-pulse"
+                              : ""
+                          }
+                        />
+                      ),
+                      count: telemetryEvents.length,
+                    },
+                  ].map((tab) => {
+                    const active = telemetryDrawerTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setTelemetryDrawerTab(tab.id)}
+                        className={`flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          active
+                            ? "bg-gradient-to-r from-purple-600/90 to-indigo-600/90 text-white shadow-lg border border-purple-400/30"
+                            : "text-gray-400 hover:text-gray-200 hover:bg-white/5 border border-transparent"
+                        }`}
+                        style={{ padding: "10px 14px", gap: "10px" }}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                        <span
+                          className={`text-[10px] rounded-full font-mono font-semibold ${
+                            active
+                              ? "bg-white/20 text-white"
+                              : "bg-white/10 text-gray-400"
+                          }`}
+                          style={{ padding: "2px 8px" }}
+                        >
+                          {tab.count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* 4. Tab Content Area */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
-                {/* TAB 1: CONTRIBUTORS & DOSSIER SHARE */}
-                {telemetryDrawerTab === 'contributors' && (
-                  <div className="space-y-4 animate-fadeIn">
-                    <div className="flex items-center justify-between px-1">
-                      <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+              <div
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+                style={{ padding: "24px 24px 96px" }}
+              >
+                {/* TAB 1: CONTRIBUTORS */}
+                {telemetryDrawerTab === "contributors" && (
+                  <div
+                    className="animate-fadeIn flex flex-col"
+                    style={{ gap: "24px" }}
+                  >
+                    {/* Section label row */}
+                    <div
+                      className="flex items-center justify-between"
+                      style={{ gap: "12px" }}
+                    >
+                      <span
+                        className="text-[11px] font-bold text-gray-400 uppercase"
+                        style={{ letterSpacing: "0.1em" }}
+                      >
                         Active Contributors Breakdown
                       </span>
-                      <span className="text-cyan-300 font-mono text-[10px] font-bold px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/25">
-                        {dossierSummary.totalLines || '4,470 lines'} total
-                      </span>
+                      <div
+                        className="flex items-center shrink-0"
+                        style={{ gap: "10px" }}
+                      >
+                        <span
+                          className="text-cyan-300 font-mono text-[10px] font-bold rounded-full bg-cyan-500/10 border border-cyan-500/25 whitespace-nowrap"
+                          style={{ padding: "5px 12px" }}
+                        >
+                          {typeof dossierSummary.totalLines === "number"
+                            ? `${dossierSummary.totalLines.toLocaleString()} lines`
+                            : dossierSummary.totalLines || "0 lines"}{" "}
+                          total
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => fetchWorkspaceTelemetry()}
+                          disabled={isTelemetryLoading}
+                          title="Refresh contribution data"
+                          className="rounded-lg text-gray-400 hover:text-purple-300 hover:bg-purple-500/10 border border-transparent hover:border-purple-500/20 transition-all cursor-pointer"
+                          style={{ padding: "8px" }}
+                        >
+                          <RefreshCw
+                            size={16}
+                            className={
+                              isTelemetryLoading
+                                ? "animate-spin text-purple-400"
+                                : ""
+                            }
+                          />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="space-y-3">
-                      {dossierContributors.map((user, uIdx) => (
+                    {dossierContributors.length === 0 ? (
+                      <div
+                        className="rounded-xl border border-dashed border-white/15 bg-white/[0.02] text-center"
+                        style={{ padding: "48px 24px" }}
+                      >
                         <div
-                          key={user.id || uIdx}
-                          className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-4 transition-all shadow-sm group hover:bg-[#151829]"
+                          className="w-14 h-14 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mx-auto"
+                          style={{ marginBottom: "20px" }}
                         >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black border shadow-sm shrink-0"
-                                style={{
-                                  backgroundColor: `${user.color || '#38BDF8'}20`,
-                                  color: user.color || '#38BDF8',
-                                  borderColor: `${user.color || '#38BDF8'}50`
-                                }}
+                          <Users size={22} className="text-gray-500" />
+                        </div>
+                        <p
+                          className="text-sm font-semibold text-gray-300"
+                          style={{ marginBottom: "8px" }}
+                        >
+                          No contributor activity yet
+                        </p>
+                        <p
+                          className="text-[11px] leading-relaxed text-gray-500 max-w-[240px] mx-auto"
+                          style={{ marginBottom: "24px" }}
+                        >
+                          Contributors appear here when members join this
+                          workspace or record an edit.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => fetchWorkspaceTelemetry()}
+                          className="inline-flex items-center text-[11px] font-mono text-purple-300 hover:text-purple-200 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg transition-all cursor-pointer"
+                          style={{ padding: "10px 20px", gap: "10px" }}
+                        >
+                          <RefreshCw size={14} />
+                          <span>Refresh</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col" style={{ gap: "16px" }}>
+                        {dossierContributors.map((user, uIdx) => {
+                          const uColor = user.color || "#38BDF8";
+                          return (
+                            <div
+                              key={user.id || uIdx}
+                              className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl transition-all shadow-sm group hover:bg-[#151829] flex flex-col"
+                              style={{ padding: "20px", gap: "16px" }}
+                            >
+                              {/* User info row */}
+                              <div
+                                className="flex items-center justify-between"
+                                style={{ gap: "16px" }}
                               >
-                                {(user.name || 'Dev').charAt(0).toUpperCase()}
-                              </span>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="text-xs font-bold text-gray-100 group-hover:text-white truncate">
-                                    {user.name}
-                                  </span>
+                                <div
+                                  className="flex items-center min-w-0"
+                                  style={{ gap: "14px" }}
+                                >
                                   <span
-                                    className="text-[9px] px-1.5 py-0.2 rounded font-mono font-semibold"
+                                    className="rounded-xl flex items-center justify-center text-sm font-black border shadow-sm shrink-0"
                                     style={{
-                                      color: user.color || '#38BDF8',
-                                      backgroundColor: `${user.color || '#38BDF8'}15`,
-                                      border: `1px solid ${user.color || '#38BDF8'}35`
+                                      width: "44px",
+                                      height: "44px",
+                                      backgroundColor: `${uColor}20`,
+                                      color: uColor,
+                                      borderColor: `${uColor}50`,
                                     }}
                                   >
-                                    {user.badge || 'Contributor'}
+                                    {(user.name || "Dev")
+                                      .charAt(0)
+                                      .toUpperCase()}
+                                  </span>
+                                  <div
+                                    className="min-w-0 flex flex-col"
+                                    style={{ gap: "6px" }}
+                                  >
+                                    <div
+                                      className="flex items-center flex-wrap"
+                                      style={{ gap: "8px" }}
+                                    >
+                                      <span className="text-xs font-bold text-gray-100 group-hover:text-white truncate">
+                                        {user.name || "Unknown"}
+                                      </span>
+                                      <span
+                                        className="text-[9px] font-mono font-semibold whitespace-nowrap rounded"
+                                        style={{
+                                          padding: "2px 8px",
+                                          color: uColor,
+                                          backgroundColor: `${uColor}15`,
+                                          border: `1px solid ${uColor}35`,
+                                        }}
+                                      >
+                                        {user.badge || "Contributor"}
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-gray-500 block font-mono truncate">
+                                      {user.role || "Contributor"}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div
+                                  className="text-right shrink-0 flex flex-col"
+                                  style={{ gap: "4px" }}
+                                >
+                                  <span className="text-xs font-mono font-black text-purple-200 block">
+                                    {(user.lines || 0).toLocaleString()} lines
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 font-mono">
+                                    {user.percent || 0}% share
                                   </span>
                                 </div>
-                                <span className="text-[10px] text-gray-400 block font-mono truncate mt-0.5">
-                                  {user.role}
-                                </span>
+                              </div>
+
+                              {/* +/- stats row */}
+                              {(user.linesAdded !== undefined ||
+                                user.linesDeleted !== undefined ||
+                                user.activeSeconds > 0) && (
+                                <div
+                                  className="flex items-center flex-wrap"
+                                  style={{ gap: "16px" }}
+                                >
+                                  {(user.linesAdded !== undefined ||
+                                    user.linesDeleted !== undefined) && (
+                                    <div
+                                      className="flex items-center text-[11px] font-mono"
+                                      style={{ gap: "10px" }}
+                                    >
+                                      <span className="text-emerald-400 font-bold">
+                                        +{user.linesAdded || 0}
+                                      </span>
+                                      <span className="text-gray-600">/</span>
+                                      <span className="text-rose-400 font-bold">
+                                        -{user.linesDeleted || 0}
+                                      </span>
+                                    </div>
+                                  )}
+                                  {user.activeSeconds > 0 && (
+                                    <span className="text-[10px] text-gray-500 font-mono">
+                                      ⏱{" "}
+                                      {formatActiveDuration(user.activeSeconds)}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Progress bar */}
+                              <div
+                                className="w-full bg-white/10 rounded-full overflow-hidden border border-white/5"
+                                style={{ height: "10px" }}
+                              >
+                                <div
+                                  className="h-full rounded-full transition-all duration-700 ease-out"
+                                  style={{
+                                    width: `${Math.max(2, Math.min(100, user.percent || 0))}%`,
+                                    backgroundColor: uColor,
+                                    boxShadow: `0 0 8px ${uColor}60`,
+                                  }}
+                                />
                               </div>
                             </div>
-                            <div className="text-right shrink-0 ml-2">
-                              <span className="text-xs font-mono font-black text-purple-200 block">
-                                {(user.lines || 0).toLocaleString()} lines
-                              </span>
-                              <span className="text-[10px] text-gray-400 font-mono font-bold">
-                                {user.percent || 0}% share
-                              </span>
-                            </div>
-                          </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
-                          {/* Animated Progress Fill */}
-                          <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden border border-white/5">
-                            <div
-                              className="h-full rounded-full transition-all duration-700 ease-out shadow-[0_0_8px_rgba(255,255,255,0.2)]"
-                              style={{
-                                width: `${Math.max(2, user.percent || 0)}%`,
-                                backgroundColor: user.color || '#38BDF8'
-                              }}
+                    {/* Proof of Work banner */}
+                    {telemetryVerification ? (
+                      <div
+                        className={`rounded-xl flex items-center justify-between text-[11px] font-mono transition-all ${
+                          telemetryVerification.isValid
+                            ? "bg-emerald-950/30 border border-emerald-500/25 text-emerald-300"
+                            : "bg-rose-950/40 border border-rose-500/40 text-rose-300 animate-pulse"
+                        }`}
+                        style={{ padding: "14px 18px", gap: "12px" }}
+                      >
+                        <span
+                          className="flex items-center"
+                          style={{ gap: "10px" }}
+                        >
+                          {telemetryVerification.isValid ? (
+                            <CheckCircle2
+                              size={14}
+                              className="text-emerald-400 shrink-0"
                             />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Proof of Work Verified Banner */}
-                    <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-xl flex items-center justify-between text-[11px] font-mono text-purple-300">
-                      <span className="flex items-center gap-2">
-                        <CheckCircle2 size={13} className="text-emerald-400" />
-                        <span>SHA-256 Proof-of-Work Validated</span>
-                      </span>
-                      <span className="text-emerald-400 font-bold">100% Verified</span>
-                    </div>
+                          ) : (
+                            <AlertTriangle
+                              size={14}
+                              className="text-rose-400 shrink-0"
+                            />
+                          )}
+                          <span className="font-semibold">
+                            {telemetryVerification.isValid
+                              ? "SHA-256 Proof-of-Work Validated"
+                              : "Cryptographic Integrity Issue"}
+                          </span>
+                        </span>
+                        <span
+                          className={`font-bold whitespace-nowrap text-xs ${
+                            telemetryVerification.isValid
+                              ? "text-emerald-400"
+                              : "text-rose-400"
+                          }`}
+                        >
+                          {telemetryVerification.isValid
+                            ? `${telemetryVerification.integrityRatio ?? 100}% Verified`
+                            : `${telemetryVerification.integrityRatio ?? 0}% Valid`}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        className="rounded-xl bg-white/[0.03] border border-white/10 text-gray-500 text-[11px] font-mono flex items-center"
+                        style={{ padding: "14px 18px", gap: "10px" }}
+                      >
+                        <ShieldCheck
+                          size={14}
+                          className="text-gray-600 shrink-0"
+                        />
+                        <span>SHA-256 chain verification pending...</span>
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* TAB 2: LIVE ACTION STREAM */}
-                {telemetryDrawerTab === 'stream' && (
-                  <div className="space-y-3.5 animate-fadeIn">
-                    {/* Stream Action Toolbar */}
-                    <div className="p-3 bg-gradient-to-r from-purple-950/40 via-[#101222] to-cyan-950/30 border border-purple-500/20 rounded-xl flex items-center justify-between">
-                      <span className="text-xs font-mono text-purple-200 font-semibold flex items-center gap-2">
-                        <Radio size={13} className="text-purple-400 animate-pulse" />
+                {telemetryDrawerTab === "stream" && (
+                  <div
+                    className="animate-fadeIn flex flex-col"
+                    style={{ gap: "20px" }}
+                  >
+                    {/* Toolbar */}
+                    <div
+                      className="bg-gradient-to-r from-purple-950/40 via-[#101222] to-cyan-950/30 border border-purple-500/20 rounded-xl flex items-center justify-between"
+                      style={{ padding: "14px 18px", gap: "12px" }}
+                    >
+                      <span
+                        className="text-xs font-mono text-purple-200 font-semibold flex items-center"
+                        style={{ gap: "10px" }}
+                      >
+                        <Radio
+                          size={16}
+                          className="text-purple-400 animate-pulse"
+                        />
                         <span>Real-Time Broadcast</span>
                       </span>
                       <button
                         type="button"
                         onClick={() => {
-                          interceptTelemetry(TELEMETRY_ACTION_TYPES.HEARTBEAT, `Activity Ping from ${currentUser.name || 'Developer'}`, {
-                            linesAdded: 0,
-                            totalLines: 15
-                          });
+                          interceptTelemetry(
+                            TELEMETRY_ACTION_TYPES.HEARTBEAT,
+                            `Activity Ping from ${currentUser.name || "Developer"}`,
+                            { linesAdded: 0, totalLines: 15 },
+                          );
                         }}
-                        className="text-xs font-mono font-bold px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] flex items-center gap-1.5"
+                        className="text-xs font-mono font-bold rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white shadow-lg transition-all cursor-pointer active:scale-[0.98] flex items-center shrink-0"
+                        style={{ padding: "10px 16px", gap: "8px" }}
                       >
-                        <Zap size={13} className="text-yellow-300" />
+                        <Zap size={15} className="text-yellow-300" />
                         <span>Broadcast Ping</span>
                       </button>
                     </div>
 
-                    {/* Events List */}
-                    <div className="space-y-2.5">
+                    {/* Events list */}
+                    <div className="flex flex-col" style={{ gap: "12px" }}>
                       {telemetryEvents.length === 0 ? (
-                        <div className="text-center py-10 text-xs text-gray-400 font-mono border border-dashed border-purple-500/25 bg-purple-500/[0.03] rounded-xl p-6">
-                          <p className="font-semibold text-gray-300">No actions recorded yet</p>
-                          <p className="text-[10px] text-gray-500 mt-1">Start typing in Monaco editor or click 'Broadcast Ping'</p>
+                        <div
+                          className="text-center text-xs text-gray-400 font-mono border border-dashed border-purple-500/25 bg-purple-500/[0.03] rounded-xl"
+                          style={{ padding: "56px 24px" }}
+                        >
+                          <div
+                            className="w-10 h-10 rounded-full bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mx-auto"
+                            style={{ marginBottom: "16px" }}
+                          >
+                            <Radio size={16} className="text-purple-400" />
+                          </div>
+                          <p
+                            className="font-semibold text-gray-300"
+                            style={{ marginBottom: "8px" }}
+                          >
+                            No actions recorded yet
+                          </p>
+                          <p className="text-[10px] text-gray-500 leading-relaxed">
+                            Start typing in the editor or click 'Broadcast Ping'
+                          </p>
                         </div>
                       ) : (
                         telemetryEvents.map((evt, eIdx) => {
                           const actionColors = {
-                            CODE_EDIT: 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30',
-                            RUN_CODE: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
-                            FILE_CREATE: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
-                            FILE_DELETE: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
-                            FILE_SWITCH: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-                            SAVE: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-                            HEARTBEAT: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30'
+                            CODE_EDIT:
+                              "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+                            RUN_CODE:
+                              "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+                            FILE_CREATE:
+                              "bg-purple-500/15 text-purple-300 border-purple-500/30",
+                            FILE_DELETE:
+                              "bg-rose-500/15 text-rose-300 border-rose-500/30",
+                            FILE_SWITCH:
+                              "bg-sky-500/15 text-sky-300 border-sky-500/30",
+                            SAVE: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+                            HEARTBEAT:
+                              "bg-indigo-500/15 text-indigo-300 border-indigo-500/30",
                           };
-                          const badgeStyle = actionColors[evt.actionType] || 'bg-purple-500/15 text-purple-300 border-purple-500/30';
+                          const badgeStyle =
+                            actionColors[evt.actionType] ||
+                            "bg-purple-500/15 text-purple-300 border-purple-500/30";
 
                           return (
                             <div
                               key={evt.eventId || eIdx}
-                              className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl p-3.5 text-xs font-mono transition-all hover:bg-[#151829] shadow-sm"
+                              className="bg-[#111320] border border-white/10 hover:border-purple-500/40 rounded-xl text-xs font-mono transition-all hover:bg-[#151829] shadow-sm flex flex-col"
+                              style={{ padding: "16px 18px", gap: "12px" }}
                             >
-                              <div className="flex items-center justify-between mb-2 gap-2">
-                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold shrink-0">
+                              {/* Event header */}
+                              <div
+                                className="flex items-center justify-between"
+                                style={{ gap: "10px" }}
+                              >
+                                <div
+                                  className="flex items-center flex-wrap min-w-0"
+                                  style={{ gap: "8px" }}
+                                >
+                                  <span
+                                    className="rounded text-[9px] bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold shrink-0"
+                                    style={{ padding: "2px 8px" }}
+                                  >
                                     #{evt.seq}
                                   </span>
-                                  <span className={`px-1.5 py-0.5 rounded text-[9px] uppercase font-sans font-bold border shrink-0 ${badgeStyle}`}>
+                                  <span
+                                    className={`rounded text-[9px] uppercase font-sans font-bold border shrink-0 ${badgeStyle}`}
+                                    style={{ padding: "2px 8px" }}
+                                  >
                                     {evt.actionType}
                                   </span>
                                   <span className="text-gray-200 font-sans font-semibold text-[11px] truncate max-w-[120px]">
-                                    {evt.user?.name || 'Developer'}
+                                    {evt.user?.name || "Developer"}
                                   </span>
                                 </div>
-                                <span className="text-[9px] font-mono text-emerald-400 flex items-center gap-1 shrink-0 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20 font-bold">
-                                  <CheckCircle2 size={10} className="text-emerald-400" />
-                                  <span>#{evt.verificationHash || 'verified'}</span>
+                                <span
+                                  className="text-[9px] font-mono text-emerald-400 flex items-center shrink-0 bg-emerald-500/10 rounded border border-emerald-500/20 font-bold"
+                                  style={{ padding: "2px 8px", gap: "6px" }}
+                                >
+                                  <CheckCircle2
+                                    size={9}
+                                    className="text-emerald-400"
+                                  />
+                                  <span>#{evt.verificationHash || "ok"}</span>
                                 </span>
                               </div>
 
-                              <div className="text-gray-300 text-[11px] font-sans truncate my-1">
+                              {/* Event details */}
+                              <div className="text-gray-300 text-[11px] font-sans leading-relaxed truncate">
                                 {evt.details || `Modified ${evt.fileId}`}
                               </div>
 
-                              <div className="text-[9px] text-gray-500 mt-2 flex items-center justify-between border-t border-white/5 pt-1.5">
-                                <span className="font-mono text-gray-400 flex items-center gap-1">
-                                  <Clock size={10} className="text-gray-500 shrink-0" />
+                              {/* Footer */}
+                              <div
+                                className="flex items-center justify-between border-t border-white/5 text-[9px] text-gray-500"
+                                style={{ paddingTop: "10px", gap: "10px" }}
+                              >
+                                <span
+                                  className="font-mono text-gray-400 flex items-center"
+                                  style={{ gap: "6px" }}
+                                >
+                                  <Clock
+                                    size={9}
+                                    className="text-gray-500 shrink-0"
+                                  />
                                   <span>{evt.timestamp}</span>
                                 </span>
                                 {evt.fileId && (
-                                  <span className="text-cyan-400/90 font-mono font-semibold">
+                                  <span className="text-cyan-400/90 font-mono font-semibold truncate">
                                     [{evt.fileId}]
                                   </span>
                                 )}
@@ -5051,23 +7093,49 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                     </div>
                   </div>
                 )}
-
               </div>
 
               {/* 5. Panel Footer */}
-              <div className="px-5 py-3 border-t border-white/10 bg-[#06070D] flex items-center justify-between text-xs font-mono text-gray-400 shrink-0">
-                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-[11px]">
-                  <CheckCircle2 size={13} className="text-emerald-400" />
-                  <span>Socket.IO Sync Active</span>
+              <div
+                className="border-t border-white/10 bg-[#06070D] flex items-center justify-between text-xs font-mono text-gray-400 shrink-0"
+                style={{ padding: "12px 24px", gap: "12px" }}
+              >
+                <div
+                  className="flex items-center font-semibold text-[11px]"
+                  style={{ gap: "10px" }}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      connectionStatus === "connected"
+                        ? "bg-emerald-400 animate-pulse"
+                        : connectionStatus === "reconnecting"
+                          ? "bg-amber-400 animate-pulse"
+                          : "bg-gray-500"
+                    }`}
+                  />
+                  <span
+                    className={
+                      connectionStatus === "connected"
+                        ? "text-emerald-400"
+                        : connectionStatus === "reconnecting"
+                          ? "text-amber-400"
+                          : "text-gray-400"
+                    }
+                  >
+                    {connectionStatus === "connected"
+                      ? "Socket.IO Sync Active"
+                      : connectionStatus === "reconnecting"
+                        ? "Reconnecting..."
+                        : "Disconnected"}
+                  </span>
                 </div>
-                <span className="text-[10px] text-gray-500">CodeTrail v2.0</span>
+                <span className="text-[10px] text-gray-500">
+                  CodeTrail v2.0
+                </span>
               </div>
-
             </div>
           )}
-
         </div>
-
       </section>
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
@@ -5083,33 +7151,55 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
       {/* ── Toast Notification Stack ──────────────────────────────────────── */}
       <div
         aria-live="polite"
-        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 pointer-events-none"
-        style={{ width: 'min(400px, calc(100vw - 32px))' }}
+        className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-4 pointer-events-none"
+        style={{ width: "min(400px, calc(100vw - 32px))" }}
       >
-        {toasts.map(toast => {
+        {toasts.map((toast) => {
           const styles = {
-            success: 'bg-emerald-900/90 border-emerald-500/60 text-emerald-200 shadow-[0_0_20px_rgba(52,211,153,0.3)]',
-            error: 'bg-red-900/90 border-red-500/60 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.3)]',
-            warning: 'bg-amber-900/90 border-amber-500/60 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.3)]',
-            info: 'bg-indigo-900/90 border-indigo-500/60 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]',
+            success:
+              "bg-emerald-900/90 border-emerald-500/60 text-emerald-200 shadow-[0_0_20px_rgba(52,211,153,0.3)]",
+            error:
+              "bg-red-900/90 border-red-500/60 text-red-200 shadow-[0_0_20px_rgba(239,68,68,0.3)]",
+            warning:
+              "bg-amber-900/90 border-amber-500/60 text-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.3)]",
+            info: "bg-indigo-900/90 border-indigo-500/60 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]",
           };
           const icons = {
-            success: <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />,
-            error: <AlertTriangle size={16} className="text-red-400 shrink-0" />,
-            warning: <AlertTriangle size={16} className="text-amber-400 shrink-0" />,
-            info: <Loader2 size={16} className="text-indigo-400 shrink-0 animate-spin" />,
+            success: (
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            ),
+            error: (
+              <AlertTriangle size={16} className="text-red-400 shrink-0" />
+            ),
+            warning: (
+              <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+            ),
+            info: (
+              <Loader2
+                size={16}
+                className="text-indigo-400 shrink-0 animate-spin"
+              />
+            ),
           };
           return (
             <div
               key={toast.id}
-              className={`flex items-start gap-3 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
-              style={{ padding: '14px 16px', lineHeight: '1.5', minHeight: '52px' }}
+              className={`flex items-start gap-4 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
+              style={{
+                padding: "14px 16px",
+                lineHeight: "1.5",
+                minHeight: "52px",
+              }}
             >
               {icons[toast.type] || icons.info}
-              <span className="flex-1 min-w-0 break-words leading-relaxed">{toast.message}</span>
+              <span className="flex-1 min-w-0 break-words leading-relaxed">
+                {toast.message}
+              </span>
               <button
                 type="button"
-                onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                onClick={() =>
+                  setToasts((prev) => prev.filter((t) => t.id !== toast.id))
+                }
                 className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 mt-0.5 cursor-pointer shrink-0"
               >
                 <X size={13} />

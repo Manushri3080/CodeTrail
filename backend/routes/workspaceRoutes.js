@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
+const optionalAuth = authMiddleware.optionalAuth || ((req,res,next)=>next());
 const {
   createWorkspace,
   getUserWorkspaces,
@@ -23,34 +24,31 @@ const {
   clearWorkspaceExecutions
 } = require('../controllers/executionController');
 
-// All workspace routes require valid JWT auth
-router.use(authMiddleware);
-
-// Workspace endpoints
-router.post('/', createWorkspace);
-router.get('/', getUserWorkspaces);
-router.get('/discover', discoverPublicWorkspaces);
-router.get('/:id', getWorkspaceById);
-router.patch('/:id', updateWorkspace);
-router.patch('/:id/session', updateWorkspaceSession);
+// Writes need auth; reads allow optional auth for local dev
+router.post('/', authMiddleware, createWorkspace);
+router.get('/', authMiddleware, getUserWorkspaces);
+router.get('/discover', authMiddleware, discoverPublicWorkspaces);
+router.get('/:id', optionalAuth, getWorkspaceById);
+router.patch('/:id', authMiddleware, updateWorkspace);
+router.patch('/:id/session', authMiddleware, updateWorkspaceSession);
 
 // Member management endpoints
-router.get('/:id/members', getWorkspaceMembers);
-router.post('/:id/members', addWorkspaceMember);
-router.patch('/:id/members/:memberId', updateWorkspaceMemberRole);
-router.delete('/:id/members/:memberId', removeWorkspaceMember);
+router.get('/:id/members', optionalAuth, getWorkspaceMembers);
+router.post('/:id/members', authMiddleware, addWorkspaceMember);
+router.patch('/:id/members/:memberId', authMiddleware, updateWorkspaceMemberRole);
+router.delete('/:id/members/:memberId', authMiddleware, removeWorkspaceMember);
 
 // Activity History endpoints
-router.get('/:id/history', getWorkspaceHistory);
-router.post('/:id/history', addWorkspaceHistoryLog);
-router.delete('/:id/history', clearWorkspaceHistory);
+router.get('/:id/history', optionalAuth, getWorkspaceHistory);
+router.post('/:id/history', authMiddleware, addWorkspaceHistoryLog);
+router.delete('/:id/history', authMiddleware, clearWorkspaceHistory);
 
 // Code Execution History endpoints
-router.get('/:id/executions', getWorkspaceExecutions);
-router.delete('/:id/executions', clearWorkspaceExecutions);
+router.get('/:id/executions', optionalAuth, getWorkspaceExecutions);
+router.delete('/:id/executions', authMiddleware, clearWorkspaceExecutions);
 
-router.post('/join', joinWorkspaceByCode);
-router.delete('/:id', deleteWorkspace);
+router.post('/join', optionalAuth, joinWorkspaceByCode);
+router.delete('/:id', authMiddleware, deleteWorkspace);
 
 module.exports = router;
 

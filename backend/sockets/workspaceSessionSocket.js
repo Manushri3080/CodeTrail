@@ -69,6 +69,21 @@ const initWorkspaceSessionSocket = (io) => {
             { upsert: true }
           );
 
+          try {
+            const dossier = telemetryStore.registerContributor(workspaceId, {
+              ...(user || {}),
+              id: socket.userId,
+              role: socket.userRole
+            });
+            socket.emit('telemetry:dossier_sync', dossier);
+            socket.emit('telemetry:dossier_update', dossier);
+          } catch (e) {
+            console.warn('[Socket Telemetry] registerContributor failed:', e.message);
+            const currentDossier = telemetryStore.getDossier(workspaceId);
+            socket.emit('telemetry:dossier_sync', currentDossier);
+            socket.emit('telemetry:dossier_update', currentDossier);
+          }
+
           // Broadcast user joined to other members in the workspace room
           socket.to(roomName1).emit('userJoined', {
             userId: socket.userId,
