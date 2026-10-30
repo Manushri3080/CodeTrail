@@ -47,8 +47,8 @@ export const EditProfileModal = ({
       <div className="ct-modal-card ct-edit-profile-modal" onClick={e => e.stopPropagation()}>
 
         {/* Modal Header */}
-        <div className="ct-modal-header py-3 px-5">
-          <div className="flex items-center gap-2.5">
+        <div className="ct-modal-header py-4 px-6">
+          <div className="flex items-center gap-3">
             <div className="ct-modal-icon-badge w-8 h-8">
               <User size={16} className="text-purple-400" />
             </div>
@@ -66,7 +66,7 @@ export const EditProfileModal = ({
         <form onSubmit={onSave} className="ct-modal-body p-5 flex flex-col gap-3">
 
           {/* Centered Profile Photo Section */}
-          <div className="ct-avatar-picker-centered flex flex-col items-center justify-center gap-2 py-2">
+          <div className="ct-avatar-picker-centered flex flex-col items-center justify-center gap-3 py-4">
             <input
               type="file"
               ref={fileInputRef}
@@ -77,7 +77,7 @@ export const EditProfileModal = ({
 
             {/* Centered Clickable Circular Avatar Box */}
             <div 
-              className="ct-avatar-preview-box w-16 h-16 rounded-full overflow-hidden group cursor-pointer relative shadow-lg mb-1"
+              className="ct-avatar-preview-box w-20 h-20 rounded-full overflow-hidden group cursor-pointer relative shadow-xl mb-2"
               onClick={() => fileInputRef.current?.click()}
               title="Click to change profile picture"
             >
@@ -102,7 +102,7 @@ export const EditProfileModal = ({
             {/* Upload Photo Button directly below Centered Avatar */}
             <button
               type="button"
-              className="ct-btn-upload-photo inline-flex flex-row items-center justify-center gap-1.5 text-xs py-1.5 px-3"
+              className="ct-btn-upload-photo inline-flex flex-row items-center justify-center gap-1.5 text-xs py-1.5 px-3 mt-2"
               style={{ cursor: "pointer" }}
               onClick={() => fileInputRef.current?.click()}
             >
@@ -112,14 +112,14 @@ export const EditProfileModal = ({
 
 
             {/* Preset Avatars Row */}
-            <div className="flex items-center gap-1.5 flex-wrap justify-center mt-0.5">
+            <div className="flex items-center gap-2 flex-wrap justify-center mt-3">
 
             </div>
           </div>
 
           {/* Form Fields Grid */}
-          <div className="ct-form-grid">
-            <div className="ct-form-group">
+          <div className="ct-form-grid mt-6" style={{ gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+            <div className="ct-form-group mb-3">
               <label className="ct-form-label text-[11px]">
                 <User size={12} /> Full Name
               </label>
@@ -134,7 +134,7 @@ export const EditProfileModal = ({
               />
             </div>
 
-            <div className="ct-form-group">
+            <div className="ct-form-group mb-3">
               <label className="ct-form-label text-[11px]">
                 <AtSign size={12} /> Username
               </label>
@@ -148,7 +148,7 @@ export const EditProfileModal = ({
               />
             </div>
 
-            <div className="ct-form-group">
+            <div className="ct-form-group mb-3">
               <label className="ct-form-label text-[11px]">
                 <Mail size={12} /> Email Address (Read Only)
               </label>
@@ -160,7 +160,7 @@ export const EditProfileModal = ({
               />
             </div>
 
-            <div className="ct-form-group">
+            <div className="ct-form-group mb-3">
               <label className="ct-form-label text-[11px]">
                 <Briefcase size={12} /> Role / Title
               </label>
@@ -175,7 +175,7 @@ export const EditProfileModal = ({
             </div>
           </div>
 
-          <div className="ct-form-group full-width">
+          <div className="ct-form-group full-width mb-4">
             <label className="ct-form-label text-[11px]">
               <FileText size={12} /> Developer Bio / Status
             </label>
@@ -190,7 +190,7 @@ export const EditProfileModal = ({
           </div>
 
           {/* Modal Footer Actions */}
-          <div className="ct-modal-actions pt-1">
+          <div className="ct-modal-actions pt-2 pb-2">
             <button
               type="button"
               className="ct-btn-secondary py-1.5 px-3 text-xs"

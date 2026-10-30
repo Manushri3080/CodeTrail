@@ -265,7 +265,8 @@ exports.discoverPublicWorkspaces = async (req, res) => {
 exports.getWorkspaceById = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.user._id;
+    const user = req.user || null;
+    const userId = user ? (user._id || user.id) : null;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(404).json({ message: 'Workspace not found.' });
@@ -279,11 +280,14 @@ exports.getWorkspaceById = async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
 
-    const isMember = workspace.members.some(m => m.user && m.user._id.toString() === userId.toString());
-    const isOwner = workspace.owner._id.toString() === userId.toString();
+    const ownerId = workspace.owner ? (workspace.owner._id || workspace.owner) : null;
+    const isMember = userId && workspace.members.some(m => m.user && (m.user._id || m.user).toString() === userId.toString());
+    const isOwner = userId && ownerId && ownerId.toString() === userId.toString();
 
-    if (!workspace.settings.isPublic && !isMember && !isOwner) {
-      return res.status(403).json({ message: 'Access denied to this workspace.' });
+    if (!workspace.settings || !workspace.settings.isPublic) {
+      if (!isMember && !isOwner) {
+        return res.status(403).json({ message: 'Access denied to this workspace.' });
+      }
     }
 
     res.json({ workspace });

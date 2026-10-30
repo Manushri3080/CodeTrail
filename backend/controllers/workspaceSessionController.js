@@ -3,13 +3,20 @@ const WorkspaceSession = require('../models/WorkspaceSession');
 const Workspace = require('../models/Workspace');
 
 const getWorkspaceRole = (workspace, userId) => {
+  if (!workspace || !userId) return null;
   if (workspace.owner.toString() === userId.toString()) return 'owner';
   const member = workspace.members.find(item => item.user.toString() === userId.toString());
   return member?.role || null;
 };
 
+const getUserIdFromReq = (req) => {
+  const u = req.user || null;
+  if (!u) return null;
+  return u._id || u.id || null;
+};
+
 const getWorkspaceForMember = async (workspaceId, userId) => {
-  if (!workspaceId) return { workspace: null, role: null };
+  if (!workspaceId || !userId) return { workspace: null, role: null };
   if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
     return { workspace: null, role: 'editor' };
   }
@@ -24,7 +31,8 @@ const getWorkspaceForMember = async (workspaceId, userId) => {
  */
 const enterWorkspaceSession = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
+    if (!userId) return res.status(401).json({ message: 'Authentication required.' });
     const { workspaceId } = req.params;
     const { role } = await getWorkspaceForMember(workspaceId, userId);
     if (!role) return res.status(403).json({ message: 'You are not a member of this workspace.' });
@@ -59,10 +67,13 @@ const enterWorkspaceSession = async (req, res) => {
  */
 const getCurrentSession = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
     const { workspaceId } = req.params;
+    if (!userId || !workspaceId) {
+      return res.status(200).json({ session: null });
+    }
     const access = await getWorkspaceForMember(workspaceId, userId);
-    if (!access.role) return res.status(403).json({ message: 'You are not a member of this workspace.' });
+    if (!access.role) return res.status(200).json({ session: null });
 
     const session = await WorkspaceSession.findOne({ userId, workspaceId })
       .populate('userId', 'name email role');
@@ -90,10 +101,13 @@ const getCurrentSession = async (req, res) => {
  */
 const getWorkspaceSessions = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
     const { workspaceId } = req.params;
+    if (!userId || !workspaceId) {
+      return res.status(200).json({ workspaceId, count: 0, sessions: [] });
+    }
     const access = await getWorkspaceForMember(workspaceId, userId);
-    if (!access.role) return res.status(403).json({ message: 'You are not a member of this workspace.' });
+    if (!access.role) return res.status(200).json({ workspaceId, count: 0, sessions: [] });
     const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000);
 
     // Auto update status to away for inactive sessions
@@ -122,7 +136,8 @@ const getWorkspaceSessions = async (req, res) => {
  */
 const updateActivity = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
+    if (!userId) return res.status(401).json({ message: 'Authentication required.' });
     const { workspaceId } = req.params;
     const access = await getWorkspaceForMember(workspaceId, userId);
     if (!access.role) return res.status(403).json({ message: 'You are not a member of this workspace.' });
@@ -155,7 +170,8 @@ const updateActivity = async (req, res) => {
  */
 const updateCurrentFile = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
+    if (!userId) return res.status(401).json({ message: 'Authentication required.' });
     const { workspaceId } = req.params;
     const access = await getWorkspaceForMember(workspaceId, userId);
     if (!access.role) return res.status(403).json({ message: 'You are not a member of this workspace.' });
@@ -194,7 +210,8 @@ const updateCurrentFile = async (req, res) => {
  */
 const leaveWorkspaceSession = async (req, res) => {
   try {
-    const userId = req.user._id || req.user.id;
+    const userId = getUserIdFromReq(req);
+    if (!userId) return res.status(401).json({ message: 'Authentication required.' });
     const { workspaceId } = req.params;
     const access = await getWorkspaceForMember(workspaceId, userId);
     if (!access.role) return res.status(403).json({ message: 'You are not a member of this workspace.' });

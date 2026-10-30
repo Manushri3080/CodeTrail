@@ -12,7 +12,8 @@ import {
   Sparkles,
   ArrowRight,
   LogOut,
-  LayoutDashboard
+  LayoutDashboard,
+  BarChart2
 } from 'lucide-react';
 
 export const Navbar = ({ isLoggedIn, currentUser, activeWorkspace, onLogin, onSignUp, onLogout, activeTab, setActiveTab, onNavigate, onJumpToWorkspace }) => {
@@ -33,6 +34,8 @@ export const Navbar = ({ isLoggedIn, currentUser, activeWorkspace, onLogin, onSi
     { id: 'workspaces-directory', label: 'Workspaces', icon: FileCode },
     { id: 'execution-engine', label: 'Code Runner', icon: Cpu },
     { id: 'contribution-dossier', label: 'Audit Logs', icon: ShieldCheck },
+    // CT-197: Contribution Analytics Dashboard
+    { id: 'analytics', label: 'Analytics', icon: BarChart2 },
   ] : [
     { id: 'modules-grid', label: 'Features', icon: Layers },
     { id: 'modular-workspace', label: 'Workspaces', icon: FileCode },
