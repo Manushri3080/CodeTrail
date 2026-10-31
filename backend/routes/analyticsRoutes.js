@@ -1,6 +1,6 @@
 /**
  * analyticsRoutes.js
- * CT-197: Contribution Analytics — Route Definitions
+ * CT-197 & CT-198 & CT-201: Analytics Route Definitions
  *
  * All routes are mounted under /api/workspaces/:workspaceId
  * and require authentication.
@@ -13,7 +13,10 @@ const {
   getContributionAnalytics,
   getCodingActivity,
   getParticipationMetrics,
-  validateAnalytics
+  validateAnalytics,
+  // CT-198 & CT-201
+  getSessionAnalytics,
+  validateSessionAnalyticsEndpoint
 } = require('../controllers/analyticsController');
 
 // All analytics routes require authentication
@@ -30,5 +33,11 @@ router.get('/analytics/participation', getParticipationMetrics);
 
 // CT-206: Validate analytics data — cross-check aggregated totals against raw ActivityLog data
 router.get('/analytics/validate', validateAnalytics);
+
+// CT-198: Session Analytics & Participant Activity Summary
+router.get('/analytics/session', getSessionAnalytics);
+
+// CT-201: Session Analytics Standalone Validation
+router.get('/analytics/session/validate', validateSessionAnalyticsEndpoint);
 
 module.exports = router;

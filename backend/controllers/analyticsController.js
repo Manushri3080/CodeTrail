@@ -13,7 +13,7 @@ const mongoose = require('mongoose');
 const ActivityLog     = require('../models/ActivityLog');
 const WorkspaceSession = require('../models/WorkspaceSession');
 const Workspace       = require('../models/Workspace');
-const { runFullValidation } = require('../utils/analyticsValidator');
+const { runFullValidation, runSessionValidation } = require('../utils/analyticsValidator');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -38,6 +38,21 @@ const calcContributionScore = ({ linesAdded = 0, linesDeleted = 0, codeExecution
   Math.round(linesAdded * 1 + linesDeleted * 0.5 + codeExecutions * 2 + filesCreated * 3);
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Helper to format duration in ms to human-readable string
+ */
+const formatDuration = (ms) => {
+  if (!ms || ms <= 0) return '0s';
+  const totalSecs = Math.floor(ms / 1000);
+  const hours = Math.floor(totalSecs / 3600);
+  const minutes = Math.floor((totalSecs % 3600) / 60);
+  const seconds = totalSecs % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+};
+
 // CT-202: Get Contribution Analytics
 // GET /api/workspaces/:workspaceId/analytics/contributions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -544,9 +559,495 @@ const validateAnalytics = async (req, res) => {
   }
 };
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CT-198: Get Session Analytics & Summary
+// GET /api/workspaces/:workspaceId/analytics/session
+// ─────────────────────────────────────────────────────────────────────────────
+const getSessionAnalytics = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const wsObjectId = toObjectId(workspaceId, res);
+    if (!wsObjectId) return;
+
+    const workspace = await Workspace.findById(wsObjectId)
+      .populate('owner', 'name email avatar')
+      .populate('members.user', 'name email avatar')
+      .lean();
+
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    // Access check: verify user has access to workspace
+    const requestingUserId = req.user?._id || req.user?.id;
+    if (requestingUserId) {
+      const isOwner = workspace.owner && String(workspace.owner._id) === String(requestingUserId);
+      const isMember = (workspace.members || []).some(m => m.user && String(m.user._id) === String(requestingUserId));
+      if (!isOwner && !isMember && req.user?.role !== 'admin') {
+        return res.status(403).json({ message: 'Access denied: You are not a member of this workspace.' });
+      }
+    }
+
+    // Fetch active/recent sessions from WorkspaceSession
+    const wsSessions = await WorkspaceSession.find({ workspaceId: String(wsObjectId) })
+      .populate('userId', 'name email')
+      .lean();
+
+    // Map sessions by userId
+    const sessionMap = new Map();
+    wsSessions.forEach(s => {
+      if (s.userId) {
+        const uid = String(s.userId._id || s.userId);
+        sessionMap.set(uid, s);
+      }
+    });
+
+    // ── Single aggregation pipeline on ActivityLog for optimal performance ──
+    const [stats] = await ActivityLog.aggregate([
+      { $match: { workspaceId: wsObjectId } },
+      {
+        $facet: {
+          // (a) Participant summary
+          byUser: [
+            {
+              $group: {
+                _id: '$userId',
+                userName:             { $last: '$userName' },
+                userEmail:            { $last: '$userEmail' },
+                userRole:             { $last: '$userRole' },
+                totalEvents:          { $sum: 1 },
+                linesAdded:           { $sum: '$linesAdded' },
+                linesDeleted:         { $sum: '$linesDeleted' },
+                totalLinesChanged:    { $sum: '$totalLinesChanged' },
+                codeEdits:            { $sum: { $cond: [{ $eq: ['$action', 'code_edit'] }, 1, 0] } },
+                filesCreated:         { $sum: { $cond: [{ $eq: ['$action', 'file_create'] }, 1, 0] } },
+                filesDeleted:         { $sum: { $cond: [{ $eq: ['$action', 'file_delete'] }, 1, 0] } },
+                filesRenamed:         { $sum: { $cond: [{ $eq: ['$action', 'file_rename'] }, 1, 0] } },
+                codeExecutions:       { $sum: { $cond: [{ $eq: ['$action', 'code_execution'] }, 1, 0] } },
+                successfulExecutions: {
+                  $sum: {
+                    $cond: [
+                      { $and: [{ $eq: ['$action', 'code_execution'] }, { $eq: ['$executionStatus', 'success'] }] },
+                      1, 0
+                    ]
+                  }
+                },
+                collaborationEvents: {
+                  $sum: {
+                    $cond: [
+                      { $in: ['$action', ['session_start', 'session_end', 'member_join', 'member_leave', 'role_change', 'settings_update', 'general']] },
+                      1, 0
+                    ]
+                  }
+                },
+                earliestTimestamp:    { $min: '$timestamp' },
+                latestTimestamp:      { $max: '$timestamp' }
+              }
+            },
+            { $sort: { totalEvents: -1, totalLinesChanged: -1 } }
+          ],
+
+          // (b) Category breakdown
+          byAction: [
+            {
+              $group: {
+                _id: '$action',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+
+          // (c) Hourly activity timeline
+          hourlyTimeline: [
+            {
+              $group: {
+                _id: {
+                  date: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+                  hour: { $hour: '$timestamp' }
+                },
+                events:       { $sum: 1 },
+                linesChanged: { $sum: '$totalLinesChanged' },
+                codeEdits:    { $sum: { $cond: [{ $eq: ['$action', 'code_edit'] }, 1, 0] } },
+                executions:   { $sum: { $cond: [{ $eq: ['$action', 'code_execution'] }, 1, 0] } }
+              }
+            },
+            { $sort: { '_id.date': 1, '_id.hour': 1 } }
+          ],
+
+          // (d) Overall session bounds & totals
+          overallBounds: [
+            {
+              $group: {
+                _id: null,
+                earliestEvent:     { $min: '$timestamp' },
+                latestEvent:       { $max: '$timestamp' },
+                totalEvents:       { $sum: 1 },
+                totalLinesAdded:   { $sum: '$linesAdded' },
+                totalLinesDeleted: { $sum: '$linesDeleted' },
+                totalLinesChanged: { $sum: '$totalLinesChanged' },
+                totalExecutions:   { $sum: { $cond: [{ $eq: ['$action', 'code_execution'] }, 1, 0] } },
+                successfulExecs:   {
+                  $sum: {
+                    $cond: [
+                      { $and: [{ $eq: ['$action', 'code_execution'] }, { $eq: ['$executionStatus', 'success'] }] },
+                      1, 0
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]);
+
+    const { byUser = [], byAction = [], hourlyTimeline = [], overallBounds = [] } = stats || {};
+    const bounds = overallBounds[0] || {};
+
+    const totalEventsAll = bounds.totalEvents || 0;
+    const totalLinesAddedAll = bounds.totalLinesAdded || 0;
+    const totalLinesDeletedAll = bounds.totalLinesDeleted || 0;
+    const totalLinesChangedAll = bounds.totalLinesChanged || 0;
+    const totalExecutionsAll = bounds.totalExecutions || 0;
+    const successfulExecsAll = bounds.successfulExecs || 0;
+
+    // Action category classification
+    const actionCounts = {};
+    byAction.forEach(a => { actionCounts[a._id] = a.count; });
+
+    const codingCount = actionCounts['code_edit'] || 0;
+    const fileOpsCount = (actionCounts['file_create'] || 0) + (actionCounts['file_delete'] || 0) + (actionCounts['file_rename'] || 0);
+    const executionsCount = actionCounts['code_execution'] || 0;
+    const collaborationCount = (actionCounts['session_start'] || 0) +
+                               (actionCounts['session_end'] || 0) +
+                               (actionCounts['member_join'] || 0) +
+                               (actionCounts['member_leave'] || 0) +
+                               (actionCounts['role_change'] || 0) +
+                               (actionCounts['settings_update'] || 0) +
+                               (actionCounts['general'] || 0);
+
+    const eventCategories = {
+      coding: codingCount,
+      fileOps: fileOpsCount,
+      executions: executionsCount,
+      collaboration: collaborationCount
+    };
+
+    // Calculate session duration safely
+    const sessionEarliest = bounds.earliestEvent || (wsSessions.length > 0 ? wsSessions.reduce((min, s) => s.joinedAt && (!min || s.joinedAt < min) ? s.joinedAt : min, null) : null) || workspace.createdAt;
+    const sessionLatest   = bounds.latestEvent || (wsSessions.length > 0 ? wsSessions.reduce((max, s) => s.lastActiveAt && (!max || s.lastActiveAt > max) ? s.lastActiveAt : max, null) : null) || workspace.updatedAt;
+
+    let sessionDurationMs = 0;
+    if (sessionEarliest && sessionLatest) {
+      sessionDurationMs = Math.max(0, new Date(sessionLatest).getTime() - new Date(sessionEarliest).getTime());
+    }
+    const sessionDurationSeconds = Math.round(sessionDurationMs / 1000);
+    const sessionDurationFormatted = formatDuration(sessionDurationMs);
+
+    // Active session duration accumulated from sessions
+    const activeTimeMs = wsSessions.reduce((sum, s) => {
+      const start = s.joinedAt ? new Date(s.joinedAt).getTime() : 0;
+      const end = (s.leftAt ? new Date(s.leftAt).getTime() : (s.lastActiveAt ? new Date(s.lastActiveAt).getTime() : start));
+      return sum + Math.max(0, end - start);
+    }, 0);
+    const activeTimeSeconds = Math.round(activeTimeMs / 1000);
+    const activeTimeFormatted = formatDuration(activeTimeMs);
+
+    // Build comprehensive participant breakdown
+    // Map existing activity by string userId
+    const activityMap = new Map();
+    byUser.forEach(u => {
+      const uid = String(u._id || 'unknown');
+      activityMap.set(uid, u);
+    });
+
+    const COLOR_PALETTE = ['#8B5CF6', '#38BDF8', '#10B981', '#F59E0B', '#EC4899', '#6366F1'];
+    const participants = [];
+    const processedUserIds = new Set();
+
+    // Helper to add participant
+    const addParticipant = (userObj, roleDefault) => {
+      if (!userObj) return;
+      const uid = String(userObj._id || userObj.id || userObj);
+      if (processedUserIds.has(uid)) return;
+      processedUserIds.add(uid);
+
+      const act = activityMap.get(uid) || {};
+      const sess = sessionMap.get(uid) || null;
+
+      const userEvents = act.totalEvents || 0;
+      const sharePercent = totalEventsAll > 0 ? Math.round((userEvents / totalEventsAll) * 100) : 0;
+      const userExecs = act.codeExecutions || 0;
+      const userSuccessExecs = act.successfulExecutions || 0;
+      const execSuccessRate = userExecs > 0 ? Math.round((userSuccessExecs / userExecs) * 100) : 0;
+
+      // Determine real-time participant status
+      let status = 'offline';
+      if (sess) {
+        if (sess.status === 'online') {
+          const isRecentlyActive = sess.lastActiveAt && (Date.now() - new Date(sess.lastActiveAt).getTime() < 5 * 60 * 1000);
+          status = isRecentlyActive ? 'online' : 'away';
+        } else if (sess.status === 'away') {
+          status = 'away';
+        }
+      }
+
+      const score = calcContributionScore({
+        linesAdded:     act.linesAdded || 0,
+        linesDeleted:   act.linesDeleted || 0,
+        codeExecutions: userExecs,
+        filesCreated:   act.filesCreated || 0
+      });
+
+      participants.push({
+        userId:               uid,
+        userName:             userObj.name || act.userName || 'Developer',
+        userEmail:            userObj.email || act.userEmail || '',
+        avatar:               userObj.avatar || null,
+        role:                 roleDefault || act.userRole || sess?.role || 'editor',
+        status,
+        totalEvents:          userEvents,
+        activitySharePercent: sharePercent,
+        linesAdded:           act.linesAdded || 0,
+        linesDeleted:         act.linesDeleted || 0,
+        totalLinesChanged:    act.totalLinesChanged || 0,
+        codeEdits:            act.codeEdits || 0,
+        filesCreated:         act.filesCreated || 0,
+        filesDeleted:         act.filesDeleted || 0,
+        filesRenamed:         act.filesRenamed || 0,
+        codeExecutions:       userExecs,
+        executionSuccessRate: execSuccessRate,
+        collaborationEvents:  act.collaborationEvents || 0,
+        contributionScore:    score,
+        firstActiveAt:        act.earliestTimestamp || sess?.joinedAt || null,
+        lastActiveAt:         act.latestTimestamp || sess?.lastActiveAt || null,
+        hasRecordedActivity:  userEvents > 0,
+        color:                COLOR_PALETTE[participants.length % COLOR_PALETTE.length]
+      });
+    };
+
+    // 1. Owner
+    if (workspace.owner) {
+      addParticipant(workspace.owner, 'owner');
+    }
+
+    // 2. Members
+    (workspace.members || []).forEach(m => {
+      if (m.user) {
+        addParticipant(m.user, m.role || 'editor');
+      }
+    });
+
+    // 3. Any additional contributors in activity log (e.g. historical contributors)
+    byUser.forEach(u => {
+      const uid = String(u._id);
+      if (!processedUserIds.has(uid)) {
+        addParticipant({ _id: uid, name: u.userName, email: u.userEmail }, u.userRole || 'editor');
+      }
+    });
+
+    // Sort participants by totalEvents descending, then linesChanged descending
+    participants.sort((a, b) => b.totalEvents - a.totalEvents || b.totalLinesChanged - a.totalLinesChanged);
+
+    // Normalize share percentages so they sum to 100% if events > 0
+    if (totalEventsAll > 0 && participants.length > 0) {
+      const currentSum = participants.reduce((s, p) => s + p.activitySharePercent, 0);
+      if (currentSum !== 100 && participants.some(p => p.totalEvents > 0)) {
+        // Adjust the top contributor by the rounding diff
+        const top = participants.find(p => p.totalEvents > 0);
+        if (top) {
+          top.activitySharePercent += (100 - currentSum);
+        }
+      }
+    }
+
+    const totalParticipants = participants.length;
+    const activeParticipants = participants.filter(p => p.status === 'online').length;
+    const overallSuccessRate = totalExecutionsAll > 0 ? Math.round((successfulExecsAll / totalExecutionsAll) * 100) : 0;
+
+    const sessionSummary = {
+      status:                   activeParticipants > 0 ? 'active' : (totalEventsAll > 0 ? 'completed' : 'empty'),
+      sessionDurationFormatted,
+      sessionDurationSeconds,
+      activeTimeFormatted,
+      activeTimeSeconds,
+      totalParticipants,
+      activeParticipants,
+      offlineParticipants:      Math.max(0, totalParticipants - activeParticipants),
+      totalEvents:              totalEventsAll,
+      totalLinesAdded:          totalLinesAddedAll,
+      totalLinesDeleted:        totalLinesDeletedAll,
+      totalLinesChanged:        totalLinesChangedAll,
+      totalExecutions:          totalExecutionsAll,
+      successfulExecutions:     successfulExecsAll,
+      executionSuccessRate:     overallSuccessRate,
+      startedAt:                sessionEarliest,
+      lastActiveAt:             sessionLatest,
+      mostActiveParticipant:    participants.length > 0 && participants[0].totalEvents > 0
+        ? { userId: participants[0].userId, name: participants[0].userName, events: participants[0].totalEvents }
+        : null
+    };
+
+    // Format timeline for UI visualization
+    const activityTimeline = hourlyTimeline.map(t => ({
+      label:        `${String(t._id.hour).padStart(2, '0')}:00`,
+      date:         t._id.date,
+      events:       t.events,
+      linesChanged: t.linesChanged,
+      codeEdits:    t.codeEdits,
+      executions:   t.executions
+    }));
+
+    // CT-201 Session Analytics Validation
+    const validation = runSessionValidation({
+      sessionSummary,
+      participants,
+      eventCategories,
+      rawEvents: []
+    });
+
+    res.json({
+      workspaceId,
+      workspaceTitle: workspace.title,
+      generatedAt: new Date().toISOString(),
+      sessionSummary,
+      eventCategoryBreakdown: eventCategories,
+      participantBreakdown: participants,
+      activityTimeline,
+      validation
+    });
+  } catch (err) {
+    console.error('getSessionAnalytics Error:', err);
+    res.status(500).json({ message: 'Failed to compute session analytics', error: err.message });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CT-201: Run Standalone Session Analytics Validation Endpoint
+// GET /api/workspaces/:workspaceId/analytics/session/validate
+// ─────────────────────────────────────────────────────────────────────────────
+const validateSessionAnalyticsEndpoint = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    const wsObjectId = toObjectId(workspaceId, res);
+    if (!wsObjectId) return;
+
+    const workspace = await Workspace.findById(wsObjectId)
+      .populate('owner', 'name email avatar')
+      .populate('members.user', 'name email avatar')
+      .lean();
+
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    // Pull raw events and sessions
+    const [rawEvents, wsSessions] = await Promise.all([
+      ActivityLog.find({ workspaceId: wsObjectId }).sort({ sequenceNumber: 1 }).lean(),
+      WorkspaceSession.find({ workspaceId: String(wsObjectId) }).lean()
+    ]);
+
+    const totalEvents = rawEvents.length;
+    let coding = 0;
+    let fileOps = 0;
+    let executions = 0;
+    let collaboration = 0;
+    const byUserMap = new Map();
+
+    for (const ev of rawEvents) {
+      if (ev.action === 'code_edit') coding++;
+      else if (['file_create', 'file_delete', 'file_rename'].includes(ev.action)) fileOps++;
+      else if (ev.action === 'code_execution') executions++;
+      else collaboration++;
+
+      const uid = String(ev.userId || 'unknown');
+      const cur = byUserMap.get(uid) || { totalEvents: 0, linesAdded: 0, linesDeleted: 0, totalLinesChanged: 0 };
+      cur.totalEvents++;
+      cur.linesAdded += (ev.linesAdded || 0);
+      cur.linesDeleted += (ev.linesDeleted || 0);
+      cur.totalLinesChanged += (ev.totalLinesChanged || 0);
+      byUserMap.set(uid, cur);
+    }
+
+    const participants = [];
+    const seen = new Set();
+    const addP = (u) => {
+      const uid = String(u._id || u.id || u);
+      if (seen.has(uid)) return;
+      seen.add(uid);
+      const a = byUserMap.get(uid) || { totalEvents: 0, linesAdded: 0, linesDeleted: 0, totalLinesChanged: 0 };
+      const share = totalEvents > 0 ? Math.round((a.totalEvents / totalEvents) * 100) : 0;
+      participants.push({
+        userId: uid,
+        userName: u.name || 'Member',
+        totalEvents: a.totalEvents,
+        linesAdded: a.linesAdded,
+        linesDeleted: a.linesDeleted,
+        totalLinesChanged: a.totalLinesChanged,
+        activitySharePercent: share
+      });
+    };
+
+    if (workspace.owner) addP(workspace.owner);
+    (workspace.members || []).forEach(m => { if (m.user) addP(m.user); });
+    byUserMap.forEach((_, uid) => { if (!seen.has(uid)) addP({ _id: uid, name: 'Contributor' }); });
+
+    if (totalEvents > 0 && participants.length > 0) {
+      const curSum = participants.reduce((s, p) => s + p.activitySharePercent, 0);
+      if (curSum !== 100) {
+        participants[0].activitySharePercent += (100 - curSum);
+      }
+    }
+
+    const firstTime = rawEvents[0]?.timestamp || workspace.createdAt;
+    const lastTime = rawEvents[rawEvents.length - 1]?.timestamp || workspace.updatedAt;
+    const durationMs = Math.max(0, new Date(lastTime).getTime() - new Date(firstTime).getTime());
+    const durationSec = Math.round(durationMs / 1000);
+
+    const activeParticipants = wsSessions.filter(s => s.status === 'online').length;
+
+    const sessionSummary = {
+      sessionDurationSeconds: durationSec,
+      sessionDurationFormatted: formatDuration(durationMs),
+      startedAt: firstTime,
+      lastActiveAt: lastTime,
+      totalParticipants: participants.length,
+      activeParticipants: Math.min(activeParticipants, participants.length),
+      totalEvents
+    };
+
+    const eventCategories = { coding, fileOps, executions, collaboration };
+
+    const validation = runSessionValidation({
+      sessionSummary,
+      participants,
+      eventCategories,
+      rawEvents
+    });
+
+    res.json({
+      workspaceId,
+      validatedAt: new Date().toISOString(),
+      rawStats: {
+        rawEventsCount: rawEvents.length,
+        rawSessionsCount: wsSessions.length,
+        totalParticipants: participants.length
+      },
+      ...validation
+    });
+  } catch (err) {
+    console.error('validateSessionAnalyticsEndpoint Error:', err);
+    res.status(500).json({ message: 'Failed to run session analytics validation', error: err.message });
+  }
+};
+
 module.exports = {
   getContributionAnalytics,
   getCodingActivity,
   getParticipationMetrics,
-  validateAnalytics
+  validateAnalytics,
+  // CT-198 & CT-201
+  getSessionAnalytics,
+  validateSessionAnalyticsEndpoint
 };
