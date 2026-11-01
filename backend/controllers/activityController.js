@@ -67,12 +67,48 @@ const recordActivity = async ({
         details: details.trim()
       });
 
+      // Resolve canonical role for the activity event
+      let canonicalRole = 'editor';
+      if (user?.role) {
+        const lower = String(user.role).trim().toLowerCase();
+        if (['owner', 'admin', 'editor', 'viewer', 'system'].includes(lower)) {
+          canonicalRole = lower;
+        } else if (lower.includes('owner')) {
+          canonicalRole = 'owner';
+        } else if (lower.includes('admin')) {
+          canonicalRole = 'admin';
+        } else if (lower.includes('viewer')) {
+          canonicalRole = 'viewer';
+        }
+      }
+
+      // Check if user has specific workspace role if workspace is available
+      try {
+        const ws = await Workspace.findById(wsObjectId).select('owner members').lean();
+        if (ws) {
+          const ownerId = ws.owner ? String(ws.owner._id || ws.owner) : null;
+          if (ownerId && userObjectId && ownerId === String(userObjectId)) {
+            canonicalRole = 'owner';
+          } else if (Array.isArray(ws.members) && userObjectId) {
+            const member = ws.members.find(m => {
+              const mUserId = m.user ? String(m.user._id || m.user) : null;
+              return mUserId === String(userObjectId);
+            });
+            if (member?.role && ['owner', 'admin', 'editor', 'viewer'].includes(member.role)) {
+              canonicalRole = member.role;
+            }
+          }
+        }
+      } catch (wsLookupErr) {
+        // Non-blocking fallback
+      }
+
       const newActivity = new ActivityLog({
         workspaceId: wsObjectId,
         userId: userObjectId,
         userName: user?.name || 'Developer',
         userEmail: user?.email || '',
-        userRole: user?.role || 'editor',
+        userRole: canonicalRole,
         action,
         fileId,
         fileName,
