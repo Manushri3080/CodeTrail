@@ -39,6 +39,7 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
+import ContributionReportView from './ContributionReportView';
 
 /*
   Spacing system (Tailwind classes used below):
@@ -225,10 +226,11 @@ const ContributionAnalytics = ({ activeWorkspace = null, currentUser = null }) =
 
   // ── UI tabs config ──────────────────────────────────────────────────────────
   const TABS = [
-    { id: 'leaderboard',   label: 'Leaderboard',       icon: Award },
-    { id: 'session',       label: 'Session Analytics', icon: Layers },
-    { id: 'coding',        label: 'Coding Activity',   icon: Code2 },
-    { id: 'participation', label: 'Participation',     icon: Clock }
+    { id: 'leaderboard',   label: 'Leaderboard',         icon: Award },
+    { id: 'session',       label: 'Session Analytics',   icon: Layers },
+    { id: 'report',        label: 'Contribution Report', icon: FileText, badge: 'CT-199' },
+    { id: 'coding',        label: 'Coding Activity',     icon: Code2 },
+    { id: 'participation', label: 'Participation',       icon: Clock }
   ];
 
   // CT-198: Copy Markdown Session Summary Report
@@ -411,7 +413,12 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
               }`}
             >
               <Icon size={14} />
-              {tab.label}
+              <span>{tab.label}</span>
+              {tab.badge && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  {tab.badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -1070,6 +1077,16 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
             </div>
           )}
 
+        </div>
+      )}
+
+      {/* ── Tab: Contribution Report (CT-199) ────────────────────────────────── */}
+      {activeTab === 'report' && (
+        <div className="px-8 py-8" id="ct-contribution-report-tab">
+          <ContributionReportView
+            workspace={selectedWs}
+            activeWorkspaceId={selectedWs?._id || selectedWs?.id}
+          />
         </div>
       )}
 

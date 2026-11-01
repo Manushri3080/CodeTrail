@@ -476,6 +476,13 @@ CodeTrail was developed collaboratively by a team of **8 engineers**. The follow
   - Built the backend execution test suite: `backend/tests/executionValidation.test.js` (320+ lines).
 - **Frontend Execution Sandbox Enhancements:**
   - Enhanced `ExecutionEngine.jsx` with editable code runners, status badges, compilation diagnostics displays, and terminal styling.
+- **Module 6 Generate Contribution Reports & Layout Design (CT-199):**
+  - Designed and implemented the comprehensive report generator `backend/utils/reportGenerator.js` compiling executive metrics, session details, contributor ranking matrices, activity distribution, and SHA-256 cryptographic signatures.
+  - Developed the mathematical and cryptographic report validator `backend/utils/reportValidator.js` with schema, consistency, and tamper-detection checks.
+  - Implemented the REST APIs in `backend/controllers/reportController.js` and `backend/routes/reportRoutes.js` for report generation, custom filtering, and markdown/html exports.
+  - Built the presentation-grade, audit-ready UI layout `frontend/src/modules/analytics/ContributionReportView.jsx` with KPI cards, contributor tables, print/PDF styling, markdown copying, and validation certificate modals.
+  - Integrated the report layout into `frontend/src/modules/analytics/ContributionAnalytics.jsx` as a first-class tab.
+  - Developed the 9-section unit test suite `backend/tests/contributionReport.test.js` covering empty sessions, multi-contributor math, duration sanity, category balance, signature verification, and custom filtering (100% pass rate).
 
 ---
 
