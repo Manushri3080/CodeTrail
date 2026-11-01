@@ -45,10 +45,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
-<<<<<<< HEAD
-=======
 import { downloadContributionReportPdf } from '../../utils/pdfReportGenerator.js';
->>>>>>> features/meet
 
 export default function ContributionReportView({ workspace, activeWorkspaceId }) {
   const wsId = activeWorkspaceId || workspace?._id || workspace?.id;
@@ -67,12 +64,9 @@ export default function ContributionReportView({ workspace, activeWorkspaceId })
 
   // Action states
   const [copiedMd, setCopiedMd] = useState(false);
-<<<<<<< HEAD
-=======
   const [exportingPdf, setExportingPdf] = useState(false);
   const [pdfExportSuccess, setPdfExportSuccess] = useState(false);
   const [pdfExportError, setPdfExportError] = useState(null);
->>>>>>> features/meet
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -301,8 +295,6 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
     window.open(`${API_BASE}/workspaces/${wsId}/reports/contribution/markdown`, '_blank');
   };
 
-<<<<<<< HEAD
-=======
   // CT-200: Export full vector PDF report (Meet Sheth)
   const handleExportPdf = async () => {
     if (!report || exportingPdf) return;
@@ -320,8 +312,6 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
       setExportingPdf(false);
     }
   };
-
->>>>>>> features/meet
   // Live validate report content
   const handleRunValidation = async () => {
     if (!report) return;
@@ -442,9 +432,6 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
             <span>Print / PDF View</span>
           </button>
 
-<<<<<<< HEAD
-          {/* CT-200 Export hook button for Meet Sheth */}
-=======
           {/* CT-200: Export PDF Functionality (Meet Sheth) */}
           <button
             type="button"
@@ -479,16 +466,11 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
           </button>
 
           {/* Download HTML report */}
->>>>>>> features/meet
           <button
             type="button"
             onClick={handleDownloadHtml}
             disabled={!report}
-<<<<<<< HEAD
-            title="Download standalone HTML report (CT-200 PDF Export ready)"
-=======
             title="Download standalone HTML report"
->>>>>>> features/meet
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
             <Download size={14} />
@@ -497,8 +479,6 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
         </div>
       </div>
 
-<<<<<<< HEAD
-=======
       {/* PDF Export Error Notification */}
       {pdfExportError && (
         <div className="no-print p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
@@ -507,7 +487,6 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
         </div>
       )}
 
->>>>>>> features/meet
       {/* ── Customization Panel (no-print) ─────────────────────────────────── */}
       {showOptions && (
         <div className="no-print rounded-xl border border-white/10 bg-[#0B0D17] p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
