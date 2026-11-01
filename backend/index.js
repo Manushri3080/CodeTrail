@@ -167,8 +167,30 @@ const startServer = async () => {
     console.warn('Backend server starting with Database Offline (API endpoints will respond with HTTP 503 until DB is connected)...');
   }
 
+<<<<<<< HEAD
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Backend Server with Socket.IO listening on 0.0.0.0:${PORT} (${connected ? 'Database Online' : 'Database Offline'})`);
+=======
+<<<<<<< Updated upstream
+  server.listen(PORT, () => {
+    console.log(`Backend Server with Socket.IO listening on port ${PORT} (${connected ? 'Database Online' : 'Database Offline'})`);
+=======
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Error: listen EADDRINUSE: address already in use 0.0.0.0:${PORT}`);
+      console.warn(`[Port Conflict] An existing CodeTrail backend or another process is already listening on port ${PORT}.`);
+      console.warn(`Only one backend instance can bind to port ${PORT}. Please check active terminals or background processes.`);
+      process.exit(1);
+    } else {
+      console.error('Backend HTTP Server error:', err.message);
+      process.exit(1);
+    }
+  });
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Backend Server with Socket.IO listening on 0.0.0.0:${PORT} (${connected ? 'Database Online' : 'Database Offline'})`);
+>>>>>>> Stashed changes
+>>>>>>> features/meet
   });
 };
 

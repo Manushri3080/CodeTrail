@@ -109,7 +109,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
           headers: { Authorization: `Bearer ${token}` }
         });
 
-        if (res.data && Array.isArray(res.data.workspaces) && res.data.workspaces.length > 0) {
+        if (res.data && Array.isArray(res.data.workspaces)) {
           setWorkspaces(res.data.workspaces);
         } else {
           setWorkspaces([]);
@@ -128,20 +128,32 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   }, [currentUser]);
 
   const handleWorkspaceCreated = (newWs) => {
+    const wsId = newWs._id || newWs.id;
     const formatted = {
-      id: newWs._id || newWs.id,
-      title: newWs.title,
-      desc: newWs.description,
+      id: wsId,
+      _id: wsId,
+      title: newWs.title || newWs.name,
+      name: newWs.title || newWs.name,
+      description: newWs.description || newWs.desc || '',
+      desc: newWs.description || newWs.desc || '',
       brandColor: newWs.brandColor || 'purple',
       icon: newWs.icon || 'Rocket',
-      role: 'Lead',
-      timeSpent: '0h 0m',
+      role: newWs.role || 'owner',
+      timeSpent: newWs.timeSpent || '0h 0m',
       status: newWs.status || 'active',
-      language: newWs.language,
-      inviteCode: newWs.inviteCode,
-      collaborators: [currentUser?.name ? currentUser.name[0].toUpperCase() : 'You']
+      language: newWs.language || 'javascript',
+      inviteCode: newWs.inviteCode || newWs.roomCode,
+      roomCode: newWs.inviteCode || newWs.roomCode,
+      files: newWs.files || [],
+      filesCount: (newWs.files && newWs.files.length) || newWs.filesCount || 1,
+      members: newWs.members || [],
+      collaborators: newWs.collaborators || [currentUser?.name ? currentUser.name[0].toUpperCase() : 'You'],
+      updatedAt: newWs.updatedAt || new Date().toISOString()
     };
-    setWorkspaces(prev => [formatted, ...prev]);
+    setWorkspaces(prev => [
+      formatted,
+      ...prev.filter(workspace => (workspace.id || workspace._id) !== wsId)
+    ]);
   };
 
   const handleWorkspaceJoined = (joinedWorkspace) => {
@@ -290,7 +302,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   const totalWorkspacesCount = workspaces.length;
   const pendingGoalsCount = goals.filter(g => !g.completed).length;
   const totalFilesCount = workspaces.reduce((acc, ws) => acc + (ws.filesCount || (ws.files ? ws.files.length : 1)), 0);
-  const totalCollaboratorsCount = workspaces.reduce((acc, ws) => acc + (ws.collaborators ? ws.collaborators.length : 1), 0);
+  const totalCollaboratorsCount = workspaces.reduce((acc, ws) => acc + (ws.collaborators ? ws.collaborators.length : (ws.members ? ws.members.length : 1)), 0);
 
   return (
     <div className="ct-home-container">

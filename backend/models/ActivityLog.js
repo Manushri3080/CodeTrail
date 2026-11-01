@@ -1,5 +1,18 @@
 const mongoose = require('mongoose');
 
+function normalizeActivityUserRole(val) {
+  if (!val) return 'editor';
+  const str = String(val).trim().toLowerCase();
+  if (['owner', 'admin', 'editor', 'viewer', 'system'].includes(str)) {
+    return str;
+  }
+  if (str.includes('owner')) return 'owner';
+  if (str.includes('admin')) return 'admin';
+  if (str.includes('viewer') || str.includes('observer')) return 'viewer';
+  // Display roles such as 'CodeTrail Learner', 'learner', 'student', 'developer' map to canonical 'editor'
+  return 'editor';
+}
+
 const ActivityLogSchema = new mongoose.Schema({
   workspaceId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,7 +37,8 @@ const ActivityLogSchema = new mongoose.Schema({
   userRole: {
     type: String,
     enum: ['owner', 'admin', 'editor', 'viewer', 'system'],
-    default: 'editor'
+    default: 'editor',
+    set: normalizeActivityUserRole
   },
   action: {
     type: String,

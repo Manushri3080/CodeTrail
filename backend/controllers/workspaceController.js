@@ -5,7 +5,17 @@ const User = require('../models/User');
 
 // Starter file templates based on language
 const getStarterFiles = (language, title) => {
-  switch (language) {
+  const lang = (language || 'javascript').toLowerCase();
+  switch (lang) {
+    case 'typescript':
+      return [
+        {
+          id: 'index.ts',
+          name: 'index.ts',
+          language: 'typescript',
+          content: `// ${title} - CodeTrail Collaborative Workspace\n\nconst greeting: string = "Welcome to ${title}!";\nconsole.log(greeting);\nconsole.log("Ready for real-time TypeScript collaboration.");\n`
+        }
+      ];
     case 'python':
       return [
         {
@@ -13,6 +23,15 @@ const getStarterFiles = (language, title) => {
           name: 'main.py',
           language: 'python',
           content: `# ${title} - CodeTrail Collaborative Workspace\n\ndef main():\n    print("Welcome to ${title}!")\n    print("Collaborating live with Python runtime.")\n\nif __name__ == "__main__":\n    main()\n`
+        }
+      ];
+    case 'c':
+      return [
+        {
+          id: 'main.c',
+          name: 'main.c',
+          language: 'cpp',
+          content: `// ${title} - CodeTrail Collaborative Workspace\n#include <stdio.h>\n\nint main() {\n    printf("Welcome to ${title}!\\n");\n    return 0;\n}\n`
         }
       ];
     case 'cpp':
@@ -51,6 +70,15 @@ const getStarterFiles = (language, title) => {
           content: `// ${title} - CodeTrail Collaborative Workspace\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Welcome to ${title}!")\n}\n`
         }
       ];
+    case 'html':
+      return [
+        {
+          id: 'index.html',
+          name: 'index.html',
+          language: 'html',
+          content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>${title}</title>\n</head>\n<body>\n  <h1>Welcome to ${title}!</h1>\n</body>\n</html>\n`
+        }
+      ];
     case 'javascript':
     default:
       return [
@@ -77,11 +105,12 @@ const generateInviteCode = () => {
 };
 
 const formatWorkspaceSummary = (workspace, userId) => {
-  const ownerId = workspace.owner?._id || workspace.owner;
-  const isOwner = ownerId && ownerId.toString() === userId.toString();
-  const memberInfo = workspace.members?.find(member => {
-    const memberId = member.user?._id || member.user;
-    return memberId && memberId.toString() === userId.toString();
+  const targetUserId = userId ? String(userId._id || userId) : null;
+  const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : null;
+  const isOwner = Boolean(ownerId && targetUserId && ownerId === targetUserId);
+  const memberInfo = (workspace.members || []).find(member => {
+    const memberId = member.user ? String(member.user._id || member.user) : null;
+    return Boolean(memberId && targetUserId && memberId === targetUserId);
   });
 
   return {
@@ -89,36 +118,58 @@ const formatWorkspaceSummary = (workspace, userId) => {
     _id: workspace._id,
     title: workspace.title,
     name: workspace.title,
-    description: workspace.description,
-    desc: workspace.description,
+    description: workspace.description || workspace.desc || '',
+    desc: workspace.description || workspace.desc || '',
     brandColor: workspace.brandColor || 'purple',
     icon: workspace.icon || 'Rocket',
     role: isOwner ? 'owner' : (memberInfo?.role || 'viewer'),
     timeSpent: workspace.timeSpent || '0h 0m',
-    status: workspace.status,
-    language: workspace.language,
+    status: workspace.status || 'active',
+    language: workspace.language || 'javascript',
     inviteCode: workspace.inviteCode,
     roomCode: workspace.inviteCode,
     settings: workspace.settings,
     updatedAt: workspace.updatedAt,
     members: (workspace.members || []).map(member => ({
-      id: member.user?._id || member.user,
+      id: member.user ? (member.user._id || member.user) : null,
       name: member.user?.name || 'Collaborator',
       email: member.user?.email,
-      role: member.role
+      role: member.role || 'viewer'
     })),
+    collaborators: (workspace.members && workspace.members.length > 0)
+      ? workspace.members.map(m => {
+          const name = m.user?.name;
+          return name ? name[0].toUpperCase() : 'U';
+        })
+      : ['U'],
     files: workspace.files || [],
     filesCount: workspace.files?.length || 0
   };
 };
 
+const matchesMember = (member, targetId) => {
+  if (!member || !targetId) return false;
+  const targetStr = String(targetId);
+  const userStr = member.user ? String(member.user._id || member.user) : null;
+  const memberIdStr = member._id ? String(member._id) : null;
+  return userStr === targetStr || memberIdStr === targetStr;
+};
+
 const requireWorkspaceOwner = (workspace, userId) => {
-  return workspace.owner.toString() === userId.toString();
+  if (!workspace || !workspace.owner || !userId) return false;
+  const ownerId = String(workspace.owner._id || workspace.owner);
+  const targetUserId = String(userId._id || userId);
+  return ownerId === targetUserId;
 };
 
 const getWorkspaceRole = (workspace, userId) => {
+  if (!workspace || !userId) return null;
   if (requireWorkspaceOwner(workspace, userId)) return 'owner';
-  const member = workspace.members?.find(item => item.user.toString() === userId.toString());
+  const targetUserId = String(userId._id || userId);
+  const member = (workspace.members || []).find(item => {
+    const itemUserId = item.user ? String(item.user._id || item.user) : null;
+    return itemUserId === targetUserId;
+  });
   return member?.role || null;
 };
 
@@ -139,8 +190,22 @@ exports.createWorkspace = async (req, res) => {
       return res.status(400).json({ message: 'Workspace title is required.' });
     }
 
-    const userId = req.user._id;
-    const starterFiles = getStarterFiles(language, title.trim());
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to create a workspace.' });
+    }
+
+    // Normalize language to match Workspace model enum
+    const rawLang = (language || 'javascript').toLowerCase();
+    const schemaLanguages = ['javascript', 'python', 'cpp', 'java', 'rust', 'go', 'typescript'];
+    let normalizedLanguage = 'javascript';
+    if (schemaLanguages.includes(rawLang)) {
+      normalizedLanguage = rawLang;
+    } else if (rawLang === 'c') {
+      normalizedLanguage = 'cpp';
+    }
+
+    const starterFiles = getStarterFiles(rawLang, title.trim());
     const inviteCode = generateInviteCode();
 
     const workspace = new Workspace({
@@ -155,7 +220,7 @@ exports.createWorkspace = async (req, res) => {
         }
       ],
       inviteCode,
-      language,
+      language: normalizedLanguage,
       files: starterFiles,
       brandColor: ['purple', 'cyan', 'emerald', 'rose', 'amber', 'blue'].includes(brandColor) ? brandColor : 'purple',
       icon: icon || 'Rocket',
@@ -183,9 +248,15 @@ exports.createWorkspace = async (req, res) => {
       .populate('owner', 'name email avatar')
       .populate('members.user', 'name email avatar');
 
+    const summary = formatWorkspaceSummary(populatedWorkspace, userId);
+    const responsePayload = {
+      ...(populatedWorkspace.toObject ? populatedWorkspace.toObject() : populatedWorkspace),
+      ...summary
+    };
+
     res.status(201).json({
       message: 'Workspace created successfully',
-      workspace: populatedWorkspace
+      workspace: responsePayload
     });
 
   } catch (err) {
@@ -200,7 +271,10 @@ exports.createWorkspace = async (req, res) => {
  */
 exports.getUserWorkspaces = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to fetch workspaces.' });
+    }
     const { status, search } = req.query;
 
     const query = {
@@ -821,7 +895,7 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
       return res.status(400).json({ message: 'The workspace owner role cannot be reassigned.' });
     }
 
-    const memberItem = workspace.members.find(m => m.user.toString() === memberId || m._id.toString() === memberId);
+    const memberItem = (workspace.members || []).find(m => matchesMember(m, memberId));
     if (!memberItem) {
       return res.status(404).json({ message: 'Member not found in workspace.' });
     }
@@ -836,8 +910,16 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
     memberItem.role = role;
 
     // Add history log in DB
-    const targetUser = await User.findById(memberItem.user);
-    const userName = targetUser ? targetUser.name : 'Collaborator';
+    const targetUserId = memberItem.user ? (memberItem.user._id || memberItem.user) : null;
+    let userName = 'Collaborator';
+    if (targetUserId) {
+      try {
+        const targetUser = await User.findById(targetUserId);
+        if (targetUser) userName = targetUser.name;
+      } catch (uErr) {
+        // Non-blocking fallback
+      }
+    }
 
     workspace.activityLogs = [
       {
@@ -883,21 +965,32 @@ exports.removeWorkspaceMember = async (req, res) => {
       return res.status(403).json({ message: 'Only owners and admins can remove members.' });
     }
 
-    if (workspace.owner.toString() === memberId) {
+    const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : '';
+    if (ownerId && ownerId === String(memberId)) {
       return res.status(400).json({ message: 'The workspace owner cannot be removed.' });
     }
 
-    const targetMember = workspace.members.find(m => m.user.toString() === memberId || m._id.toString() === memberId);
-    if (targetMember?.role === 'owner' || (requesterRole === 'admin' && targetMember?.role === 'admin')) {
-      return res.status(403).json({ message: 'You cannot remove this member.' });
-    }
-    let userName = 'Collaborator';
-    if (targetMember) {
-      const targetUser = await User.findById(targetMember.user);
-      if (targetUser) userName = targetUser.name;
+    const targetMember = (workspace.members || []).find(m => matchesMember(m, memberId));
+    if (!targetMember) {
+      return res.status(404).json({ message: 'Member not found in workspace.' });
     }
 
-    workspace.members = workspace.members.filter(m => m.user.toString() !== memberId && m._id.toString() !== memberId);
+    if (targetMember.role === 'owner' || (requesterRole === 'admin' && targetMember.role === 'admin')) {
+      return res.status(403).json({ message: 'You cannot remove this member.' });
+    }
+
+    let userName = 'Collaborator';
+    const targetUserId = targetMember.user ? (targetMember.user._id || targetMember.user) : null;
+    if (targetUserId) {
+      try {
+        const targetUser = await User.findById(targetUserId);
+        if (targetUser) userName = targetUser.name;
+      } catch (uErr) {
+        // Non-blocking fallback
+      }
+    }
+
+    workspace.members = (workspace.members || []).filter(m => !matchesMember(m, memberId));
 
     // Add history log entry in DB
     workspace.activityLogs = [
