@@ -13,4 +13,7 @@ require('./analytics.test');
 // CT-198 & CT-201: Session Analytics & Analytics Validation Tests
 require('./sessionAnalytics.test');
 
+// CT-199: Generate Contribution Reports Tests (Anistina Dsouza)
+require('./contributionReport.test');
+
 console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
