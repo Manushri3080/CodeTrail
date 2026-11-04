@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
+const ActivityLog = require('../models/ActivityLog');
 
 // Starter file templates based on language
 const getStarterFiles = (language, title) => {
@@ -1015,3 +1016,375 @@ exports.removeWorkspaceMember = async (req, res) => {
   }
 };
 
+
+
+/**
+ * 14. Cross-Workspace History Aggregation (CT-233)
+ * GET /api/workspaces/user/history
+ * Aggregates user-scoped activity history across all authorized workspaces without requiring N round-trips.
+ *
+ * Query Parameters:
+ *   - page (default 1)
+ *   - limit (default 20, max 100)
+ *   - workspaceId (optional: filter to a single authorized workspace)
+ *   - category (all | workspace | code_execution | code | tasks)
+ *   - action (specific activity action)
+ *   - search / q (text search in details, fileName, actor name, or workspace title)
+ *   - dateRange / timeRange (today | week | month | all)
+ *   - startDate / endDate (ISO strings)
+ *   - userOnly / scope=user (filter to events where userId == current user)
+ */
+
+const formatRelativeTime = (date) => {
+  if (!date) return 'Just now';
+  const now = Date.now();
+  const timeMs = new Date(date).getTime();
+  if (isNaN(timeMs)) return 'Recently';
+  const diffSec = Math.floor((now - timeMs) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const mapActionToCategory = (action) => {
+  if (!action) return 'workspace';
+  if (action === 'code_execution') return 'code_execution';
+  if (['code_edit', 'file_create', 'file_delete', 'file_rename'].includes(action)) return 'workspace';
+  if (['session_start', 'session_end'].includes(action)) return 'tasks';
+  return 'workspace';
+};
+
+exports.getUserCrossWorkspaceHistory = async (req, res) => {
+  try {
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to access workspace history.' });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const {
+      workspaceId,
+      category,
+      action,
+      search,
+      q,
+      dateRange,
+      timeRange,
+      startDate,
+      endDate,
+      userOnly,
+      scope
+    } = req.query;
+
+    let authorizedWorkspaces = [];
+    let authorizedWorkspaceIds = [];
+    const workspaceRoleMap = {};
+    const workspaceMetaMap = {};
+
+    // 1. Role & Security Guards: Validate target workspace(s) and private workspace boundaries
+    if (workspaceId) {
+      if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+        return res.status(400).json({ message: 'Invalid workspace ID format.' });
+      }
+
+      const targetWorkspace = await Workspace.findById(workspaceId)
+        .select('_id title language brandColor icon settings owner members activityLogs')
+        .lean();
+
+      if (!targetWorkspace) {
+        return res.status(404).json({ message: 'Workspace not found.' });
+      }
+
+      const role = getWorkspaceRole(targetWorkspace, userId);
+      const isPublic = targetWorkspace.settings?.isPublic === true;
+
+      // Private workspace security guard: viewer/editor/admin/owner role required
+      if (!role && !isPublic) {
+        return res.status(403).json({ message: 'You do not have access to this workspace history.' });
+      }
+
+      authorizedWorkspaces = [targetWorkspace];
+      authorizedWorkspaceIds = [targetWorkspace._id];
+      workspaceRoleMap[targetWorkspace._id.toString()] = role || (isPublic ? 'viewer' : null);
+      workspaceMetaMap[targetWorkspace._id.toString()] = targetWorkspace;
+    } else {
+      // Cross-workspace lookup: find all workspaces accessible to the user
+      const userWorkspaces = await Workspace.find({
+        $or: [
+          { owner: userId },
+          { 'members.user': userId },
+          { 'settings.isPublic': true }
+        ]
+      })
+        .select('_id title language brandColor icon settings owner members activityLogs')
+        .lean();
+
+      if (!userWorkspaces || userWorkspaces.length === 0) {
+        return res.json({
+          success: true,
+          history: [],
+          activities: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false
+          },
+          summary: {
+            totalWorkspaces: 0,
+            totalEvents: 0,
+            uniqueActorsCount: 0
+          }
+        });
+      }
+
+      authorizedWorkspaces = userWorkspaces;
+      authorizedWorkspaceIds = userWorkspaces.map(w => w._id);
+      userWorkspaces.forEach(w => {
+        const role = getWorkspaceRole(w, userId) || (w.settings?.isPublic ? 'viewer' : null);
+        workspaceRoleMap[w._id.toString()] = role;
+        workspaceMetaMap[w._id.toString()] = w;
+      });
+    }
+
+    // 2. Build Query Filters for ActivityLog collection
+    const logQuery = {
+      workspaceId: { $in: authorizedWorkspaceIds }
+    };
+
+    // User-scoped filter
+    if (userOnly === 'true' || scope === 'user') {
+      logQuery.userId = new mongoose.Types.ObjectId(userId);
+    } else if (req.query.userId && mongoose.Types.ObjectId.isValid(req.query.userId)) {
+      logQuery.userId = new mongoose.Types.ObjectId(req.query.userId);
+    }
+
+    // Category / Action filter
+    const activeCategory = (category || '').trim().toLowerCase();
+    if (action && action !== 'all') {
+      logQuery.action = action;
+    } else if (activeCategory && activeCategory !== 'all') {
+      if (activeCategory === 'code_execution' || activeCategory === 'execution') {
+        logQuery.action = 'code_execution';
+      } else if (activeCategory === 'code' || activeCategory === 'code_edit') {
+        logQuery.action = { $in: ['code_edit', 'file_create', 'file_delete', 'file_rename'] };
+      } else if (activeCategory === 'workspace') {
+        logQuery.action = { $in: ['file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'] };
+      } else if (activeCategory === 'tasks' || activeCategory === 'session') {
+        logQuery.action = { $in: ['session_start', 'session_end'] };
+      }
+    }
+
+    // Date Range filter
+    const activeDateRange = (dateRange || timeRange || '').trim().toLowerCase();
+    const now = new Date();
+    if (startDate || endDate) {
+      logQuery.timestamp = {};
+      if (startDate) logQuery.timestamp.$gte = new Date(startDate);
+      if (endDate) logQuery.timestamp.$lte = new Date(endDate);
+    } else if (activeDateRange === 'today') {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      logQuery.timestamp = { $gte: startOfDay };
+    } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
+      const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      logQuery.timestamp = { $gte: startOfWeek };
+    } else if (activeDateRange === 'month') {
+      const startOfMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      logQuery.timestamp = { $gte: startOfMonth };
+    }
+
+    // Text Search filter
+    const searchTerm = (search || q || '').trim();
+    if (searchTerm) {
+      logQuery.$or = [
+        { details: { $regex: searchTerm, $options: 'i' } },
+        { fileName: { $regex: searchTerm, $options: 'i' } },
+        { userName: { $regex: searchTerm, $options: 'i' } }
+      ];
+    }
+
+    // 3. Execute Primary Aggregation against ActivityLog Collection
+    let [totalCount, logs] = await Promise.all([
+      ActivityLog.countDocuments(logQuery),
+      ActivityLog.find(logQuery)
+        .populate('userId', 'name email avatar role username')
+        .populate('workspaceId', 'title language brandColor icon settings owner')
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    // 4. Fallback: If ActivityLog collection has 0 items, check embedded workspace.activityLogs
+    if (totalCount === 0 && (!logs || logs.length === 0)) {
+      let embeddedList = [];
+      authorizedWorkspaces.forEach(ws => {
+        const userRole = workspaceRoleMap[ws._id.toString()] || 'viewer';
+        if (Array.isArray(ws.activityLogs)) {
+          ws.activityLogs.forEach((entry, idx) => {
+            const entryTime = entry.timestamp ? new Date(entry.timestamp) : new Date();
+            embeddedList.push({
+              _id: entry.id || `emb-${ws._id}-${idx}`,
+              id: entry.id || `emb-${ws._id}-${idx}`,
+              workspaceId: ws,
+              userId: ws.owner,
+              userName: entry.user || 'Developer',
+              userEmail: '',
+              userRole: userRole,
+              action: entry.type === 'execution'
+                ? 'code_execution'
+                : (entry.type === 'session'
+                    ? 'session_start'
+                    : (entry.type === 'session-end'
+                        ? 'session_end'
+                        : (entry.type === 'file'
+                            ? 'file_create'
+                            : (entry.type === 'code'
+                                ? 'code_edit'
+                                : (entry.type === 'member'
+                                    ? 'member_join'
+                                    : (entry.type === 'settings'
+                                        ? 'settings_update'
+                                        : 'general')))))),
+              details: entry.details ? `${entry.title ? entry.title + ': ' : ''}${entry.details}` : (entry.title || 'Workspace action'),
+              linesAdded: 0,
+              linesDeleted: 0,
+              totalLinesChanged: 0,
+              executionId: null,
+              executionStatus: null,
+              sequenceNumber: idx + 1,
+              currentHash: null,
+              timestamp: entryTime
+            });
+          });
+        }
+      });
+
+      // Apply in-memory search and category filtering for embedded fallback
+      if (searchTerm) {
+        const reg = new RegExp(searchTerm, 'i');
+        embeddedList = embeddedList.filter(item => 
+          reg.test(item.details) || 
+          reg.test(item.userName) || 
+          (item.workspaceId && reg.test(item.workspaceId.title))
+        );
+      }
+      if (activeCategory && activeCategory !== 'all') {
+        if (activeCategory === 'code_execution') {
+          embeddedList = embeddedList.filter(item => item.action === 'code_execution');
+        } else if (activeCategory === 'code') {
+          embeddedList = embeddedList.filter(item => ['code_edit', 'file_create'].includes(item.action));
+        } else if (activeCategory === 'tasks') {
+          embeddedList = embeddedList.filter(item => ['session_start', 'session_end'].includes(item.action));
+        }
+      }
+      if (activeDateRange === 'today') {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        embeddedList = embeddedList.filter(item => new Date(item.timestamp).getTime() >= startOfDay);
+      } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
+        const startOfWeek = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+        embeddedList = embeddedList.filter(item => new Date(item.timestamp).getTime() >= startOfWeek);
+      }
+
+      embeddedList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      totalCount = embeddedList.length;
+      logs = embeddedList.slice(skip, skip + limit);
+    }
+
+    // 5. Canonical formatting & transformation for consumer components
+    const actorIdSet = new Set();
+    const workspaceIdSet = new Set();
+
+    const formattedHistory = logs.map(item => {
+      const wsDoc = item.workspaceId && typeof item.workspaceId === 'object' 
+        ? item.workspaceId 
+        : (workspaceMetaMap[String(item.workspaceId)] || null);
+      
+      const wsIdStr = wsDoc?._id ? wsDoc._id.toString() : String(item.workspaceId || '');
+      if (wsIdStr) workspaceIdSet.add(wsIdStr);
+
+      const userRole = wsIdStr ? (workspaceRoleMap[wsIdStr] || 'viewer') : (item.userRole || 'editor');
+
+      const actorUser = item.userId && typeof item.userId === 'object' ? item.userId : null;
+      const actorId = actorUser?._id ? actorUser._id.toString() : (item.userId ? item.userId.toString() : null);
+      if (actorId) actorIdSet.add(actorId);
+
+      const actorName = actorUser?.name || item.userName || 'Developer';
+      const actorEmail = actorUser?.email || item.userEmail || '';
+      const actorAvatar = actorUser?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(actorName)}`;
+
+      return {
+        id: item._id ? item._id.toString() : item.id,
+        _id: item._id ? item._id.toString() : item.id,
+        workspace: {
+          id: wsIdStr,
+          _id: wsIdStr,
+          title: wsDoc?.title || 'Collaborative Workspace',
+          language: wsDoc?.language || 'javascript',
+          brandColor: wsDoc?.brandColor || 'purple',
+          icon: wsDoc?.icon || 'Rocket',
+          isPublic: wsDoc?.settings?.isPublic ?? false,
+          userRole
+        },
+        actor: {
+          id: actorId,
+          _id: actorId,
+          name: actorName,
+          email: actorEmail,
+          avatar: actorAvatar,
+          role: item.userRole || userRole || 'editor'
+        },
+        action: item.action || 'general',
+        category: mapActionToCategory(item.action),
+        fileName: item.fileName || null,
+        fileId: item.fileId || null,
+        details: item.details || '',
+        linesAdded: item.linesAdded || 0,
+        linesDeleted: item.linesDeleted || 0,
+        totalLinesChanged: item.totalLinesChanged || ((item.linesAdded || 0) + (item.linesDeleted || 0)),
+        executionId: item.executionId ? (item.executionId._id ? item.executionId._id.toString() : item.executionId.toString()) : null,
+        executionStatus: item.executionStatus || null,
+        sequenceNumber: item.sequenceNumber || 1,
+        currentHash: item.currentHash || null,
+        timestamp: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
+        relativeTime: formatRelativeTime(item.timestamp)
+      };
+    });
+
+    const totalPages = Math.ceil(totalCount / limit) || 0;
+
+    res.json({
+      success: true,
+      history: formattedHistory,
+      activities: formattedHistory,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      },
+      summary: {
+        totalWorkspaces: workspaceIdSet.size || authorizedWorkspaceIds.length,
+        totalEvents: totalCount,
+        uniqueActorsCount: actorIdSet.size
+      }
+    });
+
+  } catch (err) {
+    console.error('Cross-Workspace User History Error:', err);
+    res.status(500).json({ message: 'Failed to fetch cross-workspace user history', error: err.message });
+  }
+};

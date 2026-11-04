@@ -22,7 +22,7 @@ const Execution = require('../models/Execution');
 const { updateWorkspaceMemberRole, removeWorkspaceMember } = require('../controllers/workspaceController');
 const { getWorkspaceExecutions, clearWorkspaceExecutions } = require('../controllers/executionController');
 
-(async () => {
+module.exports = (async () => {
   console.log('\n═══════════════════════════════════════════════════════════════════════════');
   console.log('🔧   CODETRAIL BACKEND RUNTIME BUG FIXES & WORKFLOW TEST SUITE');
   console.log('═══════════════════════════════════════════════════════════════════════════\n');
