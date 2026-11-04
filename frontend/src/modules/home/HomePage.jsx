@@ -32,7 +32,12 @@ import {
   Loader2,
   Sparkles,
   ArrowRight,
-  AlertCircle
+  AlertCircle,
+  Copy,
+  Terminal,
+  TrendingUp,
+  FileCode,
+  X
 } from 'lucide-react';
 import WorkspaceModal from '../../components/workspace/WorkspaceModal';
 import { API_BASE } from '../../config/api';
@@ -56,6 +61,25 @@ const formatLanguageName = (lang) => {
     go: 'Go'
   };
   return map[lang.toLowerCase()] || (lang.charAt(0).toUpperCase() + lang.slice(1));
+};
+
+const getLanguageBadgeClass = (lang) => {
+  const map = {
+    javascript: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+    js: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+    typescript: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    ts: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    python: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    py: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    cpp: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+    'c++': 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30',
+    java: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    rust: 'bg-amber-600/15 text-amber-500 border-amber-600/30',
+    go: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
+    html: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
+    css: 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  };
+  return map[(lang || '').toLowerCase()] || 'bg-purple-500/15 text-purple-400 border-purple-500/30';
 };
 
 const resolveIcon = (icon) => {
@@ -91,20 +115,24 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   const [workspaces, setWorkspaces] = useState([]);
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [dbError, setDbError] = useState('');
+  const [historyStats, setHistoryStats] = useState({ totalLinesChanged: 0, totalActivities: 0, loading: true });
+  const [copiedCodeId, setCopiedCodeId] = useState(null);
 
-  // Fetch workspaces strictly from database
+  // Fetch workspaces & cross-workspace user history strictly from database
   useEffect(() => {
-    const fetchWorkspaces = async () => {
+    const fetchDashboardData = async () => {
       const token = localStorage.getItem('ct-auth-token');
       if (!token) {
         setWorkspaces([]);
         setLoadingWorkspaces(false);
+        setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
         return;
       }
 
+      setLoadingWorkspaces(true);
+      setDbError('');
+
       try {
-        setLoadingWorkspaces(true);
-        setDbError('');
         const res = await axios.get(`${API_BASE}/workspaces`, {
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -122,9 +150,33 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
       } finally {
         setLoadingWorkspaces(false);
       }
+
+      // Fetch user history from CT-233 endpoint
+      try {
+        const historyRes = await axios.get(`${API_BASE}/workspaces/user/history?limit=100`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (historyRes.data) {
+          const historyList = historyRes.data.history || historyRes.data.activities || [];
+          const lines = historyList.reduce((acc, item) => {
+            const changed = item.totalLinesChanged ?? ((item.linesAdded || 0) + (item.linesDeleted || 0));
+            return acc + (Number(changed) || 0);
+          }, 0);
+
+          setHistoryStats({
+            totalLinesChanged: lines,
+            totalActivities: historyRes.data.summary?.totalEvents ?? historyList.length,
+            loading: false
+          });
+        }
+      } catch (err) {
+        console.error('Failed to fetch user workspace history stats:', err);
+        setHistoryStats(prev => ({ ...prev, loading: false }));
+      }
     };
 
-    fetchWorkspaces();
+    fetchDashboardData();
   }, [currentUser]);
 
   const handleWorkspaceCreated = (newWs) => {
@@ -217,6 +269,41 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     }
   };
 
+  const deleteGoal = (e, id) => {
+    e.stopPropagation();
+    setGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  const completedGoalsCount = goals.filter(g => g.completed).length;
+  const goalsPercent = goals.length > 0 ? Math.round((completedGoalsCount / goals.length) * 100) : 0;
+
+  const handleCopyCode = (e, code, wsId) => {
+    e.stopPropagation();
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => {
+      setCopiedCodeId(wsId);
+      setTimeout(() => setCopiedCodeId(null), 2000);
+    }).catch(err => {
+      console.error('Failed to copy room code:', err);
+    });
+  };
+
+  const getCollabList = (ws) => {
+    if (Array.isArray(ws.collaborators) && ws.collaborators.length > 0) {
+      return ws.collaborators.map(c => typeof c === 'string' ? (c[0] ? c[0].toUpperCase() : 'U') : (c.name ? c.name[0].toUpperCase() : 'U'));
+    }
+    if (Array.isArray(ws.members) && ws.members.length > 0) {
+      return ws.members.map(m => {
+        if (typeof m === 'string') return m[0] ? m[0].toUpperCase() : 'U';
+        if (m.name) return m.name[0].toUpperCase();
+        if (m.user && typeof m.user === 'object' && m.user.name) return m.user.name[0].toUpperCase();
+        if (m.email) return m.email[0].toUpperCase();
+        return 'U';
+      });
+    }
+    return ['You'];
+  };
+
   // Dynamic Timeline Events generated from user workspaces & goals
   const generatedTimeline = [];
 
@@ -287,12 +374,28 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     return true;
   });
 
-  // Calculate dynamic active session & stats
-  const activeWorkspace = workspaces.find(w => w.status === 'active') || workspaces[0];
+  // Dynamic Active Session Banner: find most recent workspace
+  const recentWorkspace = React.useMemo(() => {
+    if (!workspaces || workspaces.length === 0) return null;
+
+    const savedSessionId = localStorage.getItem('ct-active-workspace-session');
+    if (savedSessionId) {
+      const matched = workspaces.find(w => String(w._id || w.id) === String(savedSessionId));
+      if (matched) return matched;
+    }
+
+    const sorted = [...workspaces].sort((a, b) => {
+      const timeA = new Date(a.updatedAt || a.lastActiveAt || 0).getTime();
+      const timeB = new Date(b.updatedAt || b.lastActiveAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    return sorted[0] || null;
+  }, [workspaces]);
 
   const handleBannerAction = () => {
-    if (activeWorkspace) {
-      if (onJumpToWorkspace) onJumpToWorkspace(activeWorkspace);
+    if (recentWorkspace) {
+      if (onJumpToWorkspace) onJumpToWorkspace(recentWorkspace);
     } else {
       setModalInitialTab('create');
       setIsWorkspaceModalOpen(true);
@@ -300,9 +403,45 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   };
 
   const totalWorkspacesCount = workspaces.length;
-  const pendingGoalsCount = goals.filter(g => !g.completed).length;
   const totalFilesCount = workspaces.reduce((acc, ws) => acc + (ws.filesCount || (ws.files ? ws.files.length : 1)), 0);
-  const totalCollaboratorsCount = workspaces.reduce((acc, ws) => acc + (ws.collaborators ? ws.collaborators.length : (ws.members ? ws.members.length : 1)), 0);
+
+  // Deduplicate collaborators across workspaces (using Set of member user IDs or names)
+  const uniqueCollaboratorsCount = React.useMemo(() => {
+    const collaboratorSet = new Set();
+    workspaces.forEach(ws => {
+      if (Array.isArray(ws.members)) {
+        ws.members.forEach(m => {
+          if (!m) return;
+          if (typeof m === 'string') {
+            collaboratorSet.add(m);
+          } else if (m._id || m.id) {
+            collaboratorSet.add(String(m._id || m.id));
+          } else if (m.user) {
+            const uid = typeof m.user === 'object' ? (m.user._id || m.user.id || m.user.name || m.user.email) : m.user;
+            if (uid) collaboratorSet.add(String(uid));
+          } else if (m.name || m.email) {
+            collaboratorSet.add(m.name || m.email);
+          }
+        });
+      }
+      if (Array.isArray(ws.collaborators)) {
+        ws.collaborators.forEach(c => {
+          if (!c) return;
+          if (typeof c === 'string') collaboratorSet.add(c);
+          else if (c._id || c.id || c.name) collaboratorSet.add(String(c._id || c.id || c.name));
+        });
+      }
+      if (ws.owner) {
+        const ownerId = typeof ws.owner === 'object' ? (ws.owner._id || ws.owner.id || ws.owner.name) : ws.owner;
+        if (ownerId) collaboratorSet.add(String(ownerId));
+      }
+    });
+
+    if (collaboratorSet.size === 0 && workspaces.length > 0) {
+      return 1;
+    }
+    return collaboratorSet.size || (currentUser ? 1 : 0);
+  }, [workspaces, currentUser]);
 
   return (
     <div className="ct-home-container">
@@ -406,17 +545,44 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
             <Flag size={14} className="text-secondary text-purple-400" />
             <span className="ct-sidebar-label font-semibold">Personal Goals</span>
           </div>
+
+          {/* Mini progress bar under Personal Goals heading */}
+          <div className="mb-2.5 px-0.5">
+            <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
+              <span>Progress</span>
+              <span className="font-mono text-purple-300 font-medium">
+                {completedGoalsCount}/{goals.length} ({goalsPercent}%)
+              </span>
+            </div>
+            <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
+              <div 
+                className="bg-purple-500 h-full rounded-full transition-all duration-300"
+                style={{ width: `${goalsPercent}%` }}
+              />
+            </div>
+          </div>
+
           <div className="ct-goals-list">
             {goals.map(g => (
               <div 
                 key={g.id} 
-                className={`ct-goal-item ${g.completed ? 'completed' : ''}`}
+                className={`ct-goal-item ${g.completed ? 'completed' : ''} group flex items-center justify-between cursor-pointer`}
                 onClick={() => toggleGoal(g.id)}
               >
-                <div className={`ct-goal-checkbox ${g.completed ? 'checked' : ''}`}>
-                  {g.completed && <Check size={10} />}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className={`ct-goal-checkbox ${g.completed ? 'checked' : ''}`}>
+                    {g.completed && <Check size={10} />}
+                  </div>
+                  <span className="ct-goal-text truncate">{g.text}</span>
                 </div>
-                <span className="ct-goal-text">{g.text}</span>
+                <button
+                  type="button"
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-rose-400 rounded transition-opacity ml-1 shrink-0"
+                  onClick={(e) => deleteGoal(e, g.id)}
+                  title="Remove goal"
+                >
+                  <X size={12} />
+                </button>
               </div>
             ))}
           </div>
@@ -460,28 +626,30 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
             <div className="ct-banner-time">
               <Clock size={13} className="text-purple-400" />
               <span>
-                {activeWorkspace 
-                  ? `Last edited ${formatRelativeTime(activeWorkspace.updatedAt)}` 
+                {recentWorkspace 
+                  ? `Last edited ${formatRelativeTime(recentWorkspace.updatedAt || recentWorkspace.lastActiveAt)}` 
                   : `Welcome back, ${currentUser?.name || 'Developer'}!`}
               </span>
             </div>
             <h2 className="ct-banner-title">
-              {activeWorkspace ? (
-                <>{activeWorkspace.title} - <span>{formatLanguageName(activeWorkspace.language)}</span></>
+              {recentWorkspace ? (
+                <>
+                  {recentWorkspace.title} - <span className={`ct-lang-badge px-2 py-0.5 rounded text-xs font-mono font-medium border inline-block ml-1 align-middle ${getLanguageBadgeClass(recentWorkspace.language)}`}>{formatLanguageName(recentWorkspace.language)}</span>
+                </>
               ) : (
                 <>Get Started with <span>CodeTrail Workspaces</span></>
               )}
             </h2>
             <p className="ct-banner-desc">
-              {activeWorkspace 
-                ? (activeWorkspace.desc || `Collaborative development workspace on CodeTrail.`) 
+              {recentWorkspace 
+                ? (recentWorkspace.desc || recentWorkspace.description || `Collaborative development workspace on CodeTrail.`) 
                 : 'Create your first collaborative workspace to start real-time pair programming and code execution.'}
             </p>
           </div>
 
           <button className="ct-btn-banner-action" onClick={handleBannerAction}>
-            {activeWorkspace ? <Play size={14} className="fill-current" /> : <Plus size={14} />}
-            <span>{activeWorkspace ? 'Jump Back In' : 'Create Workspace'}</span>
+            {recentWorkspace ? <Play size={14} className="fill-current" /> : <Plus size={14} />}
+            <span>{recentWorkspace ? 'Jump Back In' : 'Create Workspace'}</span>
           </button>
         </div>
 
@@ -499,11 +667,11 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
 
           <div className="ct-metric-card">
             <div className="ct-metric-info">
-              <span className="ct-metric-label">Pending Goals</span>
-              <span className="ct-metric-value">{pendingGoalsCount}</span>
+              <span className="ct-metric-label">Collaborators</span>
+              <span className="ct-metric-value">{uniqueCollaboratorsCount}</span>
             </div>
-            <div className="ct-metric-icon cyan">
-              <CheckSquare size={18} />
+            <div className="ct-metric-icon amber">
+              <Users size={18} />
             </div>
           </div>
 
@@ -512,18 +680,20 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
               <span className="ct-metric-label">Project Files</span>
               <span className="ct-metric-value">{totalFilesCount}</span>
             </div>
-            <div className="ct-metric-icon emerald">
-              <Code2 size={18} />
+            <div className="ct-metric-icon cyan">
+              <FileCode size={18} />
             </div>
           </div>
 
           <div className="ct-metric-card">
             <div className="ct-metric-info">
-              <span className="ct-metric-label">Collaborators</span>
-              <span className="ct-metric-value">{totalCollaboratorsCount}</span>
+              <span className="ct-metric-label">Total Lines Synced</span>
+              <span className="ct-metric-value">
+                {historyStats.loading ? '...' : (historyStats.totalLinesChanged ? historyStats.totalLinesChanged.toLocaleString() : '0')}
+              </span>
             </div>
-            <div className="ct-metric-icon amber">
-              <Users size={18} />
+            <div className="ct-metric-icon emerald">
+              <TrendingUp size={18} />
             </div>
           </div>
         </div>
@@ -685,10 +855,17 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
                 </div>
               ) : (
                 filteredWorkspaces.slice(0, 4).map(ws => {
+                  const wsId = ws.id || ws._id;
                   const WsIcon = resolveIcon(ws.icon);
+                  const roomCode = ws.inviteCode || ws.roomCode || 'CT-DEMO';
+                  const isCopied = copiedCodeId === wsId;
+                  const langBadgeClass = getLanguageBadgeClass(ws.language);
+                  const collabList = getCollabList(ws);
+                  const isActive = ws.status === 'active' || !ws.status;
+
                   return (
                     <div 
-                      key={ws.id} 
+                      key={wsId} 
                       className={`ct-brand-card ${ws.brandColor || 'purple'}`}
                       onClick={() => onJumpToWorkspace(ws)}
                     >
@@ -696,38 +873,55 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
                         <div className={`ct-brand-icon-box ${ws.brandColor || 'purple'}`}>
                           <WsIcon size={18} />
                         </div>
-                        <span className="ct-lang-badge">
+                        <span className={`ct-lang-badge px-2 py-0.5 rounded text-xs font-mono font-medium border ${langBadgeClass}`}>
                           {formatLanguageName(ws.language)}
                         </span>
                       </div>
 
                       <div className="ct-brand-card-body">
                         <h4 className="ct-brand-card-title">{ws.title}</h4>
-                        <p className="ct-brand-card-desc">{ws.desc}</p>
+                        <p className="ct-brand-card-desc">{ws.desc || ws.description}</p>
                       </div>
 
                       <div className="ct-brand-card-footer">
                         <div className="ct-card-meta-row">
                           <span className="ct-meta-label">Role</span>
-                          <span className="ct-role-badge">{ws.role}</span>
+                          <span className="ct-role-badge capitalize">{ws.role || 'Member'}</span>
                         </div>
 
-                        <div className="ct-card-meta-row">
+                        <div className="ct-card-meta-row flex items-center justify-between">
                           <span className="ct-meta-label">Room Code</span>
-                          <span className={`ct-time-val font-mono ${ws.brandColor || 'purple'}`}>
-                            {ws.inviteCode || 'CT-DEMO'}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`ct-time-val font-mono ${ws.brandColor || 'purple'}`}>
+                              {roomCode}
+                            </span>
+                            <button
+                              type="button"
+                              className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                              onClick={(e) => handleCopyCode(e, roomCode, wsId)}
+                              title={isCopied ? "Copied!" : "Copy room code"}
+                            >
+                              {isCopied ? (
+                                <Check size={12} className="text-emerald-400" />
+                              ) : (
+                                <Copy size={12} />
+                              )}
+                            </button>
+                          </div>
                         </div>
 
                         <div className="ct-card-collab-row">
                           <div className="ct-collab-avatars">
-                            {(ws.collaborators || ['U']).map((c, i) => (
-                              <span key={i} className="ct-mini-avatar">{c}</span>
+                            {collabList.slice(0, 3).map((c, i) => (
+                              <span key={i} className="ct-mini-avatar" title={`Member ${c}`}>{c}</span>
                             ))}
+                            {collabList.length > 3 && (
+                              <span className="ct-mini-avatar more">+{collabList.length - 3}</span>
+                            )}
                           </div>
-                          <span className="ct-card-status">
-                            <span className={`ct-pulse-dot ${ws.status === 'active' ? 'green' : 'gray'}`} />
-                            <span>{ws.status === 'active' ? 'Active' : 'Archived'}</span>
+                          <span className="ct-card-status flex items-center gap-1.5">
+                            <span className={`ct-pulse-dot ${isActive ? 'green' : 'gray'}`} />
+                            <span>{isActive ? 'Active' : 'Archived'}</span>
                           </span>
                         </div>
                       </div>
