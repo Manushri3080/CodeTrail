@@ -17,7 +17,8 @@ const {
   getWorkspaceMembers,
   addWorkspaceMember,
   updateWorkspaceMemberRole,
-  removeWorkspaceMember
+  removeWorkspaceMember,
+  getUserCrossWorkspaceHistory
 } = require('../controllers/workspaceController');
 const {
   getWorkspaceExecutions,
@@ -28,6 +29,9 @@ const {
 router.post('/', authMiddleware, createWorkspace);
 router.get('/', authMiddleware, getUserWorkspaces);
 router.get('/discover', authMiddleware, discoverPublicWorkspaces);
+
+// CT-233: Cross-Workspace History Aggregation (Must precede /:id to prevent path shadowing)
+router.get('/user/history', authMiddleware, getUserCrossWorkspaceHistory);
 router.get('/:id', optionalAuth, getWorkspaceById);
 router.patch('/:id', authMiddleware, updateWorkspace);
 router.patch('/:id/session', authMiddleware, updateWorkspaceSession);

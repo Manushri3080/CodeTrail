@@ -16,10 +16,18 @@ require('./sessionAnalytics.test');
 // CT-199: Generate Contribution Reports Tests (Anistina Dsouza)
 require('./contributionReport.test');
 
-// Backend Runtime Bug Fixes & Workflow Verification Tests
-require('./runtimeFixes.test');
-
 // Workspace Visibility, Creation & Dashboard Regression Tests (Meet Sheth)
 require('./workspaceRegression.test');
 
-console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
+(async () => {
+  // Backend Runtime Bug Fixes & Workflow Verification Tests
+  await require('./runtimeFixes.test');
+
+  // CT-233: Cross-Workspace History Aggregation Tests (Manushri)
+  await require('./crossWorkspaceHistory.test');
+
+  console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
+})().catch(err => {
+  console.error('Test suite failed:', err);
+  process.exit(1);
+});
