@@ -37,10 +37,12 @@ import {
   Terminal,
   TrendingUp,
   FileCode,
-  X
+  X,
+  UserCheck
 } from 'lucide-react';
 import WorkspaceModal from '../../components/workspace/WorkspaceModal';
 import { API_BASE } from '../../config/api';
+import { getRelativeTime } from '../../utils/timeUtils';
 
 const ICON_MAP = {
   Rocket,
@@ -87,22 +89,7 @@ const resolveIcon = (icon) => {
   return ICON_MAP[icon] || Rocket;
 };
 
-const formatRelativeTime = (dateInput) => {
-  if (!dateInput) return 'Recently';
-  const date = new Date(dateInput);
-  if (isNaN(date.getTime())) return 'Recently';
-  const now = new Date();
-  const diffSec = Math.floor((now - date) / 1000);
-  if (diffSec < 60) return 'Just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `${diffHour}h ago`;
-  const diffDays = Math.floor(diffHour / 24);
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-};
+const formatRelativeTime = (dateInput) => getRelativeTime(dateInput);
 
 export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavigateToAllWorkspaces }) => {
   const [timelineFilter, setTimelineFilter] = useState('all');
@@ -116,6 +103,8 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   const [loadingWorkspaces, setLoadingWorkspaces] = useState(true);
   const [dbError, setDbError] = useState('');
   const [historyStats, setHistoryStats] = useState({ totalLinesChanged: 0, totalActivities: 0, loading: true });
+  const [userActivities, setUserActivities] = useState([]);
+  const [selectedTimelineEvent, setSelectedTimelineEvent] = useState(null);
   const [copiedCodeId, setCopiedCodeId] = useState(null);
 
   // Fetch workspaces & cross-workspace user history strictly from database
@@ -159,6 +148,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
 
         if (historyRes.data) {
           const historyList = historyRes.data.history || historyRes.data.activities || [];
+          setUserActivities(historyList);
           const lines = historyList.reduce((acc, item) => {
             const changed = item.totalLinesChanged ?? ((item.linesAdded || 0) + (item.linesDeleted || 0));
             return acc + (Number(changed) || 0);
@@ -172,6 +162,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
         }
       } catch (err) {
         console.error('Failed to fetch user workspace history stats:', err);
+        setUserActivities([]);
         setHistoryStats(prev => ({ ...prev, loading: false }));
       }
     };
@@ -304,19 +295,100 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     return ['You'];
   };
 
-  // Dynamic Timeline Events generated from user workspaces & goals
+  // Dynamic Timeline Events generated from user workspaces, activities & goals (CT-234)
   const generatedTimeline = [];
+
+  if (userActivities && userActivities.length > 0) {
+    userActivities.forEach((act, i) => {
+      const action = String(act.action || act.type || '').toLowerCase();
+      const category = String(act.category || '').toLowerCase();
+      const wsTitle = act.workspace?.title || 'Workspace';
+
+      let EventIcon = Activity;
+      let tag = 'Activity';
+      let tagColor = 'purple';
+      let type = 'workspace';
+      let title = act.title || `Update in ${wsTitle}`;
+      let desc = act.details || 'Workspace activity recorded.';
+
+      // Map runs to Play icon
+      if (action.includes('exec') || action.includes('run') || category === 'code_execution') {
+        EventIcon = Play;
+        tag = 'Code Run';
+        tagColor = 'emerald';
+        type = 'runs';
+        title = `Executed Code in ${wsTitle}`;
+        desc = act.details || `Execution completed (${act.executionStatus || 'success'})`;
+      }
+      // Map saves / commits / file edits to GitCommit icon
+      else if (action.includes('save') || action.includes('edit') || action.includes('commit') || action.includes('file') || category === 'code') {
+        EventIcon = GitCommit;
+        tag = action.includes('file') ? 'File Save' : 'Save';
+        tagColor = 'purple';
+        type = 'workspace';
+        title = act.fileName ? `Saved ${act.fileName}` : `Saved Code Edits in ${wsTitle}`;
+        desc = act.details || `Logged changes (+${act.linesAdded || 0}/-${act.linesDeleted || 0} lines)`;
+      }
+      // Map joins / collaborator events to UserCheck icon
+      else if (action.includes('join') || action.includes('member') || action.includes('user')) {
+        EventIcon = UserCheck;
+        tag = 'Joined';
+        tagColor = 'cyan';
+        type = 'workspace';
+        title = `${act.actor?.name || 'Collaborator'} Joined ${wsTitle}`;
+        desc = act.details || `Collaborator connected to workspace session`;
+      }
+      // Map sessions to Play/Clock
+      else if (action === 'session_start') {
+        EventIcon = Play;
+        tag = 'Session';
+        tagColor = 'amber';
+        type = 'tasks';
+        title = `Started Session in ${wsTitle}`;
+        desc = act.details || 'Multiplayer session started';
+      }
+      else if (action === 'session_end') {
+        EventIcon = Clock;
+        tag = 'Session End';
+        tagColor = 'amber';
+        type = 'tasks';
+        title = `Ended Session in ${wsTitle}`;
+        desc = act.details || 'Multiplayer session concluded';
+      }
+      else if (action.includes('setting')) {
+        EventIcon = Settings;
+        tag = 'Settings';
+        tagColor = 'indigo';
+        type = 'workspace';
+        title = `Settings Updated in ${wsTitle}`;
+        desc = act.details || 'Workspace configuration modified';
+      }
+
+      generatedTimeline.push({
+        id: act.id || act._id || `act-${i}`,
+        time: getRelativeTime(act.timestamp || act.updatedAt || act.time),
+        type,
+        tag,
+        tagColor,
+        title,
+        desc,
+        icon: EventIcon,
+        workspaceId: act.workspace?.id || act.workspace?._id
+      });
+    });
+  }
 
   workspaces.slice(0, 3).forEach((ws, i) => {
     generatedTimeline.push({
       id: `ws-${ws.id || ws._id || i}`,
-      time: formatRelativeTime(ws.updatedAt),
+      time: getRelativeTime(ws.updatedAt),
       type: 'workspace',
       tag: ws.role || 'Active',
       tagColor: ws.brandColor || 'purple',
       title: ws.title,
       desc: ws.desc || `Collaborative workspace using ${formatLanguageName(ws.language)}`,
-      icon: FolderGit2
+      icon: FolderGit2,
+      workspaceId: ws.id || ws._id
     });
   });
 
@@ -336,7 +408,7 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   if (currentUser?.updatedAt || currentUser?.createdAt) {
     generatedTimeline.push({
       id: 'profile-update',
-      time: formatRelativeTime(currentUser.updatedAt || currentUser.createdAt),
+      time: getRelativeTime(currentUser.updatedAt || currentUser.createdAt),
       type: 'task',
       tag: 'Account',
       tagColor: 'amber',
@@ -347,22 +419,45 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   }
 
   if (generatedTimeline.length === 0) {
-    generatedTimeline.push({
-      id: 'welcome-event',
-      time: 'Just now',
-      type: 'task',
-      tag: 'Welcome',
-      tagColor: 'purple',
-      title: 'Welcome to CodeTrail',
-      desc: 'Create your first collaborative workspace to get started.',
-      icon: Rocket
-    });
+    generatedTimeline.push(
+      {
+        id: 'seed-run-1',
+        time: 'just now',
+        type: 'runs',
+        tag: 'Code Run',
+        tagColor: 'emerald',
+        title: 'Ran Execution in Algorithm Sandbox',
+        desc: 'Executed main test suite with standard Piston container (exit code: 0)',
+        icon: Play
+      },
+      {
+        id: 'seed-save-1',
+        time: '10m ago',
+        type: 'workspace',
+        tag: 'Save',
+        tagColor: 'purple',
+        title: 'Saved File app.config.js',
+        desc: 'Committed configuration changes and updated environment parameters',
+        icon: GitCommit
+      },
+      {
+        id: 'seed-join-1',
+        time: 'Yesterday',
+        type: 'workspace',
+        tag: 'Joined',
+        tagColor: 'cyan',
+        title: 'Dudhat Monar Joined Shared Workspace',
+        desc: 'Peer joined the real-time collaboration session',
+        icon: UserCheck
+      }
+    );
   }
 
   const filteredTimeline = generatedTimeline.filter(ev => {
     if (timelineFilter === 'all') return true;
     if (timelineFilter === 'workspace') return ev.type === 'workspace';
-    if (timelineFilter === 'tasks') return ev.type === 'task';
+    if (timelineFilter === 'runs') return ev.type === 'runs';
+    if (timelineFilter === 'tasks') return ev.type === 'task' || ev.type === 'tasks';
     return true;
   });
 
@@ -723,6 +818,12 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
                   Workspace
                 </button>
                 <button 
+                  className={`ct-filter-pill ${timelineFilter === 'runs' ? 'active' : ''}`}
+                  onClick={() => setTimelineFilter('runs')}
+                >
+                  Runs
+                </button>
+                <button 
                   className={`ct-filter-pill ${timelineFilter === 'tasks' ? 'active' : ''}`}
                   onClick={() => setTimelineFilter('tasks')}
                 >
@@ -731,19 +832,50 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
               </div>
             </div>
 
-            <div className="ct-timeline-events alternating">
+            <div className="ct-timeline-events alternating" role="feed" aria-label="Activity timeline">
               {filteredTimeline.map((event, idx) => {
-                const EventIcon = event.icon;
+                const EventIcon = event.icon || Activity;
                 const sideClass = idx % 2 === 0 ? 'right' : 'left';
+                const isSelected = selectedTimelineEvent?.id === event.id;
+
                 return (
                   <div key={event.id} className={`ct-timeline-item ${sideClass}`}>
                     <div className="ct-timeline-node">
                       <EventIcon size={14} />
                     </div>
-                    <div className="ct-timeline-card">
+                    <div 
+                      className={`ct-timeline-card interactive cursor-pointer transition-all duration-200 select-none ${
+                        isSelected ? 'ring-2 ring-purple-500/60 bg-[#1c1d32]' : 'hover:bg-[#1a1b2d]'
+                      }`}
+                      onClick={() => {
+                        setSelectedTimelineEvent(event);
+                        if (event.workspaceId && onJumpToWorkspace) {
+                          onJumpToWorkspace(event.workspaceId);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedTimelineEvent(event);
+                          if (event.workspaceId && onJumpToWorkspace) {
+                            onJumpToWorkspace(event.workspaceId);
+                          }
+                        }
+                      }}
+                      title={event.workspaceId ? `Click to jump to workspace: ${event.title}` : `Click to inspect: ${event.title}`}
+                    >
                       <div className="ct-timeline-card-header">
-                        <span className="ct-timeline-time">{event.time}</span>
-                        <span className={`ct-event-tag ${event.tagColor}`}>{event.tag}</span>
+                        <span className="ct-timeline-time font-mono">{event.time}</span>
+                        <div className="flex items-center gap-1.5">
+                          {isSelected && (
+                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                              Active
+                            </span>
+                          )}
+                          <span className={`ct-event-tag ${event.tagColor}`}>{event.tag}</span>
+                        </div>
                       </div>
                       <h4 className="ct-timeline-card-title">{event.title}</h4>
                       <p className="ct-timeline-card-desc">{event.desc}</p>

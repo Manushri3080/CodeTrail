@@ -3740,6 +3740,22 @@ html {
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 10px;
   padding: 14px 18px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ct-timeline-card.interactive {
+  cursor: pointer;
+}
+
+.ct-timeline-card.interactive:hover {
+  background: #1c1d32;
+  border-color: rgba(168, 85, 247, 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.ct-timeline-card.interactive:active {
+  transform: translateY(0);
 }
 
 .ct-timeline-card-header {
