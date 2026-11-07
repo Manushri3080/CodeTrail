@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   Folder,
+  FolderGit2,
   FileText,
   Code2,
   FilePlus,
@@ -329,7 +330,7 @@ const DEFAULT_FILES_CONTENT = {
   "README.md": `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`,
 };
 
-export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
+export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWorkspaces }) => {
   const [currentWorkspace, setCurrentWorkspace] = useState(activeWorkspace);
 
   useEffect(() => {
@@ -3796,7 +3797,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
             </button>
           )}
 
-          {onBackToHome && (
+          {onNavigateToWorkspaces && (
+            <button
+              type="button"
+              onClick={onNavigateToWorkspaces}
+              className="flex items-center text-xs font-mono font-bold text-gray-200 hover:text-white bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 rounded-full transition-all cursor-pointer"
+              style={{ padding: "10px 22px", gap: "10px" }}
+              title="Browse All Workspaces Directory"
+            >
+              <FolderGit2 size={15} className="text-cyan-400" />
+              <span>Workspaces</span>
+            </button>
+          )}
+
+          {(onBackToHome || onNavigateToWorkspaces) && (
             <div className="h-5 w-[1px] bg-white/15 hidden sm:block" />
           )}
 

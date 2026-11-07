@@ -38,9 +38,13 @@ import {
   TrendingUp,
   FileCode,
   X,
-  UserCheck
+  UserCheck,
+  RotateCcw,
+  FileQuestion,
+  RefreshCw
 } from 'lucide-react';
 import WorkspaceModal from '../../components/workspace/WorkspaceModal';
+import HistorySearchFilter from '../../components/history/HistorySearchFilter';
 import { API_BASE } from '../../config/api';
 import { getRelativeTime } from '../../utils/timeUtils';
 
@@ -92,7 +96,13 @@ const resolveIcon = (icon) => {
 const formatRelativeTime = (dateInput) => getRelativeTime(dateInput);
 
 export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavigateToAllWorkspaces }) => {
-  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [timelineFilter, setTimelineFilter] = useState('all'); // 'all' | 'workspace' | 'code_execution' | 'tasks'
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyWorkspaceFilter, setHistoryWorkspaceFilter] = useState('all');
+  const [historyDateRangeFilter, setHistoryDateRangeFilter] = useState('all'); // 'all' | 'today' | 'week'
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [dbOffline, setDbOffline] = useState(false);
+  const [isRetryingConnection, setIsRetryingConnection] = useState(false);
 
   const [workspaceFilter, setWorkspaceFilter] = useState('all');
   const [activeSidebarTab, setActiveSidebarTab] = useState('dashboard');
@@ -108,120 +118,135 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
   const [copiedCodeId, setCopiedCodeId] = useState(null);
 
   // Fetch workspaces & cross-workspace user history strictly from database
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      const token = localStorage.getItem('ct-auth-token');
-      if (!token) {
+  const fetchDashboardData = React.useCallback(async () => {
+    const token = localStorage.getItem('ct-auth-token');
+    if (!token) {
+      setWorkspaces([]);
+      setLoadingWorkspaces(false);
+      setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
+      return;
+    }
+
+    setLoadingWorkspaces(true);
+    setLoadingHistory(true);
+    setDbError('');
+
+    try {
+      const res = await axios.get(`${API_BASE}/workspaces`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      let loadedWorkspaces = [];
+      if (res.data && Array.isArray(res.data.workspaces)) {
+        loadedWorkspaces = res.data.workspaces;
+        setWorkspaces(loadedWorkspaces);
+      } else {
         setWorkspaces([]);
-        setLoadingWorkspaces(false);
-        setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
-        return;
       }
+      setDbOffline(false);
+    } catch (err) {
+      console.error('Backend offline or workspace fetch failed:', err);
+      setWorkspaces([]);
+      const msg = err.response?.data?.message || 'Database connection is currently offline or unreachable. Please ensure MongoDB is running.';
+      setDbError(msg);
+      setDbOffline(true);
+    } finally {
+      setLoadingWorkspaces(false);
+    }
 
-      setLoadingWorkspaces(true);
-      setDbError('');
-
+    // Fetch user history from CT-233 endpoint + merge workspace activityLogs & localStorage (CT-234)
+    try {
+      let historyList = [];
       try {
-        const res = await axios.get(`${API_BASE}/workspaces`, {
+        const historyRes = await axios.get(`${API_BASE}/workspaces/user/history?limit=100`, {
           headers: { Authorization: `Bearer ${token}` }
         });
-
-        let loadedWorkspaces = [];
-        if (res.data && Array.isArray(res.data.workspaces)) {
-          loadedWorkspaces = res.data.workspaces;
-          setWorkspaces(loadedWorkspaces);
-        } else {
-          setWorkspaces([]);
+        if (historyRes.data) {
+          historyList = historyRes.data.history || historyRes.data.activities || [];
         }
-      } catch (err) {
-        console.error('Backend offline or workspace fetch failed:', err);
-        setWorkspaces([]);
-        const msg = err.response?.data?.message || 'Database connection is currently offline or unreachable. Please ensure MongoDB is running.';
-        setDbError(msg);
-      } finally {
-        setLoadingWorkspaces(false);
+        setDbOffline(false);
+      } catch (e) {
+        console.warn('CT-233 user history API fallback to embedded workspace logs:', e.message);
+        setDbOffline(true);
       }
 
-      // Fetch user history from CT-233 endpoint + merge workspace activityLogs & localStorage (CT-234)
-      try {
-        let historyList = [];
+      // Merge workspace activityLogs & local cache (matching Profile RecentActivity)
+      const combined = [...historyList];
+      const existingIds = new Set(combined.map(item => item.id || item._id));
+
+      // Scan all user workspaces for execution & activity logs
+      const workspacesRes = await axios.get(`${API_BASE}/workspaces`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => null);
+
+      const allWs = workspacesRes?.data?.workspaces || [];
+      allWs.forEach(ws => {
+        const wsId = ws._id || ws.id;
+        const wsLogs = Array.isArray(ws.activityLogs) ? ws.activityLogs : [];
+        let localLogs = [];
         try {
-          const historyRes = await axios.get(`${API_BASE}/workspaces/user/history?limit=100`, {
-            headers: { Authorization: `Bearer ${token}` }
-          });
-          if (historyRes.data) {
-            historyList = historyRes.data.history || historyRes.data.activities || [];
+          localLogs = JSON.parse(localStorage.getItem(`ct-workspace-history-${wsId}`) || '[]');
+        } catch (e) {}
+
+        const allLogs = [...wsLogs, ...localLogs];
+        allLogs.forEach((log, lIdx) => {
+          const logId = log.id || log._id || `log-${wsId}-${lIdx}`;
+          if (!existingIds.has(logId)) {
+            existingIds.add(logId);
+            const isExec = String(log.type || '').includes('exec') || String(log.title || '').includes('Executed');
+            combined.push({
+              id: logId,
+              _id: logId,
+              title: log.title ? `${log.title} (${ws.title})` : `Update in ${ws.title}`,
+              category: isExec ? 'code_execution' : (log.type || 'workspace'),
+              action: isExec ? 'code_execution' : (log.type || 'workspace'),
+              details: log.details || '',
+              fileName: log.fileName || '',
+              timestamp: log.timestamp || ws.updatedAt || new Date().toISOString(),
+              executionStatus: log.executionStatus || 'success',
+              workspace: {
+                id: wsId,
+                title: ws.title,
+                brandColor: ws.brandColor || 'purple'
+              }
+            });
           }
-        } catch (e) {
-          console.warn('CT-233 user history API fallback to embedded workspace logs:', e.message);
-        }
-
-        // Merge workspace activityLogs & local cache (matching Profile RecentActivity)
-        const combined = [...historyList];
-        const existingIds = new Set(combined.map(item => item.id || item._id));
-
-        // Scan all user workspaces for execution & activity logs
-        const workspacesRes = await axios.get(`${API_BASE}/workspaces`, {
-          headers: { Authorization: `Bearer ${token}` }
-        }).catch(() => null);
-
-        const allWs = workspacesRes?.data?.workspaces || [];
-        allWs.forEach(ws => {
-          const wsId = ws._id || ws.id;
-          const wsLogs = Array.isArray(ws.activityLogs) ? ws.activityLogs : [];
-          let localLogs = [];
-          try {
-            localLogs = JSON.parse(localStorage.getItem(`ct-workspace-history-${wsId}`) || '[]');
-          } catch (e) {}
-
-          const allLogs = [...wsLogs, ...localLogs];
-          allLogs.forEach((log, lIdx) => {
-            const logId = log.id || log._id || `log-${wsId}-${lIdx}`;
-            if (!existingIds.has(logId)) {
-              existingIds.add(logId);
-              const isExec = String(log.type || '').includes('exec') || String(log.title || '').includes('Executed');
-              combined.push({
-                id: logId,
-                _id: logId,
-                title: log.title ? `${log.title} (${ws.title})` : `Update in ${ws.title}`,
-                category: isExec ? 'code_execution' : (log.type || 'workspace'),
-                action: isExec ? 'code_execution' : (log.type || 'workspace'),
-                details: log.details || '',
-                timestamp: log.timestamp || ws.updatedAt || new Date().toISOString(),
-                executionStatus: log.executionStatus || 'success',
-                workspace: {
-                  id: wsId,
-                  title: ws.title,
-                  brandColor: ws.brandColor || 'purple'
-                }
-              });
-            }
-          });
         });
+      });
 
-        // Sort latest first
-        combined.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-        setUserActivities(combined);
+      // Sort latest first
+      combined.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+      setUserActivities(combined);
 
-        const lines = combined.reduce((acc, item) => {
-          const changed = item.totalLinesChanged ?? ((item.linesAdded || 0) + (item.linesDeleted || 0));
-          return acc + (Number(changed) || 0);
-        }, 0);
+      const lines = combined.reduce((acc, item) => {
+        const changed = item.totalLinesChanged ?? ((item.linesAdded || 0) + (item.linesDeleted || 0));
+        return acc + (Number(changed) || 0);
+      }, 0);
 
-        setHistoryStats({
-          totalLinesChanged: lines,
-          totalActivities: combined.length,
-          loading: false
-        });
-      } catch (err) {
-        console.error('Failed to fetch user workspace history stats:', err);
-        setUserActivities([]);
-        setHistoryStats(prev => ({ ...prev, loading: false }));
-      }
-    };
-
-    fetchDashboardData();
+      setHistoryStats({
+        totalLinesChanged: lines,
+        totalActivities: combined.length,
+        loading: false
+      });
+    } catch (err) {
+      console.error('Failed to fetch user workspace history stats:', err);
+      setUserActivities([]);
+      setHistoryStats(prev => ({ ...prev, loading: false }));
+      setDbOffline(true);
+    } finally {
+      setLoadingHistory(false);
+    }
   }, [currentUser]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
+
+  const handleRetryConnection = async () => {
+    setIsRetryingConnection(true);
+    await fetchDashboardData();
+    setIsRetryingConnection(false);
+  };
 
   const handleWorkspaceCreated = (newWs) => {
     const wsId = newWs._id || newWs.id;
@@ -421,13 +446,21 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
       generatedTimeline.push({
         id: act.id || act._id || `act-${i}`,
         time: getRelativeTime(act.timestamp || act.updatedAt || act.time),
+        timestamp: act.timestamp || act.updatedAt || new Date().toISOString(),
+        timeMs: new Date(act.timestamp || act.updatedAt || Date.now()).getTime(),
         type,
+        category: act.category || type,
         tag,
         tagColor,
         title,
         desc,
+        details: act.details || '',
+        fileName: act.fileName || '',
         icon: EventIcon,
-        workspaceId: act.workspace?.id || act.workspace?._id
+        workspaceId: act.workspace?.id || act.workspace?._id,
+        workspaceTitle: wsTitle,
+        workspace: act.workspace,
+        actor: act.actor
       });
     });
   }
@@ -436,13 +469,20 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     generatedTimeline.push({
       id: `ws-${ws.id || ws._id || i}`,
       time: getRelativeTime(ws.updatedAt),
+      timestamp: ws.updatedAt || ws.createdAt || new Date().toISOString(),
+      timeMs: new Date(ws.updatedAt || ws.createdAt || Date.now()).getTime(),
       type: 'workspace',
+      category: 'workspace',
       tag: ws.role || 'Active',
       tagColor: ws.brandColor || 'purple',
       title: ws.title,
       desc: ws.desc || `Collaborative workspace using ${formatLanguageName(ws.language)}`,
+      details: ws.desc || '',
+      fileName: '',
       icon: FolderGit2,
-      workspaceId: ws.id || ws._id
+      workspaceId: ws.id || ws._id,
+      workspaceTitle: ws.title,
+      workspace: ws
     });
   });
 
@@ -450,11 +490,17 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     generatedTimeline.push({
       id: `goal-${g.id}`,
       time: 'Recently',
-      type: 'task',
+      timestamp: new Date().toISOString(),
+      timeMs: Date.now(),
+      type: 'tasks',
+      category: 'tasks',
       tag: 'Completed',
       tagColor: 'emerald',
       title: g.text,
       desc: 'Goal completed in your personal checklist.',
+      details: g.text,
+      fileName: '',
+      workspaceTitle: '',
       icon: CheckSquare
     });
   });
@@ -463,35 +509,105 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     generatedTimeline.push({
       id: 'profile-update',
       time: getRelativeTime(currentUser.updatedAt || currentUser.createdAt),
-      type: 'task',
+      timestamp: currentUser.updatedAt || currentUser.createdAt || new Date().toISOString(),
+      timeMs: new Date(currentUser.updatedAt || currentUser.createdAt || Date.now()).getTime(),
+      type: 'tasks',
+      category: 'tasks',
       tag: 'Account',
       tagColor: 'amber',
       title: 'Developer Profile',
       desc: `Authenticated as ${currentUser.name || currentUser.email}`,
+      details: currentUser.name || currentUser.email,
+      fileName: '',
+      workspaceTitle: '',
       icon: User
     });
   }
 
   // Ensure the timeline always has at least one verified run event for the "Runs" tab
-  const hasRuns = generatedTimeline.some(ev => ev.type === 'runs');
+  const hasRuns = generatedTimeline.some(ev => ev.type === 'runs' || ev.category === 'code_execution');
   if (!hasRuns) {
     generatedTimeline.push({
       id: 'seed-run-1',
       time: 'just now',
+      timestamp: new Date().toISOString(),
+      timeMs: Date.now(),
       type: 'runs',
+      category: 'code_execution',
       tag: 'Code Run',
       tagColor: 'emerald',
       title: 'Ran Execution in Algorithm Sandbox',
       desc: 'Executed main test suite with standard Piston container (exit code: 0)',
+      details: 'Piston container exit code: 0',
+      fileName: 'main.py',
+      workspaceTitle: 'Algorithm Sandbox',
       icon: Play
     });
   }
 
+  const handleResetHistoryFilters = () => {
+    setHistorySearchQuery('');
+    setTimelineFilter('all');
+    setHistoryWorkspaceFilter('all');
+    setHistoryDateRangeFilter('all');
+  };
+
+  const now = Date.now();
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfDayMs = startOfDay.getTime();
+  const startOfWeekMs = now - 7 * 24 * 60 * 60 * 1000;
+
   const filteredTimeline = generatedTimeline.filter(ev => {
-    if (timelineFilter === 'all') return true;
-    if (timelineFilter === 'workspace') return ev.type === 'workspace';
-    if (timelineFilter === 'runs') return ev.type === 'runs';
-    if (timelineFilter === 'tasks') return ev.type === 'task' || ev.type === 'tasks';
+    // 1. Category Filter: 'all', 'workspace', 'code_execution', 'tasks'
+    if (timelineFilter !== 'all') {
+      if (timelineFilter === 'workspace' && ev.type !== 'workspace' && ev.category !== 'workspace') {
+        return false;
+      }
+      if ((timelineFilter === 'code_execution' || timelineFilter === 'runs') && ev.type !== 'runs' && ev.category !== 'code_execution') {
+        return false;
+      }
+      if (timelineFilter === 'tasks' && ev.type !== 'tasks' && ev.type !== 'task' && ev.category !== 'tasks') {
+        return false;
+      }
+    }
+
+    // 2. Workspace ID Filter
+    if (historyWorkspaceFilter !== 'all') {
+      const evWsId = String(ev.workspaceId || ev.workspace?.id || ev.workspace?._id || '');
+      if (evWsId !== String(historyWorkspaceFilter)) {
+        return false;
+      }
+    }
+
+    // 3. Date Range Filter: 'all', 'today', 'week'
+    if (historyDateRangeFilter !== 'all') {
+      const evTime = ev.timeMs || (ev.timestamp ? new Date(ev.timestamp).getTime() : 0);
+      if (evTime > 0) {
+        if (historyDateRangeFilter === 'today' && evTime < startOfDayMs) {
+          return false;
+        }
+        if (historyDateRangeFilter === 'week' && evTime < startOfWeekMs) {
+          return false;
+        }
+      }
+    }
+
+    // 4. Search Filter (debounced 300ms) across descriptions, file names, workspace titles, actor names
+    if (historySearchQuery && historySearchQuery.trim()) {
+      const q = historySearchQuery.trim().toLowerCase();
+      const descMatch = (ev.desc || ev.details || '').toLowerCase().includes(q);
+      const titleMatch = (ev.title || '').toLowerCase().includes(q);
+      const fileMatch = (ev.fileName || '').toLowerCase().includes(q);
+      const wsTitleMatch = (ev.workspaceTitle || ev.workspace?.title || '').toLowerCase().includes(q);
+      const tagMatch = (ev.tag || '').toLowerCase().includes(q);
+      const actorMatch = (ev.actor?.name || '').toLowerCase().includes(q);
+
+      if (!descMatch && !titleMatch && !fileMatch && !wsTitleMatch && !tagMatch && !actorMatch) {
+        return false;
+      }
+    }
+
     return true;
   });
 
@@ -836,88 +952,151 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
               <div className="ct-panel-title">
                 <Activity size={16} className="text-purple-400" />
                 <span>Personal Timeline</span>
+                {loadingHistory && <Loader2 size={14} className="animate-spin text-purple-400 ml-1" />}
               </div>
               
-              <div className="ct-timeline-filters">
+              <span className="text-xs font-mono text-gray-400">
+                {filteredTimeline.length} {filteredTimeline.length === 1 ? 'event' : 'events'}
+              </span>
+            </div>
+
+            {/* Offline Database Fallback Banner (CT-236) */}
+            {(dbOffline || dbError) && (
+              <div className="ct-offline-fallback-banner">
+                <div className="flex items-center gap-3">
+                  <div className="ct-offline-icon-box">
+                    <AlertCircle size={18} className="text-amber-400" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-sm text-white">Database Offline — Showing Cached History</h4>
+                    <p className="text-xs text-amber-200/80 mt-0.5">
+                      Live connection to database is currently offline. Displaying local & embedded activity logs.
+                    </p>
+                  </div>
+                </div>
                 <button 
-                  className={`ct-filter-pill ${timelineFilter === 'all' ? 'active' : ''}`}
-                  onClick={() => setTimelineFilter('all')}
+                  type="button" 
+                  onClick={handleRetryConnection}
+                  disabled={isRetryingConnection}
+                  className="ct-btn-retry-offline"
                 >
-                  All
-                </button>
-                <button 
-                  className={`ct-filter-pill ${timelineFilter === 'workspace' ? 'active' : ''}`}
-                  onClick={() => setTimelineFilter('workspace')}
-                >
-                  Workspace
-                </button>
-                <button 
-                  className={`ct-filter-pill ${timelineFilter === 'runs' ? 'active' : ''}`}
-                  onClick={() => setTimelineFilter('runs')}
-                >
-                  Runs
-                </button>
-                <button 
-                  className={`ct-filter-pill ${timelineFilter === 'tasks' ? 'active' : ''}`}
-                  onClick={() => setTimelineFilter('tasks')}
-                >
-                  Tasks
+                  <RefreshCw size={12} className={isRetryingConnection ? 'animate-spin' : ''} />
+                  <span>{isRetryingConnection ? 'Retrying...' : 'Retry Connection'}</span>
                 </button>
               </div>
-            </div>
+            )}
 
-            <div className="ct-timeline-events alternating" role="feed" aria-label="Activity timeline">
-              {filteredTimeline.map((event, idx) => {
-                const EventIcon = event.icon || Activity;
-                const sideClass = idx % 2 === 0 ? 'right' : 'left';
-                const isSelected = selectedTimelineEvent?.id === event.id;
+            {/* Search & Filter Component (CT-235) */}
+            <HistorySearchFilter
+              searchQuery={historySearchQuery}
+              onSearchChange={setHistorySearchQuery}
+              categoryFilter={timelineFilter}
+              onCategoryChange={setTimelineFilter}
+              workspaceIdFilter={historyWorkspaceFilter}
+              onWorkspaceIdChange={setHistoryWorkspaceFilter}
+              dateRangeFilter={historyDateRangeFilter}
+              onDateRangeChange={setHistoryDateRangeFilter}
+              workspaces={workspaces}
+              totalCount={filteredTimeline.length}
+              onResetFilters={handleResetHistoryFilters}
+            />
 
-                return (
-                  <div key={event.id} className={`ct-timeline-item ${sideClass}`}>
-                    <div className="ct-timeline-node">
-                      <EventIcon size={14} />
-                    </div>
-                    <div 
-                      className={`ct-timeline-card interactive cursor-pointer transition-all duration-200 select-none ${
-                        isSelected ? 'ring-2 ring-purple-500/60 bg-[#1c1d32]' : 'hover:bg-[#1a1b2d]'
-                      }`}
-                      onClick={() => {
-                        setSelectedTimelineEvent(event);
-                        if (event.workspaceId && onJumpToWorkspace) {
-                          onJumpToWorkspace(event.workspaceId);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setSelectedTimelineEvent(event);
-                          if (event.workspaceId && onJumpToWorkspace) {
-                            onJumpToWorkspace(event.workspaceId);
-                          }
-                        }
-                      }}
-                      title={event.workspaceId ? `Click to jump to workspace: ${event.title}` : `Click to inspect: ${event.title}`}
-                    >
-                      <div className="ct-timeline-card-header">
-                        <span className="ct-timeline-time font-mono">{event.time}</span>
-                        <div className="flex items-center gap-1.5">
-                          {isSelected && (
-                            <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                              Active
-                            </span>
-                          )}
-                          <span className={`ct-event-tag ${event.tagColor}`}>{event.tag}</span>
-                        </div>
+            {/* Loading Skeletons vs Empty Results vs Timeline Feed (CT-236) */}
+            {loadingHistory ? (
+              <div className="ct-history-skeleton-list">
+                {[1, 2, 3, 4].map((k) => (
+                  <div key={k} className="ct-history-skeleton-item animate-pulse">
+                    <div className="ct-skeleton-node" />
+                    <div className="ct-skeleton-card">
+                      <div className="ct-skeleton-header">
+                        <div className="w-16 h-3.5 bg-white/10 rounded" />
+                        <div className="w-20 h-3.5 bg-white/10 rounded" />
                       </div>
-                      <h4 className="ct-timeline-card-title">{event.title}</h4>
-                      <p className="ct-timeline-card-desc">{event.desc}</p>
+                      <div className="w-3/4 h-4 bg-white/10 rounded mt-2.5" />
+                      <div className="w-full h-3 bg-white/5 rounded mt-2" />
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+              </div>
+            ) : filteredTimeline.length === 0 ? (
+              <div className="ct-empty-history-state">
+                <FileQuestion size={34} className="text-purple-400/80 mb-2" />
+                <h4>No matching history found</h4>
+                <p>
+                  No activity events match your current search query or filter selection. Try adjusting your search term, category, or date range.
+                </p>
+                <button 
+                  type="button"
+                  onClick={handleResetHistoryFilters}
+                  className="ct-btn-secondary-sm mt-3.5 flex items-center gap-1.5"
+                >
+                  <RotateCcw size={12} />
+                  <span>Clear Filters</span>
+                </button>
+              </div>
+            ) : (
+              <div className="ct-timeline-events alternating" role="feed" aria-label="Activity timeline">
+                {filteredTimeline.map((event, idx) => {
+                  const EventIcon = event.icon || Activity;
+                  const sideClass = idx % 2 === 0 ? 'right' : 'left';
+                  const isSelected = selectedTimelineEvent?.id === event.id;
+
+                  const handleJump = () => {
+                    setSelectedTimelineEvent(event);
+                    if (onJumpToWorkspace) {
+                      if (event.workspace && typeof event.workspace === 'object') {
+                        const fullWs = workspaces.find(w => String(w._id || w.id) === String(event.workspace.id || event.workspace._id)) || event.workspace;
+                        onJumpToWorkspace(fullWs);
+                      } else if (event.workspaceId) {
+                        const fullWs = workspaces.find(w => String(w._id || w.id) === String(event.workspaceId)) || {
+                          _id: event.workspaceId,
+                          id: event.workspaceId,
+                          title: event.workspaceTitle || event.title || 'Workspace'
+                        };
+                        onJumpToWorkspace(fullWs);
+                      }
+                    }
+                  };
+
+                  return (
+                    <div key={event.id} className={`ct-timeline-item ${sideClass}`}>
+                      <div className="ct-timeline-node">
+                        <EventIcon size={14} />
+                      </div>
+                      <div 
+                        className={`ct-timeline-card interactive cursor-pointer transition-all duration-200 select-none ${
+                          isSelected ? 'ring-2 ring-purple-500/60 bg-[#1c1d32]' : 'hover:bg-[#1a1b2d]'
+                        }`}
+                        onClick={handleJump}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleJump();
+                          }
+                        }}
+                        title={event.workspaceId ? `Click to jump to workspace: ${event.title}` : `Click to inspect: ${event.title}`}
+                      >
+                        <div className="ct-timeline-card-header">
+                          <span className="ct-timeline-time font-mono">{event.time}</span>
+                          <div className="flex items-center gap-1.5">
+                            {isSelected && (
+                              <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                                Active
+                              </span>
+                            )}
+                            <span className={`ct-event-tag ${event.tagColor}`}>{event.tag}</span>
+                          </div>
+                        </div>
+                        <h4 className="ct-timeline-card-title">{event.title}</h4>
+                        <p className="ct-timeline-card-desc">{event.desc}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Right Panel: Recent Workspaces Explorer (Side-by-Side) */}

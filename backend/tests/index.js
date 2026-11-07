@@ -26,6 +26,9 @@ require('./workspaceRegression.test');
   // CT-233: Cross-Workspace History Aggregation Tests (Manushri)
   await require('./crossWorkspaceHistory.test');
 
+  // CT-235 & CT-236: Search, Filter Engine & Dashboard Integration Tests (Monar)
+  await require('./searchFilterIntegration.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);
