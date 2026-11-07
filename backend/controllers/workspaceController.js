@@ -1175,12 +1175,12 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
     if (action && action !== 'all') {
       logQuery.action = action;
     } else if (activeCategory && activeCategory !== 'all') {
-      if (activeCategory === 'code_execution' || activeCategory === 'execution') {
+      if (activeCategory === 'code_execution' || activeCategory === 'execution' || activeCategory === 'runs') {
         logQuery.action = 'code_execution';
       } else if (activeCategory === 'code' || activeCategory === 'code_edit') {
         logQuery.action = { $in: ['code_edit', 'file_create', 'file_delete', 'file_rename'] };
       } else if (activeCategory === 'workspace') {
-        logQuery.action = { $in: ['file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'] };
+        logQuery.action = { $in: ['code_edit', 'file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'] };
       } else if (activeCategory === 'tasks' || activeCategory === 'session') {
         logQuery.action = { $in: ['session_start', 'session_end'] };
       }
@@ -1204,14 +1204,26 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
       logQuery.timestamp = { $gte: startOfMonth };
     }
 
-    // Text Search filter
+    // Text Search filter (searches across event descriptions, file names, actor names, and workspace titles)
     const searchTerm = (search || q || '').trim();
     if (searchTerm) {
-      logQuery.$or = [
-        { details: { $regex: searchTerm, $options: 'i' } },
-        { fileName: { $regex: searchTerm, $options: 'i' } },
-        { userName: { $regex: searchTerm, $options: 'i' } }
+      const safeEscaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(safeEscaped, 'i');
+      const matchingWorkspaceIds = authorizedWorkspaces
+        .filter(ws => ws.title && searchRegex.test(ws.title))
+        .map(ws => ws._id);
+
+      const orConditions = [
+        { details: { $regex: safeEscaped, $options: 'i' } },
+        { fileName: { $regex: safeEscaped, $options: 'i' } },
+        { userName: { $regex: safeEscaped, $options: 'i' } }
       ];
+
+      if (matchingWorkspaceIds.length > 0) {
+        orConditions.push({ workspaceId: { $in: matchingWorkspaceIds } });
+      }
+
+      logQuery.$or = orConditions;
     }
 
     // 3. Execute Primary Aggregation against ActivityLog Collection
@@ -1258,6 +1270,7 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
                                         ? 'settings_update'
                                         : 'general')))))),
               details: entry.details ? `${entry.title ? entry.title + ': ' : ''}${entry.details}` : (entry.title || 'Workspace action'),
+              fileName: entry.fileName || null,
               linesAdded: 0,
               linesDeleted: 0,
               totalLinesChanged: 0,
@@ -1273,19 +1286,20 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
 
       // Apply in-memory search and category filtering for embedded fallback
       if (searchTerm) {
-        const reg = new RegExp(searchTerm, 'i');
+        const reg = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
         embeddedList = embeddedList.filter(item => 
-          reg.test(item.details) || 
-          reg.test(item.userName) || 
-          (item.workspaceId && reg.test(item.workspaceId.title))
+          reg.test(item.details || '') || 
+          reg.test(item.userName || '') || 
+          reg.test(item.fileName || '') ||
+          (item.workspaceId && reg.test(item.workspaceId.title || ''))
         );
       }
       if (activeCategory && activeCategory !== 'all') {
-        if (activeCategory === 'code_execution') {
+        if (activeCategory === 'code_execution' || activeCategory === 'runs' || activeCategory === 'execution') {
           embeddedList = embeddedList.filter(item => item.action === 'code_execution');
-        } else if (activeCategory === 'code') {
-          embeddedList = embeddedList.filter(item => ['code_edit', 'file_create'].includes(item.action));
-        } else if (activeCategory === 'tasks') {
+        } else if (activeCategory === 'code' || activeCategory === 'workspace') {
+          embeddedList = embeddedList.filter(item => ['code_edit', 'file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'].includes(item.action));
+        } else if (activeCategory === 'tasks' || activeCategory === 'session') {
           embeddedList = embeddedList.filter(item => ['session_start', 'session_end'].includes(item.action));
         }
       }

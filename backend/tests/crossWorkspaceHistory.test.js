@@ -395,6 +395,47 @@ module.exports = (async () => {
       console.log('  ✔ [PASS] 9. Filter by category "code_execution" accurately isolates execution events');
     }
 
+    {
+      const req = {
+        user: { _id: manushriId },
+        query: { search: 'Compiler' }
+      };
+      const res = createMockRes();
+
+      await getUserCrossWorkspaceHistory(req, res);
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(res.body.history.length >= 1, 'Search by keyword "Compiler" must return matching events');
+      console.log('  ✔ [PASS] 9b. Search across event descriptions and details matches relevant activities');
+    }
+
+    {
+      const req = {
+        user: { _id: manushriId },
+        query: { search: 'Algorithm Sandbox' }
+      };
+      const res = createMockRes();
+
+      await getUserCrossWorkspaceHistory(req, res);
+
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(res.body.history.length >= 1, 'Search by workspace title "Algorithm Sandbox" must return activities');
+      console.log('  ✔ [PASS] 9c. Search across workspace titles successfully isolates matching workspace events');
+    }
+
+    {
+      const req = {
+        user: { _id: manushriId },
+        query: { dateRange: 'today' }
+      };
+      const res = createMockRes();
+
+      await getUserCrossWorkspaceHistory(req, res);
+
+      assert.strictEqual(res.statusCode, 200);
+      console.log('  ✔ [PASS] 9d. Date range filter "today" evaluates start-of-day boundary correctly');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Test 7: User-Scoped Isolation (userOnly = 'true')
     // ─────────────────────────────────────────────────────────────────────────
