@@ -64,10 +64,22 @@ export const formatTimeSpent = (totalSeconds = 0) => {
 
 /**
  * Formats a date timestamp into a human-readable relative time string.
- * Examples: "just now", "1 minute ago", "2 minutes ago", "5 hours ago", etc.
+ * Supports CT-234 specifications: ("just now", "10m ago", "Yesterday").
+ * Options can be a boolean for compact mode (default true) or an options object.
  */
-export const getRelativeTime = (timestamp) => {
+export const getRelativeTime = (timestamp, options = {}) => {
   if (!timestamp) return 'just now';
+
+  // Support boolean compact argument or options object
+  const compact = typeof options === 'boolean' ? options : (options?.compact !== false);
+
+  // If already a human-formatted string from fallback/static seeds
+  if (typeof timestamp === 'string') {
+    const trimmed = timestamp.trim();
+    if (trimmed.toLowerCase() === 'yesterday') return 'Yesterday';
+    if (trimmed.toLowerCase() === 'just now') return 'just now';
+    if (/^\d+[mhd]\s+ago$/i.test(trimmed)) return trimmed;
+  }
 
   const date = new Date(timestamp);
   if (isNaN(date.getTime())) return 'just now';
@@ -75,23 +87,29 @@ export const getRelativeTime = (timestamp) => {
   const now = new Date();
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-  if (diffInSeconds < 45) {
+  if (diffInSeconds < 60) {
     return 'just now';
   }
 
   const diffInMinutes = Math.floor(diffInSeconds / 60);
   if (diffInMinutes < 60) {
+    if (compact) return `${diffInMinutes}m ago`;
     return diffInMinutes === 1 ? '1 minute ago' : `${diffInMinutes} minutes ago`;
   }
 
   const diffInHours = Math.floor(diffInMinutes / 60);
   if (diffInHours < 24) {
+    if (compact) return `${diffInHours}h ago`;
     return diffInHours === 1 ? '1 hour ago' : `${diffInHours} hours ago`;
   }
 
   const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays === 1) {
+    return 'Yesterday';
+  }
   if (diffInDays < 30) {
-    return diffInDays === 1 ? 'Yesterday' : `${diffInDays} days ago`;
+    if (compact) return `${diffInDays}d ago`;
+    return `${diffInDays} days ago`;
   }
 
   return date.toLocaleDateString('en-US', {
@@ -100,6 +118,11 @@ export const getRelativeTime = (timestamp) => {
     year: 'numeric'
   });
 };
+
+/**
+ * Canonical alias for getRelativeTime to ensure full compatibility across modules.
+ */
+export const formatRelativeTime = getRelativeTime;
 
 /**
  * Formats full date time string for tooltip or detail display.

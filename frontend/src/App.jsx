@@ -56,9 +56,12 @@ function App({ defaultTab }) {
 
   const handleJumpToWorkspace = (workspace = null) => {
     if (workspace) {
-      setActiveWorkspace(workspace);
+      const wsObj = typeof workspace === 'string'
+        ? { _id: workspace, id: workspace, title: 'Collaborative Workspace' }
+        : workspace;
+      setActiveWorkspace(wsObj);
       try {
-        localStorage.setItem('ct-active-workspace-session', JSON.stringify(workspace));
+        localStorage.setItem('ct-active-workspace-session', JSON.stringify(wsObj));
       } catch (e) {}
       setActiveTab('modular-workspace');
     } else {
@@ -138,6 +141,7 @@ function App({ defaultTab }) {
             <ModularWorkspace 
               activeWorkspace={activeWorkspace} 
               onBackToHome={() => setActiveTab('home')} 
+              onNavigateToWorkspaces={() => setActiveTab('workspaces-directory')}
             />
           </div>
         ) : activeTab === 'workspaces-directory' ? (

@@ -55,11 +55,14 @@ const truncateSafe = (str, limit = MAX_OUTPUT_TRUNCATE_LEN) => {
 // Helper function to check workspace roles safely
 const checkWorkspaceAccess = (workspace, userId, allowedRoles = ['owner', 'admin', 'editor', 'viewer']) => {
   if (!workspace || !userId) return false;
-  const uIdStr = userId.toString();
+  const uIdStr = String(userId._id || userId);
   const ownerId = workspace.owner?._id || workspace.owner;
-  if (ownerId && ownerId.toString() === uIdStr) return true;
+  if (ownerId && String(ownerId) === uIdStr) return true;
 
-  const member = workspace.members?.find(m => (m.user?._id || m.user)?.toString() === uIdStr);
+  const member = workspace.members?.find(m => {
+    const mId = m.user?._id || m.user;
+    return mId && String(mId) === uIdStr;
+  });
   return Boolean(member && allowedRoles.includes(member.role));
 };
 
@@ -282,7 +285,11 @@ exports.getWorkspaceExecutions = async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.json({ executions: [] });
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required to view workspace executions.' });
     }
 
     const workspace = await Workspace.findById(id);
@@ -290,7 +297,8 @@ exports.getWorkspaceExecutions = async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
 
-    if (!checkWorkspaceAccess(workspace, req.user._id, ['owner', 'admin', 'editor', 'viewer'])) {
+    const userId = req.user._id || req.user.id;
+    if (!checkWorkspaceAccess(workspace, userId, ['owner', 'admin', 'editor', 'viewer'])) {
       return res.status(403).json({ message: 'You do not have permission to view this workspace execution history.' });
     }
 
@@ -315,7 +323,11 @@ exports.clearWorkspaceExecutions = async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.json({ message: 'Execution history cleared', executions: [] });
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required to clear workspace executions.' });
     }
 
     const workspace = await Workspace.findById(id);
@@ -323,7 +335,8 @@ exports.clearWorkspaceExecutions = async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
 
-    if (!checkWorkspaceAccess(workspace, req.user._id, ['owner', 'admin'])) {
+    const userId = req.user._id || req.user.id;
+    if (!checkWorkspaceAccess(workspace, userId, ['owner', 'admin'])) {
       return res.status(403).json({ message: 'Only workspace owners and admins can clear execution history.' });
     }
 

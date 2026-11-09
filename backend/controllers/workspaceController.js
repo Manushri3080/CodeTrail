@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
+const ActivityLog = require('../models/ActivityLog');
 const {
   validateWorkspaceTitle,
   validateWorkspaceDescription,
@@ -17,7 +18,17 @@ const {
 
 // Starter file templates based on language
 const getStarterFiles = (language, title) => {
-  switch (language) {
+  const lang = (language || 'javascript').toLowerCase();
+  switch (lang) {
+    case 'typescript':
+      return [
+        {
+          id: 'index.ts',
+          name: 'index.ts',
+          language: 'typescript',
+          content: `// ${title} - CodeTrail Collaborative Workspace\n\nconst greeting: string = "Welcome to ${title}!";\nconsole.log(greeting);\nconsole.log("Ready for real-time TypeScript collaboration.");\n`
+        }
+      ];
     case 'python':
       return [
         {
@@ -25,6 +36,15 @@ const getStarterFiles = (language, title) => {
           name: 'main.py',
           language: 'python',
           content: `# ${title} - CodeTrail Collaborative Workspace\n\ndef main():\n    print("Welcome to ${title}!")\n    print("Collaborating live with Python runtime.")\n\nif __name__ == "__main__":\n    main()\n`
+        }
+      ];
+    case 'c':
+      return [
+        {
+          id: 'main.c',
+          name: 'main.c',
+          language: 'cpp',
+          content: `// ${title} - CodeTrail Collaborative Workspace\n#include <stdio.h>\n\nint main() {\n    printf("Welcome to ${title}!\\n");\n    return 0;\n}\n`
         }
       ];
     case 'cpp':
@@ -63,6 +83,15 @@ const getStarterFiles = (language, title) => {
           content: `// ${title} - CodeTrail Collaborative Workspace\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Welcome to ${title}!")\n}\n`
         }
       ];
+    case 'html':
+      return [
+        {
+          id: 'index.html',
+          name: 'index.html',
+          language: 'html',
+          content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>${title}</title>\n</head>\n<body>\n  <h1>Welcome to ${title}!</h1>\n</body>\n</html>\n`
+        }
+      ];
     case 'javascript':
     default:
       return [
@@ -89,11 +118,12 @@ const generateInviteCode = () => {
 };
 
 const formatWorkspaceSummary = (workspace, userId) => {
-  const ownerId = workspace.owner?._id || workspace.owner;
-  const isOwner = ownerId && ownerId.toString() === userId.toString();
-  const memberInfo = workspace.members?.find(member => {
-    const memberId = member.user?._id || member.user;
-    return memberId && memberId.toString() === userId.toString();
+  const targetUserId = userId ? String(userId._id || userId) : null;
+  const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : null;
+  const isOwner = Boolean(ownerId && targetUserId && ownerId === targetUserId);
+  const memberInfo = (workspace.members || []).find(member => {
+    const memberId = member.user ? String(member.user._id || member.user) : null;
+    return Boolean(memberId && targetUserId && memberId === targetUserId);
   });
 
   return {
@@ -101,36 +131,58 @@ const formatWorkspaceSummary = (workspace, userId) => {
     _id: workspace._id,
     title: workspace.title,
     name: workspace.title,
-    description: workspace.description,
-    desc: workspace.description,
+    description: workspace.description || workspace.desc || '',
+    desc: workspace.description || workspace.desc || '',
     brandColor: workspace.brandColor || 'purple',
     icon: workspace.icon || 'Rocket',
     role: isOwner ? 'owner' : (memberInfo?.role || 'viewer'),
     timeSpent: workspace.timeSpent || '0h 0m',
-    status: workspace.status,
-    language: workspace.language,
+    status: workspace.status || 'active',
+    language: workspace.language || 'javascript',
     inviteCode: workspace.inviteCode,
     roomCode: workspace.inviteCode,
     settings: workspace.settings,
     updatedAt: workspace.updatedAt,
     members: (workspace.members || []).map(member => ({
-      id: member.user?._id || member.user,
+      id: member.user ? (member.user._id || member.user) : null,
       name: member.user?.name || 'Collaborator',
       email: member.user?.email,
-      role: member.role
+      role: member.role || 'viewer'
     })),
+    collaborators: (workspace.members && workspace.members.length > 0)
+      ? workspace.members.map(m => {
+          const name = m.user?.name;
+          return name ? name[0].toUpperCase() : 'U';
+        })
+      : ['U'],
     files: workspace.files || [],
     filesCount: workspace.files?.length || 0
   };
 };
 
+const matchesMember = (member, targetId) => {
+  if (!member || !targetId) return false;
+  const targetStr = String(targetId);
+  const userStr = member.user ? String(member.user._id || member.user) : null;
+  const memberIdStr = member._id ? String(member._id) : null;
+  return userStr === targetStr || memberIdStr === targetStr;
+};
+
 const requireWorkspaceOwner = (workspace, userId) => {
-  return workspace.owner.toString() === userId.toString();
+  if (!workspace || !workspace.owner || !userId) return false;
+  const ownerId = String(workspace.owner._id || workspace.owner);
+  const targetUserId = String(userId._id || userId);
+  return ownerId === targetUserId;
 };
 
 const getWorkspaceRole = (workspace, userId) => {
+  if (!workspace || !userId) return null;
   if (requireWorkspaceOwner(workspace, userId)) return 'owner';
-  const member = workspace.members?.find(item => item.user.toString() === userId.toString());
+  const targetUserId = String(userId._id || userId);
+  const member = (workspace.members || []).find(item => {
+    const itemUserId = item.user ? String(item.user._id || item.user) : null;
+    return itemUserId === targetUserId;
+  });
   return member?.role || null;
 };
 
@@ -151,8 +203,22 @@ exports.createWorkspace = async (req, res) => {
       return res.status(400).json({ message: 'Workspace title is required.' });
     }
 
-    const userId = req.user._id;
-    const starterFiles = getStarterFiles(language, title.trim());
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to create a workspace.' });
+    }
+
+    // Normalize language to match Workspace model enum
+    const rawLang = (language || 'javascript').toLowerCase();
+    const schemaLanguages = ['javascript', 'python', 'cpp', 'java', 'rust', 'go', 'typescript'];
+    let normalizedLanguage = 'javascript';
+    if (schemaLanguages.includes(rawLang)) {
+      normalizedLanguage = rawLang;
+    } else if (rawLang === 'c') {
+      normalizedLanguage = 'cpp';
+    }
+
+    const starterFiles = getStarterFiles(rawLang, title.trim());
     const inviteCode = generateInviteCode();
 
     const workspace = new Workspace({
@@ -167,7 +233,7 @@ exports.createWorkspace = async (req, res) => {
         }
       ],
       inviteCode,
-      language,
+      language: normalizedLanguage,
       files: starterFiles,
       brandColor: ['purple', 'cyan', 'emerald', 'rose', 'amber', 'blue'].includes(brandColor) ? brandColor : 'purple',
       icon: icon || 'Rocket',
@@ -195,9 +261,15 @@ exports.createWorkspace = async (req, res) => {
       .populate('owner', 'name email avatar')
       .populate('members.user', 'name email avatar');
 
+    const summary = formatWorkspaceSummary(populatedWorkspace, userId);
+    const responsePayload = {
+      ...(populatedWorkspace.toObject ? populatedWorkspace.toObject() : populatedWorkspace),
+      ...summary
+    };
+
     res.status(201).json({
       message: 'Workspace created successfully',
-      workspace: populatedWorkspace
+      workspace: responsePayload
     });
 
   } catch (err) {
@@ -212,7 +284,10 @@ exports.createWorkspace = async (req, res) => {
  */
 exports.getUserWorkspaces = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to fetch workspaces.' });
+    }
     const { status, search } = req.query;
 
     const query = {
@@ -903,7 +978,7 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
       return res.status(400).json({ message: 'The workspace owner role cannot be reassigned.' });
     }
 
-    const memberItem = workspace.members.find(m => m.user.toString() === memberId || m._id.toString() === memberId);
+    const memberItem = (workspace.members || []).find(m => matchesMember(m, memberId));
     if (!memberItem) {
       return res.status(404).json({ message: 'Member not found in workspace.' });
     }
@@ -918,8 +993,16 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
     memberItem.role = role;
 
     // Add history log in DB
-    const targetUser = await User.findById(memberItem.user);
-    const userName = targetUser ? targetUser.name : 'Collaborator';
+    const targetUserId = memberItem.user ? (memberItem.user._id || memberItem.user) : null;
+    let userName = 'Collaborator';
+    if (targetUserId) {
+      try {
+        const targetUser = await User.findById(targetUserId);
+        if (targetUser) userName = targetUser.name;
+      } catch (uErr) {
+        // Non-blocking fallback
+      }
+    }
 
     workspace.activityLogs = [
       {
@@ -965,21 +1048,32 @@ exports.removeWorkspaceMember = async (req, res) => {
       return res.status(403).json({ message: 'Only owners and admins can remove members.' });
     }
 
-    if (workspace.owner.toString() === memberId) {
+    const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : '';
+    if (ownerId && ownerId === String(memberId)) {
       return res.status(400).json({ message: 'The workspace owner cannot be removed.' });
     }
 
-    const targetMember = workspace.members.find(m => m.user.toString() === memberId || m._id.toString() === memberId);
-    if (targetMember?.role === 'owner' || (requesterRole === 'admin' && targetMember?.role === 'admin')) {
-      return res.status(403).json({ message: 'You cannot remove this member.' });
-    }
-    let userName = 'Collaborator';
-    if (targetMember) {
-      const targetUser = await User.findById(targetMember.user);
-      if (targetUser) userName = targetUser.name;
+    const targetMember = (workspace.members || []).find(m => matchesMember(m, memberId));
+    if (!targetMember) {
+      return res.status(404).json({ message: 'Member not found in workspace.' });
     }
 
-    workspace.members = workspace.members.filter(m => m.user.toString() !== memberId && m._id.toString() !== memberId);
+    if (targetMember.role === 'owner' || (requesterRole === 'admin' && targetMember.role === 'admin')) {
+      return res.status(403).json({ message: 'You cannot remove this member.' });
+    }
+
+    let userName = 'Collaborator';
+    const targetUserId = targetMember.user ? (targetMember.user._id || targetMember.user) : null;
+    if (targetUserId) {
+      try {
+        const targetUser = await User.findById(targetUserId);
+        if (targetUser) userName = targetUser.name;
+      } catch (uErr) {
+        // Non-blocking fallback
+      }
+    }
+
+    workspace.members = (workspace.members || []).filter(m => !matchesMember(m, memberId));
 
     // Add history log entry in DB
     workspace.activityLogs = [
@@ -1004,3 +1098,389 @@ exports.removeWorkspaceMember = async (req, res) => {
   }
 };
 
+
+
+/**
+ * 14. Cross-Workspace History Aggregation (CT-233)
+ * GET /api/workspaces/user/history
+ * Aggregates user-scoped activity history across all authorized workspaces without requiring N round-trips.
+ *
+ * Query Parameters:
+ *   - page (default 1)
+ *   - limit (default 20, max 100)
+ *   - workspaceId (optional: filter to a single authorized workspace)
+ *   - category (all | workspace | code_execution | code | tasks)
+ *   - action (specific activity action)
+ *   - search / q (text search in details, fileName, actor name, or workspace title)
+ *   - dateRange / timeRange (today | week | month | all)
+ *   - startDate / endDate (ISO strings)
+ *   - userOnly / scope=user (filter to events where userId == current user)
+ */
+
+const formatRelativeTime = (date) => {
+  if (!date) return 'Just now';
+  const now = Date.now();
+  const timeMs = new Date(date).getTime();
+  if (isNaN(timeMs)) return 'Recently';
+  const diffSec = Math.floor((now - timeMs) / 1000);
+  if (diffSec < 60) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+
+const mapActionToCategory = (action) => {
+  if (!action) return 'workspace';
+  if (action === 'code_execution') return 'code_execution';
+  if (['code_edit', 'file_create', 'file_delete', 'file_rename'].includes(action)) return 'workspace';
+  if (['session_start', 'session_end'].includes(action)) return 'tasks';
+  return 'workspace';
+};
+
+exports.getUserCrossWorkspaceHistory = async (req, res) => {
+  try {
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required to access workspace history.' });
+    }
+
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const {
+      workspaceId,
+      category,
+      action,
+      search,
+      q,
+      dateRange,
+      timeRange,
+      startDate,
+      endDate,
+      userOnly,
+      scope
+    } = req.query;
+
+    let authorizedWorkspaces = [];
+    let authorizedWorkspaceIds = [];
+    const workspaceRoleMap = {};
+    const workspaceMetaMap = {};
+
+    // 1. Role & Security Guards: Validate target workspace(s) and private workspace boundaries
+    if (workspaceId) {
+      if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+        return res.status(400).json({ message: 'Invalid workspace ID format.' });
+      }
+
+      const targetWorkspace = await Workspace.findById(workspaceId)
+        .select('_id title language brandColor icon settings owner members activityLogs')
+        .lean();
+
+      if (!targetWorkspace) {
+        return res.status(404).json({ message: 'Workspace not found.' });
+      }
+
+      const role = getWorkspaceRole(targetWorkspace, userId);
+      const isPublic = targetWorkspace.settings?.isPublic === true;
+
+      // Private workspace security guard: viewer/editor/admin/owner role required
+      if (!role && !isPublic) {
+        return res.status(403).json({ message: 'You do not have access to this workspace history.' });
+      }
+
+      authorizedWorkspaces = [targetWorkspace];
+      authorizedWorkspaceIds = [targetWorkspace._id];
+      workspaceRoleMap[targetWorkspace._id.toString()] = role || (isPublic ? 'viewer' : null);
+      workspaceMetaMap[targetWorkspace._id.toString()] = targetWorkspace;
+    } else {
+      // Cross-workspace lookup: find all workspaces accessible to the user
+      const userWorkspaces = await Workspace.find({
+        $or: [
+          { owner: userId },
+          { 'members.user': userId },
+          { 'settings.isPublic': true }
+        ]
+      })
+        .select('_id title language brandColor icon settings owner members activityLogs')
+        .lean();
+
+      if (!userWorkspaces || userWorkspaces.length === 0) {
+        return res.json({
+          success: true,
+          history: [],
+          activities: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPrevPage: false
+          },
+          summary: {
+            totalWorkspaces: 0,
+            totalEvents: 0,
+            uniqueActorsCount: 0
+          }
+        });
+      }
+
+      authorizedWorkspaces = userWorkspaces;
+      authorizedWorkspaceIds = userWorkspaces.map(w => w._id);
+      userWorkspaces.forEach(w => {
+        const role = getWorkspaceRole(w, userId) || (w.settings?.isPublic ? 'viewer' : null);
+        workspaceRoleMap[w._id.toString()] = role;
+        workspaceMetaMap[w._id.toString()] = w;
+      });
+    }
+
+    // 2. Build Query Filters for ActivityLog collection
+    const logQuery = {
+      workspaceId: { $in: authorizedWorkspaceIds }
+    };
+
+    // User-scoped filter
+    if (userOnly === 'true' || scope === 'user') {
+      logQuery.userId = new mongoose.Types.ObjectId(userId);
+    } else if (req.query.userId && mongoose.Types.ObjectId.isValid(req.query.userId)) {
+      logQuery.userId = new mongoose.Types.ObjectId(req.query.userId);
+    }
+
+    // Category / Action filter
+    const activeCategory = (category || '').trim().toLowerCase();
+    if (action && action !== 'all') {
+      logQuery.action = action;
+    } else if (activeCategory && activeCategory !== 'all') {
+      if (activeCategory === 'code_execution' || activeCategory === 'execution' || activeCategory === 'runs') {
+        logQuery.action = 'code_execution';
+      } else if (activeCategory === 'code' || activeCategory === 'code_edit') {
+        logQuery.action = { $in: ['code_edit', 'file_create', 'file_delete', 'file_rename'] };
+      } else if (activeCategory === 'workspace') {
+        logQuery.action = { $in: ['code_edit', 'file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'] };
+      } else if (activeCategory === 'tasks' || activeCategory === 'session') {
+        logQuery.action = { $in: ['session_start', 'session_end'] };
+      }
+    }
+
+    // Date Range filter
+    const activeDateRange = (dateRange || timeRange || '').trim().toLowerCase();
+    const now = new Date();
+    if (startDate || endDate) {
+      logQuery.timestamp = {};
+      if (startDate) logQuery.timestamp.$gte = new Date(startDate);
+      if (endDate) logQuery.timestamp.$lte = new Date(endDate);
+    } else if (activeDateRange === 'today') {
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      logQuery.timestamp = { $gte: startOfDay };
+    } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
+      const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      logQuery.timestamp = { $gte: startOfWeek };
+    } else if (activeDateRange === 'month') {
+      const startOfMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      logQuery.timestamp = { $gte: startOfMonth };
+    }
+
+    // Text Search filter (searches across event descriptions, file names, actor names, and workspace titles)
+    const searchTerm = (search || q || '').trim();
+    if (searchTerm) {
+      const safeEscaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(safeEscaped, 'i');
+      const matchingWorkspaceIds = authorizedWorkspaces
+        .filter(ws => ws.title && searchRegex.test(ws.title))
+        .map(ws => ws._id);
+
+      const orConditions = [
+        { details: { $regex: safeEscaped, $options: 'i' } },
+        { fileName: { $regex: safeEscaped, $options: 'i' } },
+        { userName: { $regex: safeEscaped, $options: 'i' } }
+      ];
+
+      if (matchingWorkspaceIds.length > 0) {
+        orConditions.push({ workspaceId: { $in: matchingWorkspaceIds } });
+      }
+
+      logQuery.$or = orConditions;
+    }
+
+    // 3. Execute Primary Aggregation against ActivityLog Collection
+    let [totalCount, logs] = await Promise.all([
+      ActivityLog.countDocuments(logQuery),
+      ActivityLog.find(logQuery)
+        .populate('userId', 'name email avatar role username')
+        .populate('workspaceId', 'title language brandColor icon settings owner')
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean()
+    ]);
+
+    // 4. Fallback: If ActivityLog collection has 0 items, check embedded workspace.activityLogs
+    if (totalCount === 0 && (!logs || logs.length === 0)) {
+      let embeddedList = [];
+      authorizedWorkspaces.forEach(ws => {
+        const userRole = workspaceRoleMap[ws._id.toString()] || 'viewer';
+        if (Array.isArray(ws.activityLogs)) {
+          ws.activityLogs.forEach((entry, idx) => {
+            const entryTime = entry.timestamp ? new Date(entry.timestamp) : new Date();
+            embeddedList.push({
+              _id: entry.id || `emb-${ws._id}-${idx}`,
+              id: entry.id || `emb-${ws._id}-${idx}`,
+              workspaceId: ws,
+              userId: ws.owner,
+              userName: entry.user || 'Developer',
+              userEmail: '',
+              userRole: userRole,
+              action: entry.type === 'execution'
+                ? 'code_execution'
+                : (entry.type === 'session'
+                    ? 'session_start'
+                    : (entry.type === 'session-end'
+                        ? 'session_end'
+                        : (entry.type === 'file'
+                            ? 'file_create'
+                            : (entry.type === 'code'
+                                ? 'code_edit'
+                                : (entry.type === 'member'
+                                    ? 'member_join'
+                                    : (entry.type === 'settings'
+                                        ? 'settings_update'
+                                        : 'general')))))),
+              details: entry.details ? `${entry.title ? entry.title + ': ' : ''}${entry.details}` : (entry.title || 'Workspace action'),
+              fileName: entry.fileName || null,
+              linesAdded: 0,
+              linesDeleted: 0,
+              totalLinesChanged: 0,
+              executionId: null,
+              executionStatus: null,
+              sequenceNumber: idx + 1,
+              currentHash: null,
+              timestamp: entryTime
+            });
+          });
+        }
+      });
+
+      // Apply in-memory search and category filtering for embedded fallback
+      if (searchTerm) {
+        const reg = new RegExp(searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        embeddedList = embeddedList.filter(item => 
+          reg.test(item.details || '') || 
+          reg.test(item.userName || '') || 
+          reg.test(item.fileName || '') ||
+          (item.workspaceId && reg.test(item.workspaceId.title || ''))
+        );
+      }
+      if (activeCategory && activeCategory !== 'all') {
+        if (activeCategory === 'code_execution' || activeCategory === 'runs' || activeCategory === 'execution') {
+          embeddedList = embeddedList.filter(item => item.action === 'code_execution');
+        } else if (activeCategory === 'code' || activeCategory === 'workspace') {
+          embeddedList = embeddedList.filter(item => ['code_edit', 'file_create', 'file_delete', 'file_rename', 'role_change', 'member_join', 'member_leave', 'settings_update'].includes(item.action));
+        } else if (activeCategory === 'tasks' || activeCategory === 'session') {
+          embeddedList = embeddedList.filter(item => ['session_start', 'session_end'].includes(item.action));
+        }
+      }
+      if (activeDateRange === 'today') {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        embeddedList = embeddedList.filter(item => new Date(item.timestamp).getTime() >= startOfDay);
+      } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
+        const startOfWeek = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+        embeddedList = embeddedList.filter(item => new Date(item.timestamp).getTime() >= startOfWeek);
+      }
+
+      embeddedList.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      totalCount = embeddedList.length;
+      logs = embeddedList.slice(skip, skip + limit);
+    }
+
+    // 5. Canonical formatting & transformation for consumer components
+    const actorIdSet = new Set();
+    const workspaceIdSet = new Set();
+
+    const formattedHistory = logs.map(item => {
+      const wsDoc = item.workspaceId && typeof item.workspaceId === 'object' 
+        ? item.workspaceId 
+        : (workspaceMetaMap[String(item.workspaceId)] || null);
+      
+      const wsIdStr = wsDoc?._id ? wsDoc._id.toString() : String(item.workspaceId || '');
+      if (wsIdStr) workspaceIdSet.add(wsIdStr);
+
+      const userRole = wsIdStr ? (workspaceRoleMap[wsIdStr] || 'viewer') : (item.userRole || 'editor');
+
+      const actorUser = item.userId && typeof item.userId === 'object' ? item.userId : null;
+      const actorId = actorUser?._id ? actorUser._id.toString() : (item.userId ? item.userId.toString() : null);
+      if (actorId) actorIdSet.add(actorId);
+
+      const actorName = actorUser?.name || item.userName || 'Developer';
+      const actorEmail = actorUser?.email || item.userEmail || '';
+      const actorAvatar = actorUser?.avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(actorName)}`;
+
+      return {
+        id: item._id ? item._id.toString() : item.id,
+        _id: item._id ? item._id.toString() : item.id,
+        workspace: {
+          id: wsIdStr,
+          _id: wsIdStr,
+          title: wsDoc?.title || 'Collaborative Workspace',
+          language: wsDoc?.language || 'javascript',
+          brandColor: wsDoc?.brandColor || 'purple',
+          icon: wsDoc?.icon || 'Rocket',
+          isPublic: wsDoc?.settings?.isPublic ?? false,
+          userRole
+        },
+        actor: {
+          id: actorId,
+          _id: actorId,
+          name: actorName,
+          email: actorEmail,
+          avatar: actorAvatar,
+          role: item.userRole || userRole || 'editor'
+        },
+        action: item.action || 'general',
+        category: mapActionToCategory(item.action),
+        fileName: item.fileName || null,
+        fileId: item.fileId || null,
+        details: item.details || '',
+        linesAdded: item.linesAdded || 0,
+        linesDeleted: item.linesDeleted || 0,
+        totalLinesChanged: item.totalLinesChanged || ((item.linesAdded || 0) + (item.linesDeleted || 0)),
+        executionId: item.executionId ? (item.executionId._id ? item.executionId._id.toString() : item.executionId.toString()) : null,
+        executionStatus: item.executionStatus || null,
+        sequenceNumber: item.sequenceNumber || 1,
+        currentHash: item.currentHash || null,
+        timestamp: item.timestamp ? new Date(item.timestamp).toISOString() : new Date().toISOString(),
+        relativeTime: formatRelativeTime(item.timestamp)
+      };
+    });
+
+    const totalPages = Math.ceil(totalCount / limit) || 0;
+
+    res.json({
+      success: true,
+      history: formattedHistory,
+      activities: formattedHistory,
+      pagination: {
+        total: totalCount,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1
+      },
+      summary: {
+        totalWorkspaces: workspaceIdSet.size || authorizedWorkspaceIds.length,
+        totalEvents: totalCount,
+        uniqueActorsCount: actorIdSet.size
+      }
+    });
+
+  } catch (err) {
+    console.error('Cross-Workspace User History Error:', err);
+    res.status(500).json({ message: 'Failed to fetch cross-workspace user history', error: err.message });
+  }
+};

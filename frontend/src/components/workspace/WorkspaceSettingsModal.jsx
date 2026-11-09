@@ -24,6 +24,7 @@ import {
   Bell
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
+import { getRelativeTime } from '../../utils/timeUtils';
 
 const AVAILABLE_LANGUAGES = [
   { id: 'javascript', name: 'JavaScript', ext: '.js' },
@@ -680,15 +681,7 @@ export const WorkspaceSettingsModal = ({
   };
 
   const getRelativeTimeAgo = (isoString) => {
-    try {
-      const diffSec = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
-      if (diffSec < 60) return 'Just now';
-      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
-      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
-      return `${Math.floor(diffSec / 86400)}d ago`;
-    } catch (e) {
-      return 'Recently';
-    }
+    return getRelativeTime(isoString);
   };
 
   const formatLogTime = (isoString) => {

@@ -45,6 +45,7 @@ import {
   HardDrive
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
+import { downloadContributionReportPdf } from '../../utils/pdfReportGenerator.js';
 
 export default function ContributionReportView({ workspace, activeWorkspaceId }) {
   const wsId = activeWorkspaceId || workspace?._id || workspace?.id;
@@ -63,6 +64,9 @@ export default function ContributionReportView({ workspace, activeWorkspaceId })
 
   // Action states
   const [copiedMd, setCopiedMd] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [pdfExportSuccess, setPdfExportSuccess] = useState(false);
+  const [pdfExportError, setPdfExportError] = useState(null);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [showValidationModal, setShowValidationModal] = useState(false);
@@ -291,6 +295,23 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
     window.open(`${API_BASE}/workspaces/${wsId}/reports/contribution/markdown`, '_blank');
   };
 
+  // CT-200: Export full vector PDF report (Meet Sheth)
+  const handleExportPdf = async () => {
+    if (!report || exportingPdf) return;
+    setExportingPdf(true);
+    setPdfExportError(null);
+    try {
+      await downloadContributionReportPdf(report);
+      setPdfExportSuccess(true);
+      setTimeout(() => setPdfExportSuccess(false), 3000);
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      setPdfExportError(err.message || 'Failed to export PDF');
+      setTimeout(() => setPdfExportError(null), 5000);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
   // Live validate report content
   const handleRunValidation = async () => {
     if (!report) return;
@@ -411,12 +432,45 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
             <span>Print / PDF View</span>
           </button>
 
-          {/* CT-200 Export hook button for Meet Sheth */}
+          {/* CT-200: Export PDF Functionality (Meet Sheth) */}
+          <button
+            type="button"
+            id="export-pdf-report-btn"
+            onClick={handleExportPdf}
+            disabled={!report || exportingPdf}
+            title="Export full contribution report as professional PDF document"
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+              pdfExportSuccess
+                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                : pdfExportError
+                  ? 'bg-red-500/20 border border-red-500/40 text-red-300'
+                  : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-sm'
+            }`}
+          >
+            {exportingPdf ? (
+              <RefreshCw size={14} className="animate-spin" />
+            ) : pdfExportSuccess ? (
+              <Check size={14} className="text-emerald-400" />
+            ) : (
+              <Download size={14} />
+            )}
+            <span>
+              {exportingPdf
+                ? 'Generating PDF...'
+                : pdfExportSuccess
+                  ? 'PDF Exported!'
+                  : pdfExportError
+                    ? 'Export Failed'
+                    : 'Export PDF'}
+            </span>
+          </button>
+
+          {/* Download HTML report */}
           <button
             type="button"
             onClick={handleDownloadHtml}
             disabled={!report}
-            title="Download standalone HTML report (CT-200 PDF Export ready)"
+            title="Download standalone HTML report"
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
             <Download size={14} />
@@ -424,6 +478,14 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
           </button>
         </div>
       </div>
+
+      {/* PDF Export Error Notification */}
+      {pdfExportError && (
+        <div className="no-print p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+          <AlertTriangle size={14} />
+          <span>{pdfExportError}</span>
+        </div>
+      )}
 
       {/* ── Customization Panel (no-print) ─────────────────────────────────── */}
       {showOptions && (
