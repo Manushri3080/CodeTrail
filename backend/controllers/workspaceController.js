@@ -3,6 +3,18 @@ const mongoose = require('mongoose');
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
+const {
+  validateWorkspaceTitle,
+  validateWorkspaceDescription,
+  validateWorkspaceLanguage,
+  validateWorkspaceBrandColor,
+  validateWorkspaceStatus,
+  validateWorkspacePreferences,
+  hasSettingsPermission,
+  canModifyStatus,
+  canModifyFiles,
+  mergeWorkspaceSettings
+} = require('../utils/workspaceSettingsValidator');
 
 // Starter file templates based on language
 const getStarterFiles = (language, title) => {
@@ -398,26 +410,73 @@ exports.updateWorkspace = async (req, res) => {
     }
 
     const changingMetadata = title !== undefined || description !== undefined || language !== undefined || brandColor !== undefined || icon !== undefined || settings !== undefined;
-    if (changingMetadata && !['owner', 'admin'].includes(role)) {
+    if (changingMetadata && !hasSettingsPermission(role)) {
       return res.status(403).json({ message: 'Only owners and admins can change workspace settings.' });
     }
-    if (files !== undefined && !['owner', 'admin', 'editor'].includes(role)) {
+    if (files !== undefined && !canModifyFiles(role)) {
       return res.status(403).json({ message: 'Viewers cannot modify workspace files.' });
     }
-    if (status !== undefined && role !== 'owner') {
+    if (status !== undefined && !canModifyStatus(role)) {
       return res.status(403).json({ message: 'Only the workspace owner can change workspace status.' });
     }
     if (!changingMetadata && files === undefined && status === undefined) {
       return res.status(403).json({ message: 'You do not have permission to modify this workspace.' });
     }
 
-    if (title) workspace.title = title.trim();
-    if (description !== undefined) workspace.description = description.trim();
-    if (language) workspace.language = language;
-    if (brandColor) workspace.brandColor = brandColor;
-    if (icon) workspace.icon = icon;
-    if (status && role === 'owner') workspace.status = status;
-    if (settings) workspace.settings = { ...workspace.settings, ...settings };
+    // Input validations via workspaceSettingsValidator
+    if (title !== undefined) {
+      const titleRes = validateWorkspaceTitle(title);
+      if (!titleRes.isValid) {
+        return res.status(400).json({ message: titleRes.error });
+      }
+      workspace.title = titleRes.sanitizedTitle;
+    }
+
+    if (description !== undefined) {
+      const descRes = validateWorkspaceDescription(description);
+      if (!descRes.isValid) {
+        return res.status(400).json({ message: descRes.error });
+      }
+      workspace.description = descRes.sanitizedDescription;
+    }
+
+    if (language !== undefined) {
+      const langRes = validateWorkspaceLanguage(language);
+      if (!langRes.isValid) {
+        return res.status(400).json({ message: langRes.error });
+      }
+      workspace.language = langRes.language;
+    }
+
+    if (brandColor !== undefined) {
+      const colorRes = validateWorkspaceBrandColor(brandColor);
+      if (!colorRes.isValid) {
+        return res.status(400).json({ message: colorRes.error });
+      }
+      workspace.brandColor = colorRes.color;
+    }
+
+    if (icon !== undefined) {
+      workspace.icon = String(icon).trim() || 'Rocket';
+    }
+
+    if (status !== undefined && canModifyStatus(role)) {
+      const statusRes = validateWorkspaceStatus(status);
+      if (!statusRes.isValid) {
+        return res.status(400).json({ message: statusRes.error });
+      }
+      workspace.status = statusRes.status;
+    }
+
+    if (settings !== undefined) {
+      const prefRes = validateWorkspacePreferences(settings);
+      if (!prefRes.isValid) {
+        return res.status(400).json({ message: prefRes.error });
+      }
+      const existingSettings = workspace.settings?.toObject ? workspace.settings.toObject() : (workspace.settings || {});
+      workspace.settings = mergeWorkspaceSettings(existingSettings, prefRes.sanitizedSettings);
+    }
+
     if (files && Array.isArray(files)) {
       workspace.files = files;
       try {
@@ -438,6 +497,29 @@ exports.updateWorkspace = async (req, res) => {
         });
       } catch (actErr) {
         console.warn('Proof-of-work file sync warning:', actErr.message);
+      }
+    }
+
+    // Record activity log for workspace settings updates
+    if (changingMetadata) {
+      try {
+        const { recordActivity } = require('./activityController');
+        const changeSummaries = [];
+        if (title !== undefined) changeSummaries.push(`title to "${workspace.title}"`);
+        if (language !== undefined) changeSummaries.push(`language to ${workspace.language}`);
+        if (settings !== undefined) changeSummaries.push('preferences');
+        if (brandColor !== undefined) changeSummaries.push(`theme to ${workspace.brandColor}`);
+
+        await recordActivity({
+          workspaceId: id,
+          user: req.user,
+          action: 'settings_update',
+          details: `Updated workspace settings: ${changeSummaries.join(', ') || 'metadata updated'}`,
+          linesAdded: 0,
+          timestamp: new Date()
+        });
+      } catch (actErr) {
+        console.warn('Proof-of-work settings update warning:', actErr.message);
       }
     }
 

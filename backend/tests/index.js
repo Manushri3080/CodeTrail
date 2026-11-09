@@ -16,6 +16,9 @@ require('./sessionAnalytics.test');
 // CT-199: Generate Contribution Reports Tests (Anistina Dsouza)
 require('./contributionReport.test');
 
+// Workspace Settings & Preferences Unit Tests (Anistina Dsouza)
+require('./workspaceSettings.test');
+
 // Workspace Visibility, Creation & Dashboard Regression Tests (Meet Sheth)
 require('./workspaceRegression.test');
 

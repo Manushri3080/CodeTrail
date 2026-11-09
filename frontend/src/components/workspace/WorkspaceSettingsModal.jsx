@@ -20,7 +20,8 @@ import {
   Sliders,
   ChevronRight,
   RefreshCw,
-  AlertTriangle
+  AlertTriangle,
+  Bell
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
 import { getRelativeTime } from '../../utils/timeUtils';
@@ -53,7 +54,7 @@ export const WorkspaceSettingsModal = ({
   const [activeTab, setActiveTab] = useState(() => {
     try {
       const saved = localStorage.getItem(`ct-workspace-settings-activetab-${wsId}`);
-      if (saved && ['general', 'appearance', 'history', 'members', 'danger'].includes(saved)) return saved;
+      if (saved && ['general', 'preferences', 'appearance', 'history', 'members', 'danger'].includes(saved)) return saved;
     } catch (e) {}
     return 'general';
   });
@@ -80,6 +81,34 @@ export const WorkspaceSettingsModal = ({
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+
+  // Workspace-Level Preferences State (TASK-3)
+  const [allowAnonymousExecution, setAllowAnonymousExecution] = useState(!!workspace?.settings?.allowAnonymousExecution);
+  const [autoSaveInterval, setAutoSaveInterval] = useState(workspace?.settings?.autoSaveInterval || 2500);
+  const [tabSize, setTabSize] = useState(workspace?.settings?.tabSize || 2);
+  const [wordWrap, setWordWrap] = useState(workspace?.settings?.wordWrap !== undefined ? workspace.settings.wordWrap : true);
+  const [emailOnMemberJoin, setEmailOnMemberJoin] = useState(!!workspace?.settings?.notifications?.emailOnMemberJoin);
+  const [executionFailureAlerts, setExecutionFailureAlerts] = useState(workspace?.settings?.notifications?.executionFailureAlerts !== undefined ? workspace.settings.notifications.executionFailureAlerts : true);
+  const [sessionSummaryAlerts, setSessionSummaryAlerts] = useState(workspace?.settings?.notifications?.sessionSummaryAlerts !== undefined ? workspace.settings.notifications.sessionSummaryAlerts : true);
+
+  // Sync state if incoming workspace prop changes
+  useEffect(() => {
+    if (workspace) {
+      setTitle(workspace.title || workspace.name || 'Project Workspace');
+      setDescription(workspace.description || workspace.desc || 'Collaborative development workspace on CodeTrail');
+      setLanguage(workspace.language || 'javascript');
+      setBrandColor(workspace.brandColor || 'purple');
+      setBrandIcon(workspace.icon || 'Rocket');
+      setIsPublic(!!workspace.settings?.isPublic);
+      setAllowAnonymousExecution(!!workspace.settings?.allowAnonymousExecution);
+      setAutoSaveInterval(workspace.settings?.autoSaveInterval || 2500);
+      setTabSize(workspace.settings?.tabSize || 2);
+      setWordWrap(workspace.settings?.wordWrap !== undefined ? workspace.settings.wordWrap : true);
+      setEmailOnMemberJoin(!!workspace.settings?.notifications?.emailOnMemberJoin);
+      setExecutionFailureAlerts(workspace.settings?.notifications?.executionFailureAlerts !== undefined ? workspace.settings.notifications.executionFailureAlerts : true);
+      setSessionSummaryAlerts(workspace.settings?.notifications?.sessionSummaryAlerts !== undefined ? workspace.settings.notifications.sessionSummaryAlerts : true);
+    }
+  }, [workspace]);
 
   const [isSessionActive, setIsSessionActive] = useState(() => {
     try {
@@ -392,34 +421,72 @@ export const WorkspaceSettingsModal = ({
   const handleSaveGeneralSettings = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!canManageSettings) {
-      setSaveMessage('Read-only access for your workspace role.');
+      setSaveMessage('Read-only access: only Owners and Admins can modify settings.');
       return;
     }
+    if (!title || !title.trim()) {
+      setSaveMessage('Workspace title is required.');
+      return;
+    }
+    if (title.trim().length > 80) {
+      setSaveMessage('Workspace title cannot exceed 80 characters.');
+      return;
+    }
+    if (description && description.trim().length > 300) {
+      setSaveMessage('Description cannot exceed 300 characters.');
+      return;
+    }
+
     setSaving(true);
     setSaveMessage('');
 
+    const payload = {
+      title: title.trim(),
+      description: description.trim(),
+      language,
+      brandColor,
+      icon: brandIcon,
+      settings: {
+        isPublic,
+        allowAnonymousExecution,
+        autoSaveInterval,
+        tabSize,
+        wordWrap,
+        notifications: {
+          emailOnMemberJoin,
+          executionFailureAlerts,
+          sessionSummaryAlerts
+        }
+      }
+    };
+
     try {
       if (token && wsId && wsId !== 'demo-workspace') {
-        await axios.patch(`${API_BASE}/workspaces/${wsId}`, {
-          title,
-          description,
-          language,
-          brandColor,
-          icon: brandIcon,
-          settings: { isPublic }
-        }, {
+        await axios.patch(`${API_BASE}/workspaces/${wsId}`, payload, {
           headers: { Authorization: `Bearer ${token}` }
         });
       }
 
       const updatedWs = {
         ...(workspace || {}),
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         language,
         brandColor,
         icon: brandIcon,
-        settings: { ...(workspace?.settings || {}), isPublic }
+        settings: {
+          ...(workspace?.settings || {}),
+          isPublic,
+          allowAnonymousExecution,
+          autoSaveInterval,
+          tabSize,
+          wordWrap,
+          notifications: {
+            emailOnMemberJoin,
+            executionFailureAlerts,
+            sessionSummaryAlerts
+          }
+        }
       };
 
       if (onUpdateWorkspace) onUpdateWorkspace(updatedWs);
@@ -428,7 +495,7 @@ export const WorkspaceSettingsModal = ({
       localStorage.setItem('ct-active-workspace-session', JSON.stringify(updatedWs));
 
       // Record activity log event in DB
-      await addHistoryLog('settings', 'Settings Updated', `Updated workspace title to "${title}" and language to ${language}.`);
+      await addHistoryLog('settings', 'Settings Updated', `Updated workspace title to "${title.trim()}" and preferences.`);
 
       setSaveMessage('Workspace settings updated successfully!');
 
@@ -439,11 +506,12 @@ export const WorkspaceSettingsModal = ({
       }, 600);
     } catch (err) {
       console.warn('Save workspace settings error:', err.message);
-      setSaveMessage('Saved locally (Offline Mode).');
+      const errMsg = err.response?.data?.message || 'Saved locally (Offline Mode).';
+      setSaveMessage(errMsg);
       setTimeout(() => {
         setSaveMessage('');
         if (onClose) onClose();
-      }, 600);
+      }, 800);
     } finally {
       setSaving(false);
     }
@@ -685,6 +753,16 @@ export const WorkspaceSettingsModal = ({
             </button>
 
             <button
+              onClick={() => setActiveTab('preferences')}
+              className={`ct-settings-nav-btn ${activeTab === 'preferences' ? 'active' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <Settings size={16} className="text-blue-400" />
+                <span>Preferences & Behavior</span>
+              </div>
+            </button>
+
+            <button
               onClick={() => setActiveTab('appearance')}
               className={`ct-settings-nav-btn ${activeTab === 'appearance' ? 'active' : ''}`}
             >
@@ -734,6 +812,17 @@ export const WorkspaceSettingsModal = ({
 
           {/* TAB CONTENT VIEW */}
           <div className="ct-settings-modal-content">
+
+            {/* RBAC Permission Banner (TASK-5) */}
+            {!canManageSettings && (
+              <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-mono mb-4">
+                <AlertTriangle size={18} className="shrink-0 text-amber-400" />
+                <div>
+                  <span className="font-bold">Read-Only Mode: </span>
+                  You have the <span className="underline font-bold uppercase">{workspaceRole}</span> role in this workspace. Modifying workspace details, configuration, and preferences requires Owner or Administrator privileges.
+                </div>
+              </div>
+            )}
             
             {/* 1. GENERAL DETAILS TAB */}
             {activeTab === 'general' && (
@@ -751,24 +840,39 @@ export const WorkspaceSettingsModal = ({
 
                   <div className="space-y-5">
                     <div className="ct-settings-field">
-                      <label className="ct-settings-label">Workspace Title</label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="ct-settings-label mb-0">Workspace Title</label>
+                        <span className={`text-[10px] font-mono ${title.length > 80 ? 'text-rose-400 font-bold' : 'text-gray-400'}`}>
+                          {title.length}/80
+                        </span>
+                      </div>
                       <input 
                         type="text" 
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
-                        className="ct-settings-input"
+                        disabled={!canManageSettings}
+                        className="ct-settings-input disabled:opacity-60 disabled:cursor-not-allowed"
                         placeholder="e.g. Python Telemetry ML Model"
+                        maxLength={80}
                         required
                       />
                     </div>
 
                     <div className="ct-settings-field">
-                      <label className="ct-settings-label">Description</label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="ct-settings-label mb-0">Description</label>
+                        <span className={`text-[10px] font-mono ${description.length > 300 ? 'text-rose-400 font-bold' : 'text-gray-400'}`}>
+                          {description.length}/300
+                        </span>
+                      </div>
                       <textarea 
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
-                        className="ct-settings-textarea"
+                        disabled={!canManageSettings}
+                        className="ct-settings-textarea disabled:opacity-60 disabled:cursor-not-allowed"
                         placeholder="Briefly describe what this workspace is built for..."
+                        maxLength={300}
+                        rows={3}
                       />
                     </div>
 
@@ -778,7 +882,8 @@ export const WorkspaceSettingsModal = ({
                         <select
                           value={language}
                           onChange={(e) => setLanguage(e.target.value)}
-                          className="ct-settings-select"
+                          disabled={!canManageSettings}
+                          className="ct-settings-select disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           {AVAILABLE_LANGUAGES.map(lang => (
                             <option key={lang.id} value={lang.id} className="bg-[#12131F] text-white">
@@ -813,6 +918,150 @@ export const WorkspaceSettingsModal = ({
               </form>
             )}
 
+            {/* WORKSPACE PREFERENCES TAB (TASK-3) */}
+            {activeTab === 'preferences' && (
+              <form onSubmit={handleSaveGeneralSettings} className="flex flex-col gap-6">
+                <div>
+                  <h3 className="ct-settings-section-title">Workspace Preferences & Behavior</h3>
+                  <p className="ct-settings-section-sub">Configure sandbox execution policies, editor sync behavior, and notification alerts.</p>
+                </div>
+
+                {/* 1. EXECUTION POLICIES */}
+                <div className="ct-settings-card-section">
+                  <div className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2.5">
+                    <Zap size={16} className="text-amber-400" />
+                    <span>Execution Engine Policies</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                    <div className="space-y-1 pr-4">
+                      <div className="text-xs font-bold font-mono text-white">Allow Anonymous & Viewer Execution</div>
+                      <p className="text-[11px] text-gray-400 leading-relaxed">
+                        Allow guests and users with Viewer permissions to execute code within the Piston v2 multi-language sandbox.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={allowAnonymousExecution}
+                        onChange={(e) => setAllowAnonymousExecution(e.target.checked)}
+                        disabled={!canManageSettings}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 disabled:opacity-50"></div>
+                    </label>
+                  </div>
+                </div>
+
+                {/* 2. EDITOR SYNCHRONIZATION & DEFAULTS */}
+                <div className="ct-settings-card-section">
+                  <div className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2.5">
+                    <FileCode size={16} className="text-cyan-400" />
+                    <span>Editor & Auto-Save Sync</span>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="ct-settings-field">
+                        <label className="ct-settings-label">Auto-Save Frequency</label>
+                        <select
+                          value={autoSaveInterval}
+                          onChange={(e) => setAutoSaveInterval(Number(e.target.value))}
+                          disabled={!canManageSettings}
+                          className="ct-settings-select disabled:opacity-60"
+                        >
+                          <option value={1000} className="bg-[#12131F] text-white">Aggressive (1.0s)</option>
+                          <option value={2500} className="bg-[#12131F] text-white">Standard (2.5s - Recommended)</option>
+                          <option value={5000} className="bg-[#12131F] text-white">Relaxed (5.0s)</option>
+                          <option value={10000} className="bg-[#12131F] text-white">Infrequent (10.0s)</option>
+                        </select>
+                      </div>
+
+                      <div className="ct-settings-field">
+                        <label className="ct-settings-label">Default Tab Indentation</label>
+                        <select
+                          value={tabSize}
+                          onChange={(e) => setTabSize(Number(e.target.value))}
+                          disabled={!canManageSettings}
+                          className="ct-settings-select disabled:opacity-60"
+                        >
+                          <option value={2} className="bg-[#12131F] text-white">2 Spaces (Modern JS/Python standard)</option>
+                          <option value={4} className="bg-[#12131F] text-white">4 Spaces (C++/Java standard)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="space-y-1 pr-4">
+                        <div className="text-xs font-bold font-mono text-white">Monaco Editor Word Wrap</div>
+                        <p className="text-[11px] text-gray-400 leading-relaxed">
+                          Automatically soft-wrap code lines exceeding the viewport editor width.
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input
+                          type="checkbox"
+                          checked={wordWrap}
+                          onChange={(e) => setWordWrap(e.target.checked)}
+                          disabled={!canManageSettings}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600 disabled:opacity-50"></div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. NOTIFICATIONS & TELEMETRY ALERTS */}
+                <div className="ct-settings-card-section">
+                  <div className="text-xs font-mono font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2.5">
+                    <Bell size={16} className="text-purple-400" />
+                    <span>Notifications & Telemetry Alerts</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="pr-4">
+                        <div className="text-xs font-bold font-mono text-white">Collaborator Join Notifications</div>
+                        <div className="text-[11px] text-gray-400">Receive alert notifications when peers join via invite code.</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={emailOnMemberJoin}
+                        onChange={(e) => setEmailOnMemberJoin(e.target.checked)}
+                        disabled={!canManageSettings}
+                        className="w-4 h-4 accent-purple-600 rounded cursor-pointer disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="pr-4">
+                        <div className="text-xs font-bold font-mono text-white">Execution Failure Alerts</div>
+                        <div className="text-[11px] text-gray-400">Display diagnostic alert notifications when compile errors or execution crashes occur.</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={executionFailureAlerts}
+                        onChange={(e) => setExecutionFailureAlerts(e.target.checked)}
+                        disabled={!canManageSettings}
+                        className="w-4 h-4 accent-purple-600 rounded cursor-pointer disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between p-3.5 rounded-xl bg-white/[0.02] border border-white/5">
+                      <div className="pr-4">
+                        <div className="text-xs font-bold font-mono text-white">Session Contribution Summary</div>
+                        <div className="text-[11px] text-gray-400">Prompt a contribution dossier summary report at the completion of active editing sessions.</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={sessionSummaryAlerts}
+                        onChange={(e) => setSessionSummaryAlerts(e.target.checked)}
+                        disabled={!canManageSettings}
+                        className="w-4 h-4 accent-purple-600 rounded cursor-pointer disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </form>
+            )}
             {/* 2. THEME & ACCESS CONTROL TAB */}
             {activeTab === 'appearance' && (
               <form onSubmit={handleSaveGeneralSettings} className="flex flex-col gap-6">
