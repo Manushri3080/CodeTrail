@@ -16,4 +16,7 @@ require('./sessionAnalytics.test');
 // CT-199: Generate Contribution Reports Tests (Anistina Dsouza)
 require('./contributionReport.test');
 
+// Workspace Settings & Preferences Unit Tests (Anistina Dsouza)
+require('./workspaceSettings.test');
+
 console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');

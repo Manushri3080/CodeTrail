@@ -84,7 +84,14 @@ const WorkspaceSchema = new mongoose.Schema({
   settings: {
     isPublic: { type: Boolean, default: false },
     allowAnonymousExecution: { type: Boolean, default: false },
-    autoSaveInterval: { type: Number, default: 3000 } // in ms
+    autoSaveInterval: { type: Number, default: 2500, min: 1000, max: 30000 }, // in ms
+    tabSize: { type: Number, enum: [2, 4], default: 2 },
+    wordWrap: { type: Boolean, default: true },
+    notifications: {
+      emailOnMemberJoin: { type: Boolean, default: false },
+      executionFailureAlerts: { type: Boolean, default: true },
+      sessionSummaryAlerts: { type: Boolean, default: true }
+    }
   },
   timeSpent: {
     type: String,

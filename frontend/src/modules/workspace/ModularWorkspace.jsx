@@ -1404,10 +1404,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
     }
+    const saveDelay = currentWorkspace?.settings?.autoSaveInterval || 2500;
     autoSaveTimerRef.current = setTimeout(() => {
       autoSaveTimerRef.current = null;
       triggerAutoSave();
-    }, 2500);
+    }, saveDelay);
   };
 
   // Dynamic Programming Language Selection Handler
@@ -5284,8 +5285,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome }) => {
                   minimap: { enabled: true, side: "right" },
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
-                  tabSize: 2,
-                  wordWrap: "on",
+                  tabSize: currentWorkspace?.settings?.tabSize || 2,
+                  wordWrap: currentWorkspace?.settings?.wordWrap === false ? "off" : "on",
                   scrollBeyondLastColumn: 0,
                   smoothScrolling: true,
                   cursorBlinking: "smooth",
