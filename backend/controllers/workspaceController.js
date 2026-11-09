@@ -15,6 +15,14 @@ const {
   canModifyFiles,
   mergeWorkspaceSettings
 } = require('../utils/workspaceSettingsValidator');
+const {
+  getRolePermissions,
+  hasPermission,
+  canAssignRole,
+  canInviteMember,
+  canRemoveMember,
+  getAllRoleDefinitions
+} = require('../utils/permissionValidator');
 
 // Starter file templates based on language
 const getStarterFiles = (language, title) => {
@@ -823,7 +831,7 @@ exports.clearWorkspaceHistory = async (req, res) => {
 };
 
 /**
- * 11. Get Workspace Members from DB
+ * 11. Get Workspace Members & Permissions from DB
  * GET /api/workspaces/:id/members
  */
 exports.getWorkspaceMembers = async (req, res) => {
@@ -834,29 +842,86 @@ exports.getWorkspaceMembers = async (req, res) => {
       return res.json({ members: [] });
     }
 
-    const workspace = await Workspace.findById(id).populate('members.user', 'name email avatar status');
+    let query = Workspace.findById(id);
+    if (query && typeof query.populate === 'function') {
+      query = query.populate('owner', 'name email avatar status').populate('members.user', 'name email avatar status');
+    }
+    const workspace = await query;
 
     if (!workspace) {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
 
-    if (!hasWorkspaceRole(workspace, req.user._id, ['owner', 'admin', 'editor', 'viewer'])) {
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    const isPublic = Boolean(workspace.settings?.isPublic);
+
+    if (!userId && !isPublic) {
+      return res.status(401).json({ message: 'Authentication required to access workspace members.' });
+    }
+
+    const requesterRole = userId ? getWorkspaceRole(workspace, userId) : (isPublic ? 'viewer' : null);
+    if (!requesterRole && !isPublic) {
       return res.status(403).json({ message: 'You do not have access to workspace members.' });
     }
 
-    const members = (workspace.members || []).map(m => {
+    const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : null;
+    const members = [];
+    const seenUserIds = new Set();
+
+    // 1. Always ensure workspace owner is present at the top of the roster
+    if (workspace.owner && ownerId) {
+      const oUser = workspace.owner;
+      const ownerPerms = getRolePermissions('owner');
+      members.push({
+        id: ownerId,
+        userId: ownerId,
+        name: oUser.name || 'Workspace Owner',
+        email: oUser.email || 'owner@codetrail.dev',
+        role: 'owner',
+        status: oUser.status || 'online',
+        joinedAt: workspace.createdAt || new Date(),
+        isOwner: true,
+        permissions: ownerPerms.capabilities,
+        permissionList: ownerPerms.permissionList,
+        roleDetails: ownerPerms
+      });
+      seenUserIds.add(ownerId);
+    }
+
+    // 2. Format remaining members with their role capabilities and permissions
+    (workspace.members || []).forEach(m => {
       const u = m.user;
-      return {
-        id: u?._id ? u._id.toString() : m._id,
+      const uId = u?._id ? u._id.toString() : (m.user ? m.user.toString() : (m._id ? m._id.toString() : null));
+      if (uId && seenUserIds.has(uId)) {
+        return; // Avoid duplicating owner
+      }
+      if (uId) seenUserIds.add(uId);
+
+      const mRole = m.role || 'editor';
+      const rolePerms = getRolePermissions(mRole);
+
+      members.push({
+        id: uId || (m._id ? m._id.toString() : `mem-${members.length}`),
+        userId: uId,
         name: u?.name || 'Collaborator',
         email: u?.email || 'member@codetrail.dev',
-        role: m.role || 'editor',
+        role: mRole,
         status: u?.status || 'online',
-        joinedAt: m.joinedAt
-      };
+        joinedAt: m.joinedAt,
+        isOwner: false,
+        permissions: rolePerms.capabilities,
+        permissionList: rolePerms.permissionList,
+        roleDetails: rolePerms
+      });
     });
 
-    res.json({ members });
+    res.json({
+      workspaceId: id,
+      members,
+      currentUserRole: requesterRole || 'viewer',
+      currentUserPermissions: getRolePermissions(requesterRole || 'viewer'),
+      roleDefinitions: getAllRoleDefinitions()
+    });
   } catch (err) {
     console.error('Get Workspace Members Error:', err);
     res.status(500).json({ message: 'Failed to fetch members from database', error: err.message });
@@ -885,8 +950,10 @@ exports.addWorkspaceMember = async (req, res) => {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
 
-    if (!hasWorkspaceRole(workspace, req.user._id, ['owner', 'admin'])) {
-      return res.status(403).json({ message: 'Only owners and admins can invite members.' });
+    const requesterRole = getWorkspaceRole(workspace, req.user._id);
+    const inviteCheck = canInviteMember({ requesterRole, inviteRole: role });
+    if (!inviteCheck.allowed) {
+      return res.status(inviteCheck.statusCode || 403).json({ message: inviteCheck.reason });
     }
 
     const cleanEmail = email.trim().toLowerCase();
@@ -897,16 +964,24 @@ exports.addWorkspaceMember = async (req, res) => {
       return res.status(404).json({ message: 'No CodeTrail account exists for this email yet.' });
     }
 
+    const targetUserIdStr = targetUser._id.toString();
+    const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : null;
+    if (ownerId && ownerId === targetUserIdStr) {
+      return res.status(400).json({ message: 'The workspace owner is already part of the workspace.' });
+    }
+
     // Check if already in workspace
-    const alreadyExists = workspace.members.some(m => m.user && m.user.toString() === targetUser._id.toString());
+    const alreadyExists = (workspace.members || []).some(m => m.user && m.user.toString() === targetUserIdStr);
     if (alreadyExists) {
       return res.status(400).json({ message: 'User is already a member of this workspace.' });
     }
 
+    const normalizedRole = role.toLowerCase().trim();
+
     // Add to members array in DB
     workspace.members.push({
       user: targetUser._id,
-      role: ['admin', 'editor', 'viewer'].includes(role) ? role : 'editor',
+      role: normalizedRole,
       joinedAt: new Date()
     });
 
@@ -916,7 +991,7 @@ exports.addWorkspaceMember = async (req, res) => {
         id: `h-${Date.now()}`,
         type: 'member',
         title: 'Member Invited',
-        details: `Invited ${targetUser.name} (${cleanEmail}) as ${role.toUpperCase()}.`,
+        details: `Invited ${targetUser.name} (${cleanEmail}) as ${normalizedRole.toUpperCase()}.`,
         user: req.user?.name || 'Developer',
         timestamp: new Date()
       },
@@ -925,20 +1000,24 @@ exports.addWorkspaceMember = async (req, res) => {
 
     await workspace.save();
 
-    const updatedWorkspace = await Workspace.findById(id).populate('members.user', 'name email avatar status');
-
-    const formattedMembers = (updatedWorkspace.members || []).map(m => ({
-      id: m.user?._id ? m.user._id.toString() : m._id,
-      name: m.user?.name || 'Collaborator',
-      email: m.user?.email || cleanEmail,
-      role: m.role || 'editor',
+    const rolePerms = getRolePermissions(normalizedRole);
+    const newMember = {
+      id: targetUser._id.toString(),
+      userId: targetUser._id.toString(),
+      name: targetUser.name || 'Collaborator',
+      email: cleanEmail,
+      role: normalizedRole,
       status: 'online',
-      joinedAt: m.joinedAt
-    }));
+      joinedAt: new Date(),
+      isOwner: false,
+      permissions: rolePerms.capabilities,
+      permissionList: rolePerms.permissionList,
+      roleDetails: rolePerms
+    };
 
     res.status(201).json({
       message: `Successfully invited ${targetUser.name}!`,
-      members: formattedMembers
+      member: newMember
     });
 
   } catch (err) {
@@ -956,10 +1035,6 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
     const { id, memberId } = req.params;
     const { role } = req.body;
 
-    if (!role || !['owner', 'admin', 'editor', 'viewer'].includes(role)) {
-      return res.status(400).json({ message: 'Valid role required.' });
-    }
-
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(404).json({ message: 'Workspace not found.' });
     }
@@ -970,29 +1045,31 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
     }
 
     const requesterRole = getWorkspaceRole(workspace, req.user._id);
-    if (!['owner', 'admin'].includes(requesterRole)) {
-      return res.status(403).json({ message: 'Only owners and admins can manage member roles.' });
-    }
-
-    if (role === 'owner') {
-      return res.status(400).json({ message: 'The workspace owner role cannot be reassigned.' });
-    }
+    const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : '';
+    const isOwnerTarget = ownerId && (ownerId === String(memberId));
 
     const memberItem = (workspace.members || []).find(m => matchesMember(m, memberId));
-    if (!memberItem) {
+    if (!memberItem && !isOwnerTarget) {
       return res.status(404).json({ message: 'Member not found in workspace.' });
     }
 
-    if (memberItem.role === 'owner' || (requesterRole === 'admin' && memberItem.role === 'admin')) {
-      return res.status(403).json({ message: 'You cannot change this member role.' });
-    }
-    if (requesterRole === 'admin' && role === 'admin') {
-      return res.status(403).json({ message: 'Only the workspace owner can assign admin role.' });
+    const targetCurrentRole = isOwnerTarget ? 'owner' : (memberItem?.role || 'editor');
+
+    const authCheck = canAssignRole({
+      requesterRole,
+      targetCurrentRole,
+      targetNewRole: role,
+      isOwnerTarget
+    });
+
+    if (!authCheck.allowed) {
+      return res.status(authCheck.statusCode || 403).json({ message: authCheck.reason });
     }
 
-    memberItem.role = role;
+    const normalizedRole = role.toLowerCase().trim();
+    memberItem.role = normalizedRole;
 
-    // Add history log in DB
+    // Fetch user name for history log
     const targetUserId = memberItem.user ? (memberItem.user._id || memberItem.user) : null;
     let userName = 'Collaborator';
     if (targetUserId) {
@@ -1009,7 +1086,7 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
         id: `h-${Date.now()}`,
         type: 'member',
         title: 'Member Role Updated',
-        details: `Updated ${userName}'s role to ${role.toUpperCase()}.`,
+        details: `Updated ${userName}'s role to ${normalizedRole.toUpperCase()}.`,
         user: req.user?.name || 'Developer',
         timestamp: new Date()
       },
@@ -1018,7 +1095,19 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
 
     await workspace.save();
 
-    res.json({ message: 'Member role updated successfully.' });
+    const rolePerms = getRolePermissions(normalizedRole);
+    res.json({
+      message: 'Member role updated successfully.',
+      member: {
+        id: targetUserId ? targetUserId.toString() : memberId,
+        userId: targetUserId ? targetUserId.toString() : memberId,
+        name: userName,
+        role: memberItem.role,
+        permissions: rolePerms.capabilities,
+        permissionList: rolePerms.permissionList,
+        roleDetails: rolePerms
+      }
+    });
 
   } catch (err) {
     console.error('Update Workspace Member Role Error:', err);
@@ -1044,22 +1133,24 @@ exports.removeWorkspaceMember = async (req, res) => {
     }
 
     const requesterRole = getWorkspaceRole(workspace, req.user._id);
-    if (!['owner', 'admin'].includes(requesterRole)) {
-      return res.status(403).json({ message: 'Only owners and admins can remove members.' });
-    }
-
     const ownerId = workspace.owner ? String(workspace.owner._id || workspace.owner) : '';
-    if (ownerId && ownerId === String(memberId)) {
-      return res.status(400).json({ message: 'The workspace owner cannot be removed.' });
-    }
+    const isOwnerTarget = ownerId && (ownerId === String(memberId));
 
     const targetMember = (workspace.members || []).find(m => matchesMember(m, memberId));
-    if (!targetMember) {
+    if (!targetMember && !isOwnerTarget) {
       return res.status(404).json({ message: 'Member not found in workspace.' });
     }
 
-    if (targetMember.role === 'owner' || (requesterRole === 'admin' && targetMember.role === 'admin')) {
-      return res.status(403).json({ message: 'You cannot remove this member.' });
+    const targetRole = isOwnerTarget ? 'owner' : (targetMember?.role || 'editor');
+
+    const removeCheck = canRemoveMember({
+      requesterRole,
+      targetRole,
+      isOwnerTarget
+    });
+
+    if (!removeCheck.allowed) {
+      return res.status(removeCheck.statusCode || 403).json({ message: removeCheck.reason });
     }
 
     let userName = 'Collaborator';
@@ -1075,7 +1166,6 @@ exports.removeWorkspaceMember = async (req, res) => {
 
     workspace.members = (workspace.members || []).filter(m => !matchesMember(m, memberId));
 
-    // Add history log entry in DB
     workspace.activityLogs = [
       {
         id: `h-${Date.now()}`,
@@ -1090,11 +1180,56 @@ exports.removeWorkspaceMember = async (req, res) => {
 
     await workspace.save();
 
-    res.json({ message: 'Member removed successfully.' });
+    res.json({ message: 'Member removed successfully.', memberId });
 
   } catch (err) {
     console.error('Remove Workspace Member Error:', err);
     res.status(500).json({ message: 'Failed to remove member', error: err.message });
+  }
+};
+
+/**
+ * 15. Get Workspace Permissions & Capability Matrix
+ * GET /api/workspaces/:id/permissions
+ */
+exports.getWorkspacePermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    const workspace = await Workspace.findById(id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    const isPublic = Boolean(workspace.settings?.isPublic);
+    if (!userId && !isPublic) {
+      return res.status(401).json({ message: 'Authentication required to view workspace permissions.' });
+    }
+
+    const role = userId ? (getWorkspaceRole(workspace, userId) || (isPublic ? 'viewer' : null)) : (isPublic ? 'viewer' : null);
+    if (!role) {
+      return res.status(403).json({ message: 'You do not have access to this workspace.' });
+    }
+
+    const userPerms = getRolePermissions(role);
+    const definitions = getAllRoleDefinitions();
+
+    res.json({
+      workspaceId: id,
+      userRole: role,
+      permissions: userPerms.capabilities,
+      permissionList: userPerms.permissionList,
+      roleDetails: userPerms,
+      roleDefinitions: definitions
+    });
+  } catch (err) {
+    console.error('Get Workspace Permissions Error:', err);
+    res.status(500).json({ message: 'Failed to fetch workspace permissions', error: err.message });
   }
 };
 
@@ -1276,7 +1411,7 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
       if (startDate) logQuery.timestamp.$gte = new Date(startDate);
       if (endDate) logQuery.timestamp.$lte = new Date(endDate);
     } else if (activeDateRange === 'today') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfDay = new Date(Math.min(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), now.getTime() - 24 * 60 * 60 * 1000));
       logQuery.timestamp = { $gte: startOfDay };
     } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
       const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -1386,7 +1521,7 @@ exports.getUserCrossWorkspaceHistory = async (req, res) => {
         }
       }
       if (activeDateRange === 'today') {
-        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        const startOfDay = Math.min(new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), now.getTime() - 24 * 60 * 60 * 1000);
         embeddedList = embeddedList.filter(item => new Date(item.timestamp).getTime() >= startOfDay);
       } else if (activeDateRange === 'week' || activeDateRange === 'this_week') {
         const startOfWeek = now.getTime() - 7 * 24 * 60 * 60 * 1000;

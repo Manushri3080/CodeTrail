@@ -4,6 +4,7 @@ import { io } from "socket.io-client";
 import { BACKEND_URL, API_BASE } from "../../config/api";
 import {
   Users,
+  Shield,
   ShieldCheck,
   Zap,
   GitCommit,
@@ -388,6 +389,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
   // Project Scaffolding Modal Open State
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [settingsModalInitialTab, setSettingsModalInitialTab] = useState("general");
 
   // Interactive CLI Terminal Console State
   const [terminalEntries, setTerminalEntries] = useState([
@@ -3989,7 +3991,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
           <button
             type="button"
-            onClick={() => setIsSettingsModalOpen(true)}
+            onClick={() => {
+              setSettingsModalInitialTab("general");
+              setIsSettingsModalOpen(true);
+            }}
             className="flex items-center bg-white/10 hover:bg-purple-500/25 border border-white/15 hover:border-purple-500/40 text-gray-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
             style={{ padding: "10px 22px", gap: "10px" }}
             title="Workspace Settings & History Log"
@@ -4997,9 +5002,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                   </span>
                                 </span>
                                 <span className="text-gray-600">•</span>
-                                <span className="capitalize text-gray-400">
-                                  {session.role || "editor"}
-                                </span>
+                                {(() => {
+                                  const r = (session.role || "editor").toLowerCase();
+                                  const badgeStyle = 
+                                    r === "owner" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
+                                    r === "admin" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
+                                    r === "viewer" ? "bg-amber-500/20 text-amber-300 border-amber-500/40" :
+                                    "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+                                  return (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${badgeStyle}`}>
+                                      {r}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -5056,13 +5071,39 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             </span>
                           </span>
                           <span className="text-gray-600">•</span>
-                          <span className="capitalize text-gray-400">
-                            {activeWorkspace?.role || "editor"}
-                          </span>
+                          {(() => {
+                            const r = (activeWorkspace?.role || "editor").toLowerCase();
+                            const badgeStyle = 
+                              r === "owner" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
+                              r === "admin" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
+                              r === "viewer" ? "bg-amber-500/20 text-amber-300 border-amber-500/40" :
+                              "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+                            return (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${badgeStyle}`}>
+                                {r}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
                   )}
+
+                  {/* View Participant Permissions Action Button */}
+                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSettingsModalInitialTab("members");
+                        setIsSettingsModalOpen(true);
+                      }}
+                      className="w-full py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 hover:text-white border border-purple-500/30 hover:border-purple-500/60 text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                      title="View workspace participant permissions and RBAC role matrix"
+                    >
+                      <Shield size={14} className="text-purple-400" />
+                      <span>View Participant Permissions</span>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
@@ -7155,12 +7196,17 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
         isOpen={isSettingsModalOpen}
-        onClose={() => setIsSettingsModalOpen(false)}
+        onClose={() => {
+          setIsSettingsModalOpen(false);
+          setSettingsModalInitialTab("general");
+        }}
         workspace={currentWorkspace}
         onUpdateWorkspace={(updatedWs) => {
           setCurrentWorkspace(updatedWs);
         }}
         customFiles={customFiles}
+        initialTab={settingsModalInitialTab}
+        showToast={showToast}
       />
 
       {/* ── Toast Notification Stack ──────────────────────────────────────── */}

@@ -32,6 +32,9 @@ require('./workspaceRegression.test');
   // CT-235 & CT-236: Search, Filter Engine & Dashboard Integration Tests (Monar)
   await require('./searchFilterIntegration.test');
 
+  // Participant Permissions & RBAC Unit & Integration Tests (Rishika Shah)
+  await require('./participantPermissions.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);

@@ -1,27 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-  X, 
-  Settings, 
-  History, 
-  Users, 
-  ShieldAlert, 
-  Check, 
-  Copy, 
-  Globe, 
-  Lock, 
-  FileCode, 
-  Zap, 
-  UserCheck, 
-  Trash2, 
-  Save, 
-  Clock, 
+import {
+  X,
+  Settings,
+  History,
+  Users,
+  ShieldAlert,
+  Check,
+  Copy,
+  Globe,
+  Lock,
+  FileCode,
+  Zap,
+  UserCheck,
+  Trash2,
+  Save,
+  Clock,
   Sparkles,
   Sliders,
   ChevronRight,
   RefreshCw,
   AlertTriangle,
-  Bell
+  Bell,
+  Shield,
+  ShieldCheck,
+  Eye,
+  Edit3,
+  Crown,
+  CheckCircle2,
+  XCircle,
+  Info,
+  Loader2
 } from 'lucide-react';
 import { API_BASE } from '../../config/api';
 import { getRelativeTime } from '../../utils/timeUtils';
@@ -36,12 +45,85 @@ const AVAILABLE_LANGUAGES = [
   { id: 'go', name: 'Go', ext: '.go' }
 ];
 
-export const WorkspaceSettingsModal = ({ 
-  isOpen, 
-  onClose, 
-  workspace, 
+export const ROLE_CONFIG = {
+  owner: {
+    id: 'owner',
+    name: 'Owner',
+    level: 4,
+    badgeBg: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
+    avatarGradient: 'from-purple-500 via-indigo-600 to-purple-700',
+    dotColor: 'bg-purple-400',
+    description: 'Full workspace authority: configure settings, manage all member roles, and archive/delete workspace.',
+    keyCapabilities: [
+      { label: 'Edit Files', allowed: true },
+      { label: 'Run Sandbox Code', allowed: true },
+      { label: 'Manage Settings', allowed: true },
+      { label: 'Manage Roles', allowed: true },
+      { label: 'Clear Logs', allowed: true },
+      { label: 'Delete Workspace', allowed: true }
+    ]
+  },
+  admin: {
+    id: 'admin',
+    name: 'Admin',
+    level: 3,
+    badgeBg: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+    avatarGradient: 'from-blue-500 via-sky-600 to-indigo-700',
+    dotColor: 'bg-blue-400',
+    description: 'Operational manager: configure settings, manage files, and invite/assign Editor & Viewer roles.',
+    keyCapabilities: [
+      { label: 'Edit Files', allowed: true },
+      { label: 'Run Sandbox Code', allowed: true },
+      { label: 'Manage Settings', allowed: true },
+      { label: 'Manage Roles (Ed/Vw)', allowed: true },
+      { label: 'Clear Logs', allowed: true },
+      { label: 'Delete Workspace', allowed: false }
+    ]
+  },
+  editor: {
+    id: 'editor',
+    name: 'Editor',
+    level: 2,
+    badgeBg: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+    avatarGradient: 'from-emerald-500 via-teal-600 to-cyan-700',
+    dotColor: 'bg-emerald-400',
+    description: 'Active developer: full code editing and sandbox execution privileges in this workspace.',
+    keyCapabilities: [
+      { label: 'Edit Files', allowed: true },
+      { label: 'Run Sandbox Code', allowed: true },
+      { label: 'Manage Settings', allowed: false },
+      { label: 'Manage Roles', allowed: false },
+      { label: 'Clear Logs', allowed: false },
+      { label: 'Delete Workspace', allowed: false }
+    ]
+  },
+  viewer: {
+    id: 'viewer',
+    name: 'Viewer',
+    level: 1,
+    badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+    avatarGradient: 'from-amber-500 via-orange-600 to-yellow-700',
+    dotColor: 'bg-amber-400',
+    description: 'Observer access: inspect files, view execution history, and review participant permissions.',
+    keyCapabilities: [
+      { label: 'Edit Files', allowed: false },
+      { label: 'Run Sandbox Code', allowed: false },
+      { label: 'Manage Settings', allowed: false },
+      { label: 'Manage Roles', allowed: false },
+      { label: 'Clear Logs', allowed: false },
+      { label: 'Delete Workspace', allowed: false }
+    ]
+  }
+};
+
+export const WorkspaceSettingsModal = ({
+  isOpen,
+  onClose,
+  workspace,
   onUpdateWorkspace,
-  customFiles = []
+  customFiles = [],
+  initialTab = 'general',
+  showToast = null
 }) => {
   const wsId = workspace?._id || workspace?.id || 'demo-workspace';
   const workspaceRole = workspace?.role || 'viewer';
@@ -49,28 +131,40 @@ export const WorkspaceSettingsModal = ({
   const canManageMembers = ['owner', 'admin'].includes(workspaceRole);
   const canClearHistory = ['owner', 'admin'].includes(workspaceRole);
   const currentUser = JSON.parse(localStorage.getItem('ct-auth-user')) || { id: 'usr-guest', name: 'Maryam Shaikh', role: 'admin' };
+  const currentUserId = currentUser.id || currentUser._id || 'usr-guest';
   const token = localStorage.getItem('ct-auth-token');
 
   const [activeTab, setActiveTab] = useState(() => {
     try {
+      if (initialTab && ['general', 'preferences', 'appearance', 'history', 'members', 'danger'].includes(initialTab)) {
+        return initialTab;
+      }
       const saved = localStorage.getItem(`ct-workspace-settings-activetab-${wsId}`);
       if (saved && ['general', 'preferences', 'appearance', 'history', 'members', 'danger'].includes(saved)) return saved;
-    } catch (e) {}
+    } catch (e) { }
     return 'general';
   });
+
+  // Sync tab when modal opens or initialTab prop changes
+  useEffect(() => {
+    if (isOpen && initialTab && ['general', 'preferences', 'appearance', 'history', 'members', 'danger'].includes(initialTab)) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   useEffect(() => {
     try {
       localStorage.setItem(`ct-workspace-settings-activetab-${wsId}`, activeTab);
-    } catch (e) {}
+    } catch (e) { }
   }, [activeTab, wsId]);
 
   useEffect(() => {
-    if (!canManageMembers && (activeTab === 'members' || activeTab === 'danger')) {
+    // Only Danger Zone requires member/settings management rights; Members/Permissions is open to all
+    if (!canManageMembers && activeTab === 'danger') {
       setActiveTab('general');
     }
   }, [activeTab, canManageMembers]);
-  
+
   // General Settings State
   const [title, setTitle] = useState(workspace?.title || workspace?.name || 'Project Workspace');
   const [description, setDescription] = useState(workspace?.description || workspace?.desc || 'Collaborative development workspace on CodeTrail');
@@ -81,6 +175,7 @@ export const WorkspaceSettingsModal = ({
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [isSaveError, setIsSaveError] = useState(false);
 
   // Workspace-Level Preferences State (TASK-3)
   const [allowAnonymousExecution, setAllowAnonymousExecution] = useState(!!workspace?.settings?.allowAnonymousExecution);
@@ -123,7 +218,7 @@ export const WorkspaceSettingsModal = ({
     try {
       const saved = localStorage.getItem(`ct-workspace-session-running-${wsId}`);
       setIsSessionActive(saved === 'true');
-    } catch (e) {}
+    } catch (e) { }
   }, [isOpen, wsId]);
 
   // Dynamic Live Session Length / Time Spent Timer State
@@ -131,7 +226,7 @@ export const WorkspaceSettingsModal = ({
     try {
       const start = localStorage.getItem(`ct-workspace-session-start-${wsId}`);
       if (start) return Math.max(0, Math.floor((Date.now() - parseInt(start, 10)) / 1000));
-    } catch (e) {}
+    } catch (e) { }
     return 0;
   });
 
@@ -164,6 +259,9 @@ export const WorkspaceSettingsModal = ({
   const [membersList, setMembersList] = useState([]);
   const [newMemberEmail, setNewMemberEmail] = useState('');
   const [newMemberRole, setNewMemberRole] = useState('editor');
+  const [effectiveUserRole, setEffectiveUserRole] = useState(workspaceRole);
+  const [roleDefinitions, setRoleDefinitions] = useState(null);
+  const [memberUpdatingId, setMemberUpdatingId] = useState(null);
 
   // History Activity Log State
   const [historyFilter, setHistoryFilter] = useState('all'); // 'all' | 'sessions' | 'files' | 'settings' | 'members'
@@ -171,11 +269,11 @@ export const WorkspaceSettingsModal = ({
     try {
       const saved = localStorage.getItem(`ct-workspace-history-${wsId}`);
       if (saved && JSON.parse(saved).length > 0) return JSON.parse(saved);
-    } catch (e) {}
+    } catch (e) { }
 
     const wsTitle = workspace?.title || workspace?.name || 'Project Workspace';
     const uName = currentUser.name || 'Maryam Shaikh';
-    
+
     return [
       {
         id: 'h-1',
@@ -230,6 +328,12 @@ export const WorkspaceSettingsModal = ({
           if (memRes.data?.members && memRes.data.members.length > 0) {
             setMembersList(memRes.data.members);
           }
+          if (memRes.data?.currentUserRole) {
+            setEffectiveUserRole(memRes.data.currentUserRole);
+          }
+          if (memRes.data?.roleDefinitions) {
+            setRoleDefinitions(memRes.data.roleDefinitions);
+          }
         } catch (err) {
           console.warn('Backend members fetch failed, fallback to local workspace members:', err.message);
         }
@@ -254,19 +358,57 @@ export const WorkspaceSettingsModal = ({
           const userObj = m.user && typeof m.user === 'object' ? m.user : null;
           const uName = userObj?.name || (typeof m.user === 'string' ? m.user : (idx === 0 ? (currentUser.name || 'Maryam Shaikh') : `Collaborator ${idx + 1}`));
           const uEmail = userObj?.email || `${uName.toLowerCase().replace(/\s+/g, '')}@codetrail.dev`;
+          const mRole = m.role || (idx === 0 ? 'owner' : 'editor');
+          const isOwnerMember = idx === 0 || mRole === 'owner';
+          const roleDef = ROLE_CONFIG[mRole] || ROLE_CONFIG.editor;
 
           return {
             id: userObj?._id || userObj?.id || `mem-${idx}`,
+            _id: userObj?._id || userObj?.id || `mem-${idx}`,
             name: uName,
             email: uEmail,
-            role: m.role || (idx === 0 ? 'owner' : 'editor'),
-            status: idx === 0 ? 'online' : (idx === 1 ? 'online' : 'offline')
+            role: mRole,
+            isOwner: isOwnerMember,
+            status: idx === 0 ? 'online' : (idx === 1 ? 'online' : 'offline'),
+            capabilities: {
+              canViewWorkspace: true,
+              canEditFiles: ['owner', 'admin', 'editor'].includes(mRole),
+              canExecuteCode: ['owner', 'admin', 'editor'].includes(mRole),
+              canManageSettings: ['owner', 'admin'].includes(mRole),
+              canInviteMembers: ['owner', 'admin'].includes(mRole),
+              canAssignRoles: ['owner', 'admin'].includes(mRole),
+              canRemoveMembers: ['owner', 'admin'].includes(mRole),
+              canClearHistory: ['owner', 'admin'].includes(mRole),
+              canDeleteWorkspace: mRole === 'owner'
+            },
+            roleDetails: roleDef
           };
         });
         setMembersList(dynamicMembers);
       } else {
+        const ownerDef = ROLE_CONFIG.owner;
         setMembersList([
-          { id: 'owner-1', name: currentUser.name || 'Maryam Shaikh', email: currentUser.email || 'maryam@example.com', role: 'owner', status: 'online' }
+          {
+            id: 'owner-1',
+            _id: 'owner-1',
+            name: currentUser.name || 'Maryam Shaikh',
+            email: currentUser.email || 'maryam@example.com',
+            role: 'owner',
+            isOwner: true,
+            status: 'online',
+            capabilities: {
+              canViewWorkspace: true,
+              canEditFiles: true,
+              canExecuteCode: true,
+              canManageSettings: true,
+              canInviteMembers: true,
+              canAssignRoles: true,
+              canRemoveMembers: true,
+              canClearHistory: true,
+              canDeleteWorkspace: true
+            },
+            roleDetails: ownerDef
+          }
         ]);
       }
     };
@@ -278,7 +420,7 @@ export const WorkspaceSettingsModal = ({
   useEffect(() => {
     try {
       localStorage.setItem(`ct-workspace-history-${wsId}`, JSON.stringify(historyLogs));
-    } catch (e) {}
+    } catch (e) { }
   }, [historyLogs, wsId]);
 
   // Close on Escape key
@@ -345,7 +487,7 @@ export const WorkspaceSettingsModal = ({
       localStorage.setItem(`ct-workspace-session-running-${wsId}`, 'false');
       localStorage.removeItem(`ct-workspace-session-start-${wsId}`);
       localStorage.removeItem(`ct-workspace-session-sec-${wsId}`);
-    } catch (e) {}
+    } catch (e) { }
     setSessionSeconds(0);
 
     if (token && wsId && wsId !== 'demo-workspace') {
@@ -368,7 +510,7 @@ export const WorkspaceSettingsModal = ({
     try {
       localStorage.setItem(`ct-workspace-session-start-${wsId}`, now.toString());
       localStorage.setItem(`ct-workspace-session-running-${wsId}`, 'true');
-    } catch (e) {}
+    } catch (e) { }
 
     const startLog = {
       id: `h-${now}`,
@@ -421,23 +563,28 @@ export const WorkspaceSettingsModal = ({
   const handleSaveGeneralSettings = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!canManageSettings) {
+      setIsSaveError(true);
       setSaveMessage('Read-only access: only Owners and Admins can modify settings.');
       return;
     }
     if (!title || !title.trim()) {
+      setIsSaveError(true);
       setSaveMessage('Workspace title is required.');
       return;
     }
     if (title.trim().length > 80) {
+      setIsSaveError(true);
       setSaveMessage('Workspace title cannot exceed 80 characters.');
       return;
     }
     if (description && description.trim().length > 300) {
+      setIsSaveError(true);
       setSaveMessage('Description cannot exceed 300 characters.');
       return;
     }
 
     setSaving(true);
+    setIsSaveError(false);
     setSaveMessage('');
 
     const payload = {
@@ -497,54 +644,134 @@ export const WorkspaceSettingsModal = ({
       // Record activity log event in DB
       await addHistoryLog('settings', 'Settings Updated', `Updated workspace title to "${title.trim()}" and preferences.`);
 
+      setIsSaveError(false);
       setSaveMessage('Workspace settings updated successfully!');
 
-      // Automatically close modal after brief delay (600ms)
+      if (typeof showToast === 'function') {
+        showToast('Workspace settings updated successfully!', 'success');
+      }
+
+      // Automatically close modal after brief delay (500ms)
       setTimeout(() => {
         setSaveMessage('');
         if (onClose) onClose();
-      }, 600);
+      }, 500);
     } catch (err) {
       console.warn('Save workspace settings error:', err.message);
-      const errMsg = err.response?.data?.message || 'Saved locally (Offline Mode).';
+      const errMsg = err.response?.data?.message || err.message || 'Failed to save workspace settings. Please try again.';
+      setIsSaveError(true);
       setSaveMessage(errMsg);
-      setTimeout(() => {
-        setSaveMessage('');
-        if (onClose) onClose();
-      }, 800);
+
+      if (typeof showToast === 'function') {
+        showToast(errMsg, 'error');
+      }
+      // Keep modal open so the user can see error and correct the issue
     } finally {
       setSaving(false);
     }
   };
 
   const handleChangeMemberRole = async (memberId, newRole) => {
-    if (!canManageMembers) return;
-    const member = membersList.find(m => m.id === memberId);
-    setMembersList(prev => prev.map(m => m.id === memberId ? { ...m, role: newRole } : m));
+    const member = membersList.find(m => m.id === memberId || m._id === memberId);
+    if (!member) return;
 
-    if (token && wsId && wsId !== 'demo-workspace') {
-      try {
-        await axios.patch(`${API_BASE}/workspaces/${wsId}/members/${memberId}`, {
+    const currentRole = effectiveUserRole || workspaceRole;
+    if (currentRole !== 'owner' && currentRole !== 'admin') {
+      setSaveMessage('Unauthorized: only workspace owners and administrators can assign roles.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    if (currentRole === 'admin' && newRole === 'admin') {
+      setSaveMessage('Unauthorized: only the workspace owner can assign administrator roles.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    if (currentRole === 'admin' && member.role === 'admin') {
+      setSaveMessage('Unauthorized: administrators cannot modify another administrator.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    if (member.role === 'owner' || member.isOwner) {
+      setSaveMessage('The workspace owner role cannot be modified.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    setMemberUpdatingId(memberId);
+    const prevRole = member.role;
+    const fallbackDef = (roleDefinitions && roleDefinitions[newRole]) || ROLE_CONFIG[newRole];
+
+    // Optimistic UI update
+    setMembersList(prev => prev.map(m => {
+      if (m.id === memberId || m._id === memberId) {
+        return {
+          ...m,
+          role: newRole,
+          capabilities: fallbackDef?.capabilities || m.capabilities,
+          roleDetails: fallbackDef || m.roleDetails
+        };
+      }
+      return m;
+    }));
+
+    try {
+      if (token && wsId && wsId !== 'demo-workspace') {
+        const res = await axios.patch(`${API_BASE}/workspaces/${wsId}/members/${memberId}`, {
           role: newRole
         }, {
           headers: { Authorization: `Bearer ${token}` }
         });
-      } catch (err) {
-        console.warn('Failed to update member role in DB:', err.message);
+        if (res.data?.member) {
+          setMembersList(prev => prev.map(m => (m.id === memberId || m._id === memberId) ? res.data.member : m));
+        }
       }
-    }
 
-    if (member) {
       await addHistoryLog('member', 'Member Role Updated', `Changed ${member.name}'s role to ${newRole.toUpperCase()}.`);
+      setSaveMessage(`Updated ${member.name}'s role to ${newRole.toUpperCase()}!`);
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (err) {
+      console.warn('Failed to update member role in DB:', err.message);
+      // Revert on error
+      setMembersList(prev => prev.map(m => {
+        if (m.id === memberId || m._id === memberId) {
+          const revertDef = (roleDefinitions && roleDefinitions[prevRole]) || ROLE_CONFIG[prevRole];
+          return {
+            ...m,
+            role: prevRole,
+            capabilities: revertDef?.capabilities || m.capabilities,
+            roleDetails: revertDef || m.roleDetails
+          };
+        }
+        return m;
+      }));
+      const errMsg = err.response?.data?.message || 'Failed to update member role.';
+      setSaveMessage(errMsg);
+      setTimeout(() => setSaveMessage(''), 4000);
+    } finally {
+      setMemberUpdatingId(null);
     }
   };
 
   const handleAddMember = async (e) => {
     e.preventDefault();
-    if (!canManageMembers) return;
+    const currentRole = effectiveUserRole || workspaceRole;
+    if (currentRole !== 'owner' && currentRole !== 'admin') {
+      setSaveMessage('Unauthorized: only workspace owners and administrators can invite members.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
     if (!newMemberEmail.trim()) return;
 
     const email = newMemberEmail.trim().toLowerCase();
+    if (currentRole === 'admin' && newMemberRole === 'admin') {
+      setSaveMessage('Only the workspace owner can invite or appoint administrators.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -559,43 +786,74 @@ export const WorkspaceSettingsModal = ({
         if (res.data?.members) {
           setMembersList(res.data.members);
         }
-        setSaveMessage(`Successfully invited ${email}!`);
+        setSaveMessage(`Successfully invited ${email} as ${newMemberRole.toUpperCase()}!`);
       } else {
         const nameStr = email.split('@')[0].replace(/[._-]/g, ' ');
         const memberName = nameStr.charAt(0).toUpperCase() + nameStr.slice(1);
+        const fallbackDef = (roleDefinitions && roleDefinitions[newMemberRole]) || ROLE_CONFIG[newMemberRole];
         const newMember = {
           id: `mem-${Date.now()}`,
+          _id: `mem-${Date.now()}`,
           name: memberName,
           email: email,
           role: newMemberRole,
-          status: 'offline'
+          isOwner: false,
+          status: 'offline',
+          capabilities: fallbackDef?.capabilities || {
+            canViewWorkspace: true,
+            canEditFiles: ['owner', 'admin', 'editor'].includes(newMemberRole),
+            canExecuteCode: ['owner', 'admin', 'editor'].includes(newMemberRole),
+            canManageSettings: ['owner', 'admin'].includes(newMemberRole),
+            canInviteMembers: ['owner', 'admin'].includes(newMemberRole),
+            canAssignRoles: ['owner', 'admin'].includes(newMemberRole),
+            canRemoveMembers: ['owner', 'admin'].includes(newMemberRole),
+            canClearHistory: ['owner', 'admin'].includes(newMemberRole),
+            canDeleteWorkspace: newMemberRole === 'owner'
+          },
+          roleDetails: fallbackDef
         };
         setMembersList(prev => [...prev, newMember]);
         await addHistoryLog(
-          'member', 
-          'Member Invited', 
+          'member',
+          'Member Invited',
           `Invited ${memberName} (${email}) as ${newMemberRole.toUpperCase()}.`
         );
-        setSaveMessage(`Invited ${email}`);
+        setSaveMessage(`Invited ${email} as ${newMemberRole.toUpperCase()}`);
       }
       setNewMemberEmail('');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (err) {
       console.warn('Failed to add member to database:', err.message);
       setSaveMessage(err.response?.data?.message || 'Failed to invite member');
-      setTimeout(() => setSaveMessage(''), 3000);
+      setTimeout(() => setSaveMessage(''), 3500);
     } finally {
       setSaving(false);
     }
   };
 
   const handleRemoveMember = async (memberId) => {
-    if (!canManageMembers) return;
-    const member = membersList.find(m => m.id === memberId);
+    const currentRole = effectiveUserRole || workspaceRole;
+    if (currentRole !== 'owner' && currentRole !== 'admin') {
+      setSaveMessage('Unauthorized: only workspace owners and administrators can remove members.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+    const member = membersList.find(m => m.id === memberId || m._id === memberId);
     if (!member) return;
 
-    if (window.confirm(`Are you sure you want to remove ${member.name} from this workspace?`)) {
-      setMembersList(prev => prev.filter(m => m.id !== memberId));
+    if (member.role === 'owner' || member.isOwner) {
+      setSaveMessage('The workspace owner cannot be removed.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+    if (currentRole === 'admin' && member.role === 'admin') {
+      setSaveMessage('Administrators cannot remove another administrator.');
+      setTimeout(() => setSaveMessage(''), 3000);
+      return;
+    }
+
+    if (window.confirm(`Are you sure you want to remove ${member.name} (${member.role.toUpperCase()}) from this workspace?`)) {
+      setMembersList(prev => prev.filter(m => m.id !== memberId && m._id !== memberId));
 
       if (token && wsId && wsId !== 'demo-workspace') {
         try {
@@ -604,14 +862,19 @@ export const WorkspaceSettingsModal = ({
           });
         } catch (err) {
           console.warn('Failed to remove member from DB:', err.message);
+          const errMsg = err.response?.data?.message || 'Failed to remove member.';
+          setSaveMessage(errMsg);
+          setTimeout(() => setSaveMessage(''), 3500);
         }
       }
 
       await addHistoryLog(
-        'member', 
-        'Member Removed', 
+        'member',
+        'Member Removed',
         `Removed ${member.name} (${member.email}) from workspace.`
       );
+      setSaveMessage(`Removed ${member.name} from workspace.`);
+      setTimeout(() => setSaveMessage(''), 3000);
     }
   };
 
@@ -628,10 +891,10 @@ export const WorkspaceSettingsModal = ({
 
     // 2. Consolidate session logs so that each session cycle has EXACTLY ONE card div
     const consolidated = [];
-    
+
     for (const log of categoryLogs) {
       const isSession = log.type === 'session' || log.type === 'session-end' || log.title?.toLowerCase().includes('session');
-      
+
       if (!isSession) {
         consolidated.push(log);
         continue;
@@ -709,7 +972,7 @@ export const WorkspaceSettingsModal = ({
   return (
     <div className="ct-settings-modal-backdrop">
       <div className="ct-settings-modal-card">
-        
+
         {/* MODAL HEADER */}
         <div className="ct-settings-modal-header">
           <div className="flex items-center gap-3">
@@ -729,7 +992,7 @@ export const WorkspaceSettingsModal = ({
             </div>
           </div>
 
-          <button 
+          <button
             onClick={onClose}
             className="p-2 rounded-xl bg-white/5 hover:bg-white/15 text-gray-400 hover:text-white transition-all cursor-pointer"
           >
@@ -739,7 +1002,7 @@ export const WorkspaceSettingsModal = ({
 
         {/* MODAL BODY (NAVIGATION SIDEBAR + TAB CONTENT) */}
         <div className="ct-settings-modal-body">
-          
+
           {/* TAB SIDEBAR */}
           <div className="ct-settings-modal-sidebar">
             <button
@@ -785,18 +1048,18 @@ export const WorkspaceSettingsModal = ({
               </span>
             </button>
 
-            {canManageMembers && <button
+            <button
               onClick={() => setActiveTab('members')}
               className={`ct-settings-nav-btn ${activeTab === 'members' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
                 <Users size={16} className="text-emerald-400" />
-                <span>Members & Roles</span>
+                <span>Participants & Permissions</span>
               </div>
               <span className="px-2 py-0.5 rounded-md bg-white/10 text-[11px] text-gray-300 font-bold font-mono">
                 {membersList.length}
               </span>
-            </button>}
+            </button>
 
             {canManageMembers && <button
               onClick={() => setActiveTab('danger')}
@@ -823,7 +1086,7 @@ export const WorkspaceSettingsModal = ({
                 </div>
               </div>
             )}
-            
+
             {/* 1. GENERAL DETAILS TAB */}
             {activeTab === 'general' && (
               <form onSubmit={handleSaveGeneralSettings} className="flex flex-col gap-6">
@@ -846,8 +1109,8 @@ export const WorkspaceSettingsModal = ({
                           {title.length}/80
                         </span>
                       </div>
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         disabled={!canManageSettings}
@@ -865,7 +1128,7 @@ export const WorkspaceSettingsModal = ({
                           {description.length}/300
                         </span>
                       </div>
-                      <textarea 
+                      <textarea
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         disabled={!canManageSettings}
@@ -896,7 +1159,7 @@ export const WorkspaceSettingsModal = ({
                       <div className="ct-settings-field">
                         <label className="ct-settings-label">Room Invite Code</label>
                         <div className="flex items-center gap-3">
-                          <input 
+                          <input
                             type="text"
                             value={wsInviteCode}
                             readOnly
@@ -1174,7 +1437,7 @@ export const WorkspaceSettingsModal = ({
                   <div className="flex items-center shrink-0" style={{ gap: '10px' }}>
                     {isSessionActive ? (
                       <>
-                        <span 
+                        <span
                           className="rounded-full bg-amber-500/15 text-amber-200 border border-amber-400/40 text-[11px] font-mono font-bold flex items-center justify-center whitespace-nowrap shadow-sm"
                           style={{ padding: '6px 16px', minHeight: '34px', gap: '8px' }}
                         >
@@ -1194,7 +1457,7 @@ export const WorkspaceSettingsModal = ({
                       </>
                     ) : (
                       <>
-                        <span 
+                        <span
                           className="rounded-full bg-gray-500/15 text-gray-300 border border-gray-400/30 text-[11px] font-mono font-semibold flex items-center justify-center whitespace-nowrap shadow-sm"
                           style={{ padding: '6px 16px', minHeight: '34px', gap: '8px' }}
                         >
@@ -1264,7 +1527,7 @@ export const WorkspaceSettingsModal = ({
                         const isLatestActiveSession = isSessionActive && firstSessionIdx !== -1 && historyLogs[firstSessionIdx]?.id === log.id;
 
                         return (
-                          <div 
+                          <div
                             key={log.id}
                             className="ct-history-card-box"
                           >
@@ -1276,7 +1539,7 @@ export const WorkspaceSettingsModal = ({
                               <div className="ct-history-top-row">
                                 <span className="ct-history-log-title">{log.title}</span>
                                 <div className="flex items-center gap-2.5 shrink-0">
-                                  <span 
+                                  <span
                                     className="rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/40 text-[11px] font-mono font-semibold flex items-center justify-center whitespace-nowrap shadow-sm"
                                     style={{ padding: '3px 10px', height: '24px', lineHeight: '1' }}
                                   >
@@ -1290,12 +1553,12 @@ export const WorkspaceSettingsModal = ({
                               </div>
                               <p className="ct-history-log-details">{log.details}</p>
                               <div className="ct-history-card-footer text-xs font-mono text-gray-300">
-                                <div 
+                                <div
                                   className="ct-history-actor flex items-center rounded-full bg-white/[0.05] border border-white/12 text-[11px] font-mono whitespace-nowrap shadow-sm"
                                   style={{ padding: '4px 14px', height: '32px', gap: '8px' }}
                                 >
                                   <span className="text-purple-400 font-semibold tracking-wide">Actor:</span>
-                                  <strong 
+                                  <strong
                                     className="text-white font-bold bg-white/10 border border-white/10 flex items-center justify-center"
                                     style={{ padding: '2px 10px', height: '22px', borderRadius: '6px', lineHeight: '1' }}
                                   >
@@ -1304,7 +1567,7 @@ export const WorkspaceSettingsModal = ({
                                 </div>
 
                                 {log.sessionDuration ? (
-                                  <div 
+                                  <div
                                     className="rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 text-[11px] font-mono font-semibold flex items-center justify-center whitespace-nowrap shadow-sm"
                                     style={{ padding: '4px 14px', height: '30px', gap: '6px', lineHeight: '1' }}
                                   >
@@ -1312,7 +1575,7 @@ export const WorkspaceSettingsModal = ({
                                     <span>Session Duration: {log.sessionDuration}</span>
                                   </div>
                                 ) : isLatestActiveSession ? (
-                                  <div 
+                                  <div
                                     className="rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 text-[11px] font-mono font-semibold flex items-center justify-center whitespace-nowrap shadow-sm"
                                     style={{ padding: '4px 14px', height: '30px', gap: '6px', lineHeight: '1' }}
                                   >
@@ -1320,7 +1583,7 @@ export const WorkspaceSettingsModal = ({
                                     <span>Active Session: {formatSessionLength(sessionSeconds)}</span>
                                   </div>
                                 ) : (
-                                  <div 
+                                  <div
                                     className="rounded-full bg-purple-500/20 text-purple-200 border border-purple-400/40 text-[11px] font-mono font-semibold flex items-center justify-center whitespace-nowrap shadow-sm"
                                     style={{ padding: '4px 14px', height: '30px', gap: '6px', lineHeight: '1' }}
                                   >
@@ -1338,115 +1601,366 @@ export const WorkspaceSettingsModal = ({
               </div>
             )}
 
-            {/* 4. MEMBERS & ROLES TAB */}
+            {/* 4. PARTICIPANTS & PERMISSIONS TAB */}
             {activeTab === 'members' && (
-              <div className="ct-history-tab-wrap space-y-5">
+              <div className="ct-history-tab-wrap space-y-6">
                 <div>
-                  <h3 className="ct-settings-section-title">Workspace Members & Permissions</h3>
-                  <p className="ct-settings-section-sub">Manage member access levels and role privileges dynamically.</p>
+                  <h3 className="ct-settings-section-title">Workspace Participants & Permissions</h3>
+                  <p className="ct-settings-section-sub">
+                    Real-time directory of participants, assigned roles, and granular Role-Based Access Control (RBAC) capabilities.
+                  </p>
                 </div>
 
-                {/* INVITE NEW MEMBER FORM */}
-                <form 
-                  onSubmit={handleAddMember} 
-                  className="rounded-xl bg-[#131422] border border-white/12 shadow-md"
-                  style={{ padding: '16px 20px' }}
-                >
-                  <div className="text-xs font-bold text-white font-mono flex items-center gap-2" style={{ marginBottom: '12px' }}>
-                    <UserCheck size={16} className="text-emerald-400" />
-                    <span>Invite Dynamic Member</span>
-                  </div>
-                  <div className="flex flex-col sm:flex-row items-center gap-3">
-                    <input 
-                      type="email"
-                      placeholder="Enter collaborator email..."
-                      value={newMemberEmail}
-                      onChange={(e) => setNewMemberEmail(e.target.value)}
-                      className="ct-settings-input flex-1 w-full text-xs font-mono"
-                      style={{ height: '38px', padding: '0 14px', fontSize: '12px' }}
-                      required
-                    />
-                    <select
-                      value={newMemberRole}
-                      onChange={(e) => setNewMemberRole(e.target.value)}
-                      className="bg-[#090A10] border border-white/15 rounded-xl text-xs text-white font-mono cursor-pointer focus:outline-none focus:border-purple-400 shrink-0 w-full sm:w-auto"
-                      style={{ height: '38px', padding: '0 12px', fontSize: '12px', minWidth: '110px' }}
-                    >
-                      <option value="editor">Editor</option>
-                      <option value="admin">Admin</option>
-                      <option value="viewer">Viewer</option>
-                    </select>
-                    <button
-                      type="submit"
-                      className="bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 border border-emerald-400/50 rounded-xl text-xs font-mono font-bold transition-all shrink-0 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto shadow-md whitespace-nowrap"
-                      style={{ height: '38px', padding: '0 18px', fontSize: '12px', minWidth: '130px' }}
-                    >
-                      Invite Member
-                    </button>
-                  </div>
-                </form>
-
-                <div className="ct-members-stream space-y-3">
-                  {membersList.length === 0 ? (
-                    <div className="p-6 text-center rounded-2xl bg-white/[0.02] border border-white/10 text-gray-500 text-xs font-mono">
-                      No members added yet. Invite collaborators above!
-                    </div>
-                  ) : (
-                    membersList.map(member => (
-                      <div 
-                        key={member.id}
-                        className="rounded-xl bg-[#131422] border border-white/12 shadow-sm flex items-center justify-between gap-3 transition-all hover:border-purple-500/40 hover:bg-[#171829]"
-                        style={{ padding: '10px 16px' }}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-cyan-500 text-white font-mono text-xs font-bold flex items-center justify-center shrink-0 shadow-sm">
-                            {member.name[0].toUpperCase()}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-bold text-white truncate">{member.name}</span>
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${member.status === 'online' ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : member.status === 'away' ? 'bg-amber-400' : 'bg-gray-500'}`} />
-                            </div>
-                            <div className="text-[11px] text-gray-400 font-mono truncate mt-0.5">{member.email}</div>
-                          </div>
+                {/* ROLE & AUTHORITY STATUS BANNER */}
+                {(() => {
+                  const currentRole = effectiveUserRole || workspaceRole;
+                  if (currentRole === 'owner') {
+                    return (
+                      <div className="flex items-center gap-3.5 p-4 rounded-xl bg-purple-500/10 border border-purple-500/30 text-purple-200 text-xs font-mono shadow-sm">
+                        <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center shrink-0 text-purple-300">
+                          <Crown size={18} />
                         </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          {member.role === 'owner' ? (
-                            <span 
-                              className="rounded-full bg-purple-500/25 text-purple-200 border border-purple-400/50 text-[11px] font-mono font-bold flex items-center justify-center whitespace-nowrap shadow-sm"
-                              style={{ padding: '4px 14px', height: '28px', lineHeight: '1' }}
-                            >
-                              Owner
-                            </span>
-                          ) : (
-                            <>
-                              <select
-                                value={member.role}
-                                onChange={(e) => handleChangeMemberRole(member.id, e.target.value)}
-                                className="bg-[#090A10] border border-white/15 rounded-lg text-white font-mono cursor-pointer focus:outline-none focus:border-purple-400 leading-none"
-                                style={{ height: '28px', padding: '0 10px', fontSize: '11px' }}
-                              >
-                                <option value="admin">Admin</option>
-                                <option value="editor">Editor</option>
-                                <option value="viewer">Viewer</option>
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveMember(member.id)}
-                                className="rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all cursor-pointer flex items-center justify-center shadow-sm shrink-0"
-                                style={{ height: '28px', width: '28px' }}
-                                title="Remove member"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </>
-                          )}
+                        <div>
+                          <div className="font-bold text-white uppercase tracking-wider text-[11px]">
+                            Workspace Owner Authority (Level 4)
+                          </div>
+                          <div className="text-gray-300 mt-0.5 leading-relaxed">
+                            You have full administrative authority across this workspace. You can invite collaborators, assign or update any role (Admin, Editor, Viewer), configure settings, and manage workspace lifecycle.
+                          </div>
                         </div>
                       </div>
-                    ))
+                    );
+                  } else if (currentRole === 'admin') {
+                    return (
+                      <div className="flex items-center gap-3.5 p-4 rounded-xl bg-blue-500/10 border border-blue-500/30 text-blue-200 text-xs font-mono shadow-sm">
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 border border-blue-500/40 flex items-center justify-center shrink-0 text-blue-300">
+                          <Shield size={18} />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white uppercase tracking-wider text-[11px]">
+                            Administrator Privileges (Level 3)
+                          </div>
+                          <div className="text-gray-300 mt-0.5 leading-relaxed">
+                            You can invite collaborators and assign or modify Editor and Viewer roles. Only the Workspace Owner can appoint or modify Administrators.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } else if (currentRole === 'editor') {
+                    return (
+                      <div className="flex items-center gap-3.5 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-xs font-mono shadow-sm">
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 text-emerald-300">
+                          <Edit3 size={18} />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white uppercase tracking-wider text-[11px]">
+                            Editor Access · Read-Only Directory (Level 2)
+                          </div>
+                          <div className="text-gray-300 mt-0.5 leading-relaxed">
+                            You have full code editing and sandbox execution privileges in this workspace. Role assignments and participant permissions are read-only.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  } else {
+                    return (
+                      <div className="flex items-center gap-3.5 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs font-mono shadow-sm">
+                        <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 text-amber-300">
+                          <Eye size={18} />
+                        </div>
+                        <div>
+                          <div className="font-bold text-white uppercase tracking-wider text-[11px]">
+                            Viewer Access · Read-Only Directory (Level 1)
+                          </div>
+                          <div className="text-gray-300 mt-0.5 leading-relaxed">
+                            You have read-only access to view files, execution logs, and participant permissions. Role assignments require Owner or Administrator privileges.
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                })()}
+
+                {/* INVITE NEW MEMBER FORM (Authorized for Owner & Admin) */}
+                {['owner', 'admin'].includes(effectiveUserRole || workspaceRole) && (
+                  <form
+                    onSubmit={handleAddMember}
+                    className="rounded-xl bg-[#131422] border border-white/12 shadow-md p-4 sm:p-5"
+                  >
+                    <div className="text-xs font-bold text-white font-mono flex items-center gap-2 mb-3">
+                      <UserCheck size={16} className="text-emerald-400" />
+                      <span>Invite & Assign Participant</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center gap-3">
+                      <input
+                        type="email"
+                        placeholder="Enter collaborator email (e.g. alex@example.com)..."
+                        value={newMemberEmail}
+                        onChange={(e) => setNewMemberEmail(e.target.value)}
+                        className="ct-settings-input flex-1 w-full text-xs font-mono"
+                        style={{ height: '40px', padding: '0 14px', fontSize: '12px' }}
+                        required
+                      />
+                      <select
+                        value={newMemberRole}
+                        onChange={(e) => setNewMemberRole(e.target.value)}
+                        className="bg-[#090A10] border border-white/15 rounded-xl text-xs text-white font-mono cursor-pointer focus:outline-none focus:border-purple-400 shrink-0 w-full sm:w-auto"
+                        style={{ height: '40px', padding: '0 12px', fontSize: '12px', minWidth: '120px' }}
+                      >
+                        {(effectiveUserRole || workspaceRole) === 'owner' && (
+                          <option value="admin">Admin (L3)</option>
+                        )}
+                        <option value="editor">Editor (L2)</option>
+                        <option value="viewer">Viewer (L1)</option>
+                      </select>
+                      <button
+                        type="submit"
+                        disabled={saving}
+                        className="bg-emerald-500/25 hover:bg-emerald-500/40 text-emerald-200 border border-emerald-400/50 rounded-xl text-xs font-mono font-bold transition-all shrink-0 flex items-center justify-center gap-2 cursor-pointer w-full sm:w-auto shadow-md whitespace-nowrap disabled:opacity-50"
+                        style={{ height: '40px', padding: '0 20px', fontSize: '12px', minWidth: '140px' }}
+                      >
+                        {saving ? <Loader2 size={15} className="animate-spin" /> : <UserCheck size={15} />}
+                        <span>Invite Member</span>
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* PARTICIPANTS DIRECTORY STREAM */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-mono text-gray-400 px-1">
+                    <span className="font-bold text-gray-300 uppercase tracking-wider flex items-center gap-2">
+                      <Users size={14} className="text-purple-400" />
+                      <span>Workspace Participants ({membersList.length})</span>
+                    </span>
+                    <span className="text-[11px] text-gray-500">
+                      Hover on capabilities for detailed permissions
+                    </span>
+                  </div>
+
+                  {membersList.length === 0 ? (
+                    <div className="p-8 text-center rounded-2xl bg-white/[0.02] border border-white/10 text-gray-500 text-xs font-mono">
+                      No participants found. Invite collaborators to join this workspace!
+                    </div>
+                  ) : (
+                    membersList.map((member, mIdx) => {
+                      const memberId = member.id || member._id || `mem-${mIdx}`;
+                      const memberRole = (member.role || 'viewer').toLowerCase();
+                      const isOwnerMember = member.isOwner || memberRole === 'owner';
+                      const roleConfig = ROLE_CONFIG[memberRole] || ROLE_CONFIG.viewer;
+                      const isMe = memberId === currentUserId || member.email === currentUser.email;
+                      const currentRole = effectiveUserRole || workspaceRole;
+                      const isUpdating = memberUpdatingId === memberId;
+
+                      // Permission check: Can current user change this member's role?
+                      const canChangeThisRole =
+                        !isOwnerMember &&
+                        ((currentRole === 'owner') || (currentRole === 'admin' && memberRole !== 'admin'));
+
+                      // Permission check: Can current user remove this member?
+                      const canRemoveThisMember =
+                        !isOwnerMember &&
+                        ((currentRole === 'owner') || (currentRole === 'admin' && memberRole !== 'admin'));
+
+                      // Status dot styling
+                      const isOnline = member.status === 'online' || isMe;
+                      const isAway = member.status === 'away';
+                      const statusDot = isOnline
+                        ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]'
+                        : isAway
+                          ? 'bg-amber-400'
+                          : 'bg-gray-500';
+
+                      // Key capabilities indicators
+                      const caps = member.capabilities || {
+                        canEditFiles: ['owner', 'admin', 'editor'].includes(memberRole),
+                        canExecuteCode: ['owner', 'admin', 'editor'].includes(memberRole),
+                        canManageSettings: ['owner', 'admin'].includes(memberRole),
+                        canAssignRoles: ['owner', 'admin'].includes(memberRole),
+                        canClearHistory: ['owner', 'admin'].includes(memberRole),
+                        canDeleteWorkspace: memberRole === 'owner'
+                      };
+
+                      return (
+                        <div
+                          key={memberId}
+                          className="rounded-xl bg-[#131422] border border-white/12 shadow-sm p-4 sm:p-5 flex flex-col gap-3.5 transition-all hover:border-purple-500/40 hover:bg-[#161726]"
+                        >
+                          {/* TOP ROW: AVATAR, NAME, EMAIL, ROLE BADGE, ACTIONS */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div className="flex items-center gap-3.5 min-w-0">
+                              <div className="relative shrink-0">
+                                <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${roleConfig.avatarGradient} text-white font-mono text-xs font-bold flex items-center justify-center shadow-md`}>
+                                  {(member.name || 'M')[0].toUpperCase()}
+                                </div>
+                                <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#131422] ${statusDot}`} />
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="text-xs sm:text-sm font-bold text-white truncate">
+                                    {member.name}
+                                  </span>
+                                  {isMe && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/25 text-purple-300 border border-purple-500/40">
+                                      You
+                                    </span>
+                                  )}
+                                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${roleConfig.badgeBg}`}>
+                                    {isOwnerMember ? <Crown size={11} /> : memberRole === 'admin' ? <Shield size={11} /> : memberRole === 'editor' ? <Edit3 size={11} /> : <Eye size={11} />}
+                                    <span>{roleConfig.name}</span>
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-gray-400 font-mono truncate mt-0.5">
+                                  {member.email}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* ROLE MANAGEMENT CONTROLS */}
+                            <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+                              {isOwnerMember ? (
+                                <span className="px-3 py-1.5 rounded-xl bg-purple-500/15 text-purple-200 border border-purple-500/30 text-xs font-mono font-bold flex items-center gap-1.5">
+                                  <Crown size={13} className="text-purple-400" />
+                                  <span>Owner (Protected)</span>
+                                </span>
+                              ) : canChangeThisRole ? (
+                                <div className="flex items-center gap-2">
+                                  <select
+                                    value={memberRole}
+                                    onChange={(e) => handleChangeMemberRole(memberId, e.target.value)}
+                                    disabled={isUpdating}
+                                    className="bg-[#090A10] border border-white/20 hover:border-purple-400 rounded-xl text-white font-mono cursor-pointer focus:outline-none focus:border-purple-400 transition-all text-xs"
+                                    style={{ height: '34px', padding: '0 10px' }}
+                                    title={`Change ${member.name}'s role`}
+                                  >
+                                    {currentRole === 'owner' && (
+                                      <option value="admin">Admin (L3)</option>
+                                    )}
+                                    <option value="editor">Editor (L2)</option>
+                                    <option value="viewer">Viewer (L1)</option>
+                                  </select>
+
+                                  {isUpdating && (
+                                    <Loader2 size={15} className="animate-spin text-purple-400" />
+                                  )}
+
+                                  {canRemoveThisMember && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveMember(memberId)}
+                                      className="rounded-xl bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 border border-rose-500/30 transition-all cursor-pointer flex items-center justify-center shadow-sm shrink-0"
+                                      style={{ height: '34px', width: '34px' }}
+                                      title={`Remove ${member.name} from workspace`}
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : currentRole === 'admin' && memberRole === 'admin' ? (
+                                <span className="px-3 py-1.5 rounded-xl bg-blue-500/15 text-blue-200 border border-blue-500/30 text-xs font-mono font-bold flex items-center gap-1.5">
+                                  <Shield size={13} className="text-blue-400" />
+                                  <span>Admin (Protected)</span>
+                                </span>
+                              ) : (
+                                <span className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold border uppercase tracking-wider ${roleConfig.badgeBg}`}>
+                                  {roleConfig.name}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* GRANULAR CAPABILITY CHIPS */}
+                          <div className="pt-2 border-t border-white/5 flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-mono text-gray-500 uppercase tracking-wider mr-1">
+                              Capabilities:
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canEditFiles ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canEditFiles ? <CheckCircle2 size={11} className="text-emerald-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Edit Files</span>
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canExecuteCode ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canExecuteCode ? <CheckCircle2 size={11} className="text-emerald-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Run Sandbox Code</span>
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canManageSettings ? 'bg-blue-500/10 text-blue-300 border-blue-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canManageSettings ? <CheckCircle2 size={11} className="text-blue-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Manage Settings</span>
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canAssignRoles ? 'bg-purple-500/10 text-purple-300 border-purple-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canAssignRoles ? <CheckCircle2 size={11} className="text-purple-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Assign Roles</span>
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canClearHistory ? 'bg-cyan-500/10 text-cyan-300 border-cyan-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canClearHistory ? <CheckCircle2 size={11} className="text-cyan-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Clear Logs</span>
+                            </span>
+
+                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border ${caps.canDeleteWorkspace ? 'bg-rose-500/10 text-rose-300 border-rose-500/30' : 'bg-white/[0.03] text-gray-500 border-white/5 line-through opacity-60'}`}>
+                              {caps.canDeleteWorkspace ? <CheckCircle2 size={11} className="text-rose-400" /> : <XCircle size={11} className="text-gray-500" />}
+                              <span>Delete Workspace</span>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
+
+                {/* ROLE-BASED ACCESS CONTROL (RBAC) REFERENCE GUIDE */}
+                <div className="pt-4 border-t border-white/10 space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Info size={16} className="text-purple-400" />
+                    <h4 className="text-xs font-mono font-bold text-white uppercase tracking-wider">
+                      Role-Based Access Control (RBAC) Reference Guide
+                    </h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                    {Object.values(ROLE_CONFIG).map((rc) => (
+                      <div
+                        key={rc.id}
+                        className="rounded-xl bg-[#11121F] border border-white/10 p-4 flex flex-col justify-between space-y-3 shadow-sm hover:border-purple-500/30 transition-all"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${rc.badgeBg}`}>
+                              {rc.id === 'owner' ? <Crown size={11} /> : rc.id === 'admin' ? <Shield size={11} /> : rc.id === 'editor' ? <Edit3 size={11} /> : <Eye size={11} />}
+                              <span>{rc.name}</span>
+                            </span>
+                            <span className="text-[10px] font-mono text-gray-400 font-bold">
+                              Level {rc.level}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-400 leading-relaxed">
+                            {rc.description}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1.5 pt-2 border-t border-white/5">
+                          {rc.keyCapabilities.map((kc, kidx) => (
+                            <div key={kidx} className="flex items-center gap-1.5 text-[10px] font-mono">
+                              {kc.allowed ? (
+                                <CheckCircle2 size={11} className="text-emerald-400 shrink-0" />
+                              ) : (
+                                <XCircle size={11} className="text-rose-400/70 shrink-0" />
+                              )}
+                              <span className={kc.allowed ? 'text-gray-300' : 'text-gray-500 line-through'}>
+                                {kc.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
               </div>
             )}
 
@@ -1459,7 +1973,7 @@ export const WorkspaceSettingsModal = ({
                 </div>
 
                 <div className="ct-danger-stream space-y-3">
-                  <div 
+                  <div
                     className="rounded-xl bg-rose-500/[0.06] border border-rose-500/30 shadow-md flex items-center justify-between gap-4 transition-all hover:bg-rose-500/[0.1]"
                     style={{ padding: '14px 18px' }}
                   >
@@ -1477,7 +1991,7 @@ export const WorkspaceSettingsModal = ({
                     </button>
                   </div>
 
-                  <div 
+                  <div
                     className="rounded-xl bg-amber-500/[0.06] border border-amber-500/30 shadow-md flex items-center justify-between gap-4 transition-all hover:bg-amber-500/[0.1]"
                     style={{ padding: '14px 18px' }}
                   >
@@ -1506,10 +2020,18 @@ export const WorkspaceSettingsModal = ({
           <div className="flex items-center">
             {saveMessage && (
               <div 
-                className="rounded-full bg-purple-500/25 text-purple-100 border border-purple-400/50 text-xs font-mono font-medium flex items-center justify-center gap-2 animate-fadeIn shadow-md"
+                className={`rounded-full text-xs font-mono font-medium flex items-center justify-center gap-2 animate-fadeIn shadow-md ${
+                  isSaveError 
+                    ? 'bg-rose-500/25 text-rose-200 border border-rose-400/50' 
+                    : 'bg-purple-500/25 text-purple-100 border border-purple-400/50'
+                }`}
                 style={{ padding: '5px 16px', minHeight: '32px', lineHeight: '1' }}
               >
-                <Sparkles size={14} className="text-purple-300 shrink-0" />
+                {isSaveError ? (
+                  <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                ) : (
+                  <Sparkles size={14} className="text-purple-300 shrink-0" />
+                )}
                 <span className="whitespace-nowrap">{saveMessage}</span>
               </div>
             )}

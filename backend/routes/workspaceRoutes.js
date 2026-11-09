@@ -18,6 +18,7 @@ const {
   addWorkspaceMember,
   updateWorkspaceMemberRole,
   removeWorkspaceMember,
+  getWorkspacePermissions,
   getUserCrossWorkspaceHistory
 } = require('../controllers/workspaceController');
 const {
@@ -36,8 +37,9 @@ router.get('/:id', optionalAuth, getWorkspaceById);
 router.patch('/:id', authMiddleware, updateWorkspace);
 router.patch('/:id/session', authMiddleware, updateWorkspaceSession);
 
-// Member management endpoints
+// Member management & permissions endpoints
 router.get('/:id/members', optionalAuth, getWorkspaceMembers);
+router.get('/:id/permissions', optionalAuth, getWorkspacePermissions);
 router.post('/:id/members', authMiddleware, addWorkspaceMember);
 router.patch('/:id/members/:memberId', authMiddleware, updateWorkspaceMemberRole);
 router.delete('/:id/members/:memberId', authMiddleware, removeWorkspaceMember);
