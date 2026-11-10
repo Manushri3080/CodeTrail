@@ -5,6 +5,17 @@ const telemetryStore = require('../utils/telemetryStore');
 // In-memory version tracking: fileVersionMap[`${workspaceId}:${fileId}`] = currentVersionNumber
 const fileVersionMap = new Map();
 
+const emitWorkspaceNotification = (io, workspaceId, notification, includeSender = false) => {
+  const room = `workspace:${workspaceId}`;
+  if (includeSender) {
+    io.to(room).emit('notification', notification);
+  } else if (notification.actorId) {
+    io.to(room).except(`user:${notification.actorId}`).emit('notification', notification);
+  } else {
+    io.to(room).emit('notification', notification);
+  }
+};
+
 /**
  * Format total seconds into human readable time string like "1h 24m" or "45m"
  */
@@ -34,11 +45,13 @@ const initWorkspaceSessionSocket = (io) => {
         socket.join(roomName2);
         socket.workspaceId = workspaceId;
         socket.userId = user?.id || user?._id;
+        socket.userName = user?.name || 'A collaborator';
         socket.userRole = role || user?.role || 'editor';
 
         console.log(`[Socket] Client ${socket.id} (User ${socket.userId || 'Guest'}, Role ${socket.userRole}) joined ${roomName1}`);
 
         if (socket.userId) {
+          socket.join(`user:${socket.userId}`);
           // Verify actual member role against Workspace document if available
           try {
             const ws = await Workspace.findById(workspaceId);
@@ -89,6 +102,15 @@ const initWorkspaceSessionSocket = (io) => {
             userId: socket.userId,
             user: { ...(user || {}), role: socket.userRole },
             joinedAt: new Date()
+          });
+
+          emitWorkspaceNotification(io, workspaceId, {
+            type: 'participant_joined',
+            title: 'Participant joined',
+            message: `${socket.userName} joined the workspace.`,
+            workspaceId: String(workspaceId),
+            actorId: String(socket.userId),
+            createdAt: new Date().toISOString()
           });
         }
 
@@ -166,6 +188,25 @@ const initWorkspaceSessionSocket = (io) => {
       const dossier = telemetryStore.recordHeartbeat(targetId, user, metrics);
       io.to(`workspace:${targetId}`).emit('telemetry:dossier_sync', dossier);
       io.to(`workspace_${targetId}`).emit('telemetry:dossier_sync', dossier);
+    });
+
+    socket.on('execution_status', (data = {}) => {
+      const targetWorkspaceId = data.workspaceId || socket.workspaceId;
+      if (!targetWorkspaceId || !socket.workspaceId || String(targetWorkspaceId) !== String(socket.workspaceId)) return;
+
+      const status = ['success', 'error', 'compile_error', 'timeout'].includes(data.status)
+        ? data.status
+        : 'error';
+      emitWorkspaceNotification(io, targetWorkspaceId, {
+        type: 'execution_status',
+        title: status === 'success' ? 'Code execution completed' : 'Code execution failed',
+        message: `${socket.userName || 'A collaborator'} ${status === 'success' ? 'successfully ran' : `received ${status} while running`} ${data.filename || 'the active file'}.`,
+        workspaceId: String(targetWorkspaceId),
+        actorId: socket.userId ? String(socket.userId) : null,
+        status,
+        filename: data.filename || null,
+        createdAt: new Date().toISOString()
+      }, true);
     });
 
     // Activity Heartbeat Event
@@ -433,6 +474,14 @@ const initWorkspaceSessionSocket = (io) => {
 
           socket.to(room1).emit('userLeft', { userId: uid, leftAt: new Date() });
           socket.to(room2).emit('userLeft', { userId: uid, leftAt: new Date() });
+          emitWorkspaceNotification(io, targetWorkspaceId, {
+            type: 'participant_left',
+            title: 'Participant left',
+            message: `${socket.userName || 'A collaborator'} left the workspace.`,
+            workspaceId: String(targetWorkspaceId),
+            actorId: String(uid),
+            createdAt: new Date().toISOString()
+          });
         }
 
         const activeSessions = await WorkspaceSession.find({ workspaceId: targetWorkspaceId })
@@ -468,6 +517,14 @@ const initWorkspaceSessionSocket = (io) => {
           const roomName2 = `workspace_${session.workspaceId}`;
           socket.to(roomName1).emit('userLeft', { userId: session.userId, leftAt: new Date() });
           socket.to(roomName2).emit('userLeft', { userId: session.userId, leftAt: new Date() });
+          emitWorkspaceNotification(io, session.workspaceId, {
+            type: 'participant_left',
+            title: 'Participant left',
+            message: `${socket.userName || 'A collaborator'} left the workspace.`,
+            workspaceId: String(session.workspaceId),
+            actorId: session.userId ? String(session.userId) : null,
+            createdAt: new Date().toISOString()
+          });
 
           const activeSessions = await WorkspaceSession.find({ workspaceId: session.workspaceId })
             .populate('userId', 'name email role')

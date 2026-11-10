@@ -63,6 +63,7 @@ const corsOptions = {
 };
 
 const io = new Server(server, { cors: corsOptions });
+app.set('io', io);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -185,5 +186,4 @@ const startServer = async () => {
 };
 
 startServer();
-
 

@@ -47,11 +47,13 @@ import {
   Download,
   Activity,
   Radio,
+  Bell,
   Sparkles,
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { WORKSPACE_FILES } from "../../constants/workspace.constants";
 import WorkspaceSettingsModal from "../../components/workspace/WorkspaceSettingsModal";
+import NotificationCenter from "../../components/workspace/NotificationCenter";
 import { exportAuditJson, exportAuditMarkdown } from "../../utils/auditExport";
 import {
   createTelemetryEnvelope,
@@ -390,6 +392,34 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [settingsModalInitialTab, setSettingsModalInitialTab] = useState("general");
+  const [notifications, setNotifications] = useState([]);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const notificationIdsRef = useRef(new Set());
+
+  const addNotification = useCallback((notification) => {
+    if (!notification?.type || !notification?.message) return;
+    const createdAt = notification.createdAt || new Date().toISOString();
+    const notificationId = `${notification.type}:${notification.createdAt || createdAt}:${notification.actorId || "system"}`;
+    if (notificationIdsRef.current.has(notificationId)) return;
+    notificationIdsRef.current.add(notificationId);
+
+    const toastType = notification.type === "execution_status"
+      ? (notification.status === "success" ? "success" : "warning")
+      : "info";
+    showToast(`${notification.title || "Workspace notification"}: ${notification.message}`, toastType, 5000);
+
+    setNotifications((previous) => {
+      if (previous.some((item) => item.id === notificationId)) return previous;
+      return [
+        {
+          ...notification,
+          id: notificationId,
+          createdAt,
+        },
+        ...previous,
+      ].slice(0, 50);
+    });
+  }, []);
 
   // Interactive CLI Terminal Console State
   const [terminalEntries, setTerminalEntries] = useState([
@@ -2482,6 +2512,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       const compileOutput = data.compileOutput || "";
 
       setExecutionStatus(status);
+      if (socketRef.current?.connected && wsId !== "demo-workspace") {
+        socketRef.current.emit("execution_status", {
+          workspaceId: wsId,
+          filename: activeFile,
+          status,
+        });
+      }
       const resObj = {
         stdout,
         stderr,
@@ -2565,6 +2602,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       }
 
       setExecutionStatus("error");
+      if (socketRef.current?.connected && wsId !== "demo-workspace") {
+        socketRef.current.emit("execution_status", {
+          workspaceId: wsId,
+          filename: activeFile,
+          status: "error",
+        });
+      }
       setExecutionResult({
         stdout: "",
         stderr: errMsg,
@@ -2678,6 +2722,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       return false;
     }
   });
+  const [isActiveEditorsOpen, setIsActiveEditorsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -3123,6 +3168,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
         setConnectionStatus("reconnecting");
       });
 
+      socket.on("notification", addNotification);
+
       socket.io.on("reconnect_attempt", () => {
         wasDisconnectedRef.current = true;
         setConnectionStatus("reconnecting");
@@ -3537,7 +3584,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
         socketRef.current.disconnect();
       }
     };
-  }, [wsId]);
+  }, [wsId, addNotification]);
 
   // Window Close / Unload Event Handler (Records session duration in local history)
   useEffect(() => {
@@ -5090,14 +5137,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   )}
 
                   {/* View Participant Permissions Action Button */}
-                  <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+                  <div className="pt-4 border-t border-white/10 flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => {
                         setSettingsModalInitialTab("members");
                         setIsSettingsModalOpen(true);
                       }}
-                      className="w-full py-2.5 px-3 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 hover:text-white border border-purple-500/30 hover:border-purple-500/60 text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                      className="w-full py-3.5 px-5 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 hover:text-white border border-purple-500/30 hover:border-purple-500/60 text-xs font-mono font-bold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-sm"
                       title="View workspace participant permissions and RBAC role matrix"
                     >
                       <Shield size={14} className="text-purple-400" />
@@ -5185,19 +5232,39 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
               {/* Active Peers Pills (Fixed Right Container with Border Separator) */}
               <div className="ct-editor-active-editors hidden lg:flex">
                 <Users size={15} className="text-purple-400 shrink-0" />
-                <span className="text-xs font-mono text-gray-400 shrink-0">
-                  Active Editors:
-                </span>
-                <div className="ct-editor-peer-list">
-                  {isViewer && (
-                    <div className="ct-editor-peer-pill read-only">
-                      <Lock size={12} />
-                      <span>Read-Only</span>
-                    </div>
-                  )}
-                  {activeSessions
-                    .filter((s) => s.status !== "offline")
-                    .map((s, idx) => {
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsActiveEditorsOpen((previous) => !previous)}
+                    className="flex min-h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-6 py-2 text-xs font-mono text-gray-300 transition-colors hover:border-purple-400/40 hover:bg-purple-500/10 hover:text-white"
+                    aria-expanded={isActiveEditorsOpen}
+                    aria-haspopup="true"
+                  >
+                    <span>Active Editors</span>
+                    <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-bold text-purple-200">
+                      {activeSessions.filter((s) => s.status !== "offline").length}
+                    </span>
+                    {isActiveEditorsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+
+                  {isActiveEditorsOpen && (
+                    <div className="absolute right-0 top-11 z-[100] w-72 rounded-xl border border-white/15 bg-[#13141F] p-3 shadow-2xl">
+                      <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+                        <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-gray-300">
+                          Active Editors
+                        </span>
+                        <span className="text-[10px] text-emerald-300">Live</span>
+                      </div>
+                      <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+                        {isViewer && (
+                          <div className="ct-editor-peer-pill read-only">
+                            <Lock size={12} />
+                            <span>Read-Only</span>
+                          </div>
+                        )}
+                        {activeSessions
+                          .filter((s) => s.status !== "offline")
+                          .map((s, idx) => {
                       const uid =
                         s.userId?._id ||
                         s.userId?.id ||
@@ -5214,26 +5281,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}`
                         : null;
 
-                      return (
-                        <div
-                          key={s._id || idx}
-                          className="ct-editor-peer-pill"
-                          style={{ "--peer-color": color }}
-                          title={`${name}${isMe ? " (You)" : ""}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ""}`}
-                        >
-                          <span className="ct-editor-peer-dot" />
-                          <span>
-                            {name}
-                            {isMe ? " (You)" : ""}
-                          </span>
-                          {isOnSameFile && posInfo && !isMe && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 font-bold opacity-90">
-                              {posInfo}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
+                            return (
+                              <div
+                                key={s._id || idx}
+                                className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2"
+                                title={`${name}${isMe ? " (You)" : ""}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ""}`}
+                              >
+                                <span className="ct-editor-peer-dot" style={{ "--peer-color": color }} />
+                                <span className="min-w-0 flex-1 truncate text-xs text-gray-200">
+                                  {name}{isMe ? " (You)" : ""}
+                                </span>
+                                {isOnSameFile && posInfo && !isMe && (
+                                  <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-gray-300">
+                                    {posInfo}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        {activeSessions.filter((s) => s.status !== "offline").length === 0 && !isViewer && (
+                          <span className="py-2 text-center text-xs text-gray-500">No active editors</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -6060,8 +6131,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                     {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
                     {outputTab === "telemetry" && (
                       <div className="space-y-5">
-                        <div className="flex items-center justify-between pb-3 border-b border-white/10 flex-wrap gap-4">
-                          <div className="flex items-center gap-3 text-xs font-bold text-purple-300">
+                        <div className="flex items-center justify-between p-4 pb-5 border-b border-white/10 flex-wrap gap-5">
+                          <div className="flex items-center gap-4 text-xs font-bold text-purple-300">
                             <ShieldCheck
                               size={15}
                               className="text-purple-400"
@@ -6070,13 +6141,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               Proof-of-Work Contribution Telemetry & Audit
                             </span>
                             {telemetryVerification?.isValid ? (
-                              <span className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                              <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                 <CheckCircle2 size={11} /> 100%
                                 Cryptographically Verified
                               </span>
                             ) : (
-                              <span className="flex items-center gap-2 px-3 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
+                              <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
                                 <AlertTriangle
                                   size={11}
                                   className="text-rose-400"
@@ -6086,12 +6157,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <button
                               type="button"
                               onClick={() => fetchWorkspaceTelemetry()}
                               disabled={isTelemetryLoading}
-                              className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
                               title="Re-verify blockchain activity chain"
                             >
                               <RefreshCw
@@ -6115,7 +6186,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📄 Exported ${fileName}`, "success");
                               }}
-                              className="px-2.5 py-1 rounded bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer font-bold"
+                              className="px-3 py-2 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
                               title="Download JSON machine-verifiable audit manifest"
                             >
                               <Download size={11} />
@@ -6132,7 +6203,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📋 Exported ${fileName}`, "success");
                               }}
-                              className="px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-1.5 transition-colors cursor-pointer"
+                              className="px-3 py-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
                               title="Download formatted Markdown Certificate"
                             >
                               <FileText size={11} />
@@ -6165,49 +6236,49 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                           )}
 
                         {/* Top Summary Cards */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Activity
                                 size={11}
                                 className="text-emerald-400"
                               />
                               <span>TOTAL LINES SYNCED</span>
                             </div>
-                            <div className="text-base font-bold text-white mt-1">
+                            <div className="text-base font-bold text-white mt-3">
                               {(
                                 telemetryData?.summary?.totalLinesChanged ?? 0
                               ).toLocaleString()}
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Layers size={11} className="text-purple-400" />
                               <span>BLOCKCHAIN BLOCKS</span>
                             </div>
-                            <div className="text-base font-bold text-purple-300 mt-1">
+                            <div className="text-base font-bold text-purple-300 mt-3">
                               {telemetryData?.summary?.totalBlocks ?? 0}
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Users size={11} className="text-sky-400" />
                               <span>CONTRIBUTORS</span>
                             </div>
-                            <div className="text-base font-bold text-sky-300 mt-1">
+                            <div className="text-base font-bold text-sky-300 mt-3">
                               {telemetryData?.contributors?.length ?? 0}
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-2.5 rounded-lg">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-1">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Hash size={11} className="text-amber-400" />
                               <span>LATEST HASH</span>
                             </div>
                             <div
-                              className="text-xs font-mono text-amber-300 mt-1 truncate"
+                              className="text-xs font-mono text-amber-300 mt-3 truncate"
                               title={telemetryData?.summary?.latestBlockHash}
                             >
                               {telemetryData?.summary?.latestBlockHash
@@ -6218,7 +6289,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         </div>
 
                         {/* Contributor Breakdown Table */}
-                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1">
                           {(telemetryData?.contributors || []).length === 0 ? (
                             <div className="text-gray-500 italic py-4 text-center">
                               No contribution telemetry recorded yet. Code edits
@@ -6235,9 +6306,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               return (
                                 <div
                                   key={c.id || idx}
-                                  className="flex items-center justify-between p-2 rounded bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-2"
+                                  className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-4"
                                 >
-                                  <div className="flex items-center gap-2 min-w-0">
+                                  <div className="flex items-center gap-3 min-w-0">
                                     <span
                                       className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
                                       style={{
@@ -6247,7 +6318,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     >
                                       {c.name ? c.name[0] : "U"}
                                     </span>
-                                    <span className="font-bold text-gray-200 truncate">
+                                    <span className="font-bold text-gray-200 truncate px-1">
                                       {c.name}
                                     </span>
                                     <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
@@ -6255,8 +6326,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     </span>
                                   </div>
 
-                                  <div className="flex items-center gap-4 shrink-0 font-mono">
-                                    <div className="text-[11px] text-gray-300">
+                                  <div className="flex items-center gap-5 shrink-0 font-mono">
+                                    <div className="text-[11px] text-gray-300 px-1">
                                       <strong>
                                         {c.lines?.toLocaleString() || 0}
                                       </strong>{" "}
@@ -6336,26 +6407,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
             {/* IDE Bottom Status Bar */}
             <div
-              className="border-t border-white/15 flex items-center justify-between text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 flex-wrap"
+              className="border-t border-white/15 flex items-center text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 min-h-[44px]"
               style={{
-                height: "44px",
-                paddingLeft: "28px",
-                paddingRight: "28px",
-                gap: "24px",
+                minHeight: "44px",
+                padding: "0 16px",
               }}
             >
               <div
-                className="border-t border-white/15 flex items-center justify-between flex-wrap text-xs font-mono text-gray-400 bg-[#090A10] shrink-0"
+                className="w-full flex items-center justify-between gap-3 flex-wrap text-xs font-mono text-gray-400 bg-[#090A10] shrink-0"
                 style={{
-                  minHeight: "48px",
-                  padding: "8px 24px",
-                  columnGap: "24px",
+                  minHeight: "44px",
+                  padding: "8px 12px",
+                  columnGap: "12px",
                   rowGap: "8px",
                 }}
               >
                 <div
-                  className="flex items-center flex-wrap"
-                  style={{ gap: "10px" }}
+                  className="flex items-center flex-wrap min-w-0"
+                  style={{ gap: "8px" }}
                 >
                   <div
                     className="flex items-center bg-white/5 rounded-lg border border-white/10"
@@ -6397,8 +6466,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                 </div>
 
                 <div
-                  className="flex items-center flex-wrap"
-                  style={{ gap: "10px" }}
+                  className="flex items-center justify-end flex-wrap min-w-0"
+                  style={{ gap: "8px" }}
                 >
                   <button
                     type="button"
@@ -6452,6 +6521,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                     </span>
                   </button>
 
+                  <NotificationCenter
+                    notifications={notifications}
+                    isOpen={isNotificationCenterOpen}
+                    onToggle={() => setIsNotificationCenterOpen((previous) => !previous)}
+                    onDismiss={(notificationId) =>
+                      setNotifications((previous) => previous.filter((item) => item.id !== notificationId))
+                    }
+                    onClear={() => setNotifications([])}
+                  />
+
                   <div
                     className="flex items-center bg-white/5 rounded-lg border border-white/10"
                     style={{ padding: "6px 12px", gap: "8px" }}
@@ -6462,83 +6541,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                       <strong className="text-gray-200">12ms</strong>
                     </span>
                   </div>
-                  <div
-                    className="flex items-center bg-white/5 rounded-lg border border-white/10"
-                    style={{ padding: "6px 12px", gap: "8px" }}
-                  >
-                    <ShieldCheck
-                      size={14}
-                      className="text-emerald-400 shrink-0"
-                    />
-                    <span>Workspace Session Engine Active</span>
-                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-8 px-7">
-                {/* Quick Toggle for Execution Output Panel */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsOutputPanelOpen((prev) => !prev);
-                    setIsOutputPanelMinimized(false);
-                  }}
-                  className={`flex items-center gap-3 px-5 py-3 rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${isOutputPanelOpen ? "text-purple-300 font-semibold bg-purple-500/10" : "text-gray-400 hover:text-purple-300 hover:bg-white/5"}`}
-                  title="Toggle Output Panel"
-                >
-                  <Terminal size={14} className="text-purple-400 shrink-0" />
-                  <span>Output</span>
-                </button>
-
-                {/* Quick Toggle for Telemetry & Audit */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOutputTab("telemetry");
-                    setIsOutputPanelOpen(true);
-                    setIsOutputPanelMinimized(false);
-                    fetchWorkspaceTelemetry();
-                  }}
-                  className={`flex items-center gap-3 px-5 py-3 rounded-lg transition-colors cursor-pointer text-xs font-mono border border-white/10 ${
-                    outputTab === "telemetry" && isOutputPanelOpen
-                      ? "text-purple-300 font-semibold bg-purple-500/10"
-                      : "text-gray-400 hover:text-purple-300 hover:bg-white/5"
-                  }`}
-                  title="View Proof-of-Work Contribution Telemetry"
-                >
-                  <ShieldCheck
-                    size={14}
-                    className={
-                      telemetryVerification?.isValid
-                        ? "text-emerald-400 shrink-0"
-                        : "text-purple-400 shrink-0"
-                    }
-                  />
-                  <span>
-                    PoW Audit:{" "}
-                    <strong className="text-gray-200">
-                      {telemetryData?.summary?.totalBlocks
-                        ? `${telemetryData.summary.totalBlocks} Blocks`
-                        : "Active"}
-                    </strong>
-                  </span>
-                </button>
-
-                <div className="flex items-center gap-4 px-6 py-4 bg-white/5 rounded-lg border border-white/10">
-                  <Zap size={14} className="text-yellow-400 shrink-0" />
-                  <span>
-                    Sync Latency:{" "}
-                    <strong className="text-gray-200">12ms</strong>
-                  </span>
-                </div>
-                <div className="flex items-center gap-4 px-6 py-4 bg-white/5 rounded-lg border border-white/10">
-                  <ShieldCheck
-                    size={14}
-                    className="text-emerald-400 shrink-0"
-                  />
-                  <span>Workspace Session Engine Active</span>
-                </div>
-              </div>
             </div>
           </div>
 

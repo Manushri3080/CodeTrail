@@ -509,7 +509,7 @@ html {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: stretch;
   gap: 14px;
-  overflow: hidden;
+  overflow: visible;
   background: #12131F;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
@@ -630,7 +630,7 @@ html {
 
 .ct-editor-active-editors {
   min-width: 0;
-  max-width: 330px;
+  max-width: 260px;
   align-items: center;
   gap: 9px;
   padding-left: 14px;
