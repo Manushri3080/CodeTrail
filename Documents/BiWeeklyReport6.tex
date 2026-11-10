@@ -1,0 +1,345 @@
+% Bi-Weekly Status Report 6
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{tabularx}
+
+\hypersetup{colorlinks=false,linkcolor=black,urlcolor=black}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Bi-Weekly Status Report}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\titleformat{\section}{\large\bfseries}{}{0pt}{}[\vspace{2pt}\titlerule]
+\titlespacing*{\section}{0pt}{16pt}{8pt}
+\titleformat{\subsection}{\normalsize\bfseries}{}{0pt}{}
+\titlespacing*{\subsection}{0pt}{10pt}{4pt}
+\setlist[itemize]{leftmargin=1.5em,itemsep=2pt,topsep=3pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\setlength{\LTpre}{0pt}
+\setlength{\LTpost}{6pt}
+\emergencystretch=2em
+\raggedbottom
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcommand{\field}[2]{\textbf{#1:} #2\par}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE\bfseries Bi-Weekly Status Report 6}\\[10pt]
+\end{center}
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.22\textwidth}Y}
+Project Name & CodeTrail~-- Real-Time Collaborative Code Editor with Contribution Tracking \\
+Course & WS \& SOA (IT645) $|$ Dhirubhai Ambani University (Formerly DA-IICT) \\
+Report Period & 17/10/2026~-- 01/11/2026 (Weeks 13--14) \\
+Date Submitted & 01/11/2026 \\
+Prepared By & Shaikh Maryam on behalf of CodeTrail Team \\
+\end{tabularx}
+
+\section{Project Status Summary}
+
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.27\textwidth}Y}
+Sprint / Milestone & SCRUM Sprint 6 (Bi-Weekly 6)~-- Module 6: Live Contribution Telemetry and Module 7: Contribution Reports \& PDF Export \\
+\% Complete (overall) & 87.5\% (7 of 8 functional modules delivered; final integration and hardening remain) \\
+\end{tabularx}
+
+\begin{table}[htbp]
+\centering
+\renewcommand{\arraystretch}{1.35}
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.2cm}
+                >{\centering\arraybackslash}p{2.3cm}
+                >{\centering\arraybackslash}p{2.3cm}
+                >{\centering\arraybackslash}p{1.3cm}
+                Y}
+\toprule
+\textbf{Indicator} & \textbf{Current} & \textbf{Previous} & \textbf{Trend} & \textbf{Status} \\
+\midrule
+Overall Project & 87.5\% & 75\% & $\uparrow$ & On Track \\
+Schedule & On Schedule & On Schedule & $\rightarrow$ & On Track \\
+Scope & 7/8 Modules & 6/8 Modules & $\uparrow$ & On Track \\
+Quality & Analytics, report, PDF, and regression suites added; runner blocked by conflict markers & Module 5 and 6 suites passed & $\rightarrow$ & Needs Attention \\
+Team Contribution & 6 contributors with reporting-period commits & 4 contributors & $\uparrow$ & On Track \\
+Dependencies & Backend API, MongoDB, Socket.IO, PDF libraries and frontend environment & Backend API and analytics environment & $\rightarrow$ & Needs Attention \\
+\bottomrule
+\end{tabularx}
+\normalsize
+\end{table}
+
+\subsection{Executive Summary}
+
+This period completed live contribution telemetry and analytics, then added the contribution-reporting and PDF-export workflow. The team implemented authenticated report endpoints, content validation, signed Markdown/HTML report generation, client-side PDF generation, PDF structural validation, a report view, and regression coverage for workspace and execution workflows. The latest changes also corrected runtime behavior around workspace member roles, member removal, execution access, and activity-log role values. Backend tests now cover analytics, contribution reports, PDF export, runtime fixes, and workspace regressions; however, the aggregate runner currently requires merge-conflict cleanup in \texttt{backend/tests/index.js} before final validation can pass.
+
+\section{Commit and Date Analysis}
+
+\small
+\begin{longtable}{p{1.35cm} p{2.0cm} p{2.25cm} p{2.55cm} p{7.1cm}}
+\caption{Reporting-period repository evidence and module mapping}\label{tab:commit-analysis}\\
+\toprule
+\textbf{Date} & \textbf{Commit} & \textbf{Author} & \textbf{Module} & \textbf{Analysis} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Date} & \textbf{Commit} & \textbf{Author} & \textbf{Module} & \textbf{Analysis} \\
+\midrule
+\endhead
+21 Oct. & \texttt{891581b5}, \texttt{e700f75b} & Manushri Thakkar & Integration / configuration & Added the system documentation, environment template, authentication and route corrections, and backend route mounting needed for a consistent application setup. \\
+21 Oct. & \texttt{2683a6f1}, \texttt{71dd5d0f} & Manushri Thakkar & Frontend integration & Updated frontend dependency lock data and corrected authentication-page issues affecting login, password recovery, and reset flows. \\
+21 Oct. & \texttt{56a7614d}, \texttt{d2bcd674}, \texttt{979afec8} & Manushri Thakkar & Deployment configuration & Centralized the frontend API base URL and made the Google OAuth client ID environment-configurable, followed by an API configuration correction. \\
+30 Oct. & \texttt{40a75a84} & Maryam Shaikh & Module 6: Live telemetry & Added workspace analytics controllers and routes, session socket integration, telemetry constants/hooks, analytics dashboard, participation data, and cross-module workspace integration. \\
+01 Nov. & \texttt{f3ef5ed3} & Rishika Shah & Module 6: Session analytics & Added session analytics calculations and validation, expanded analytics routes and dashboard behavior, and introduced the CT-198/CT-201 session analytics test suite. \\
+01 Nov. & \texttt{55f7c3a0}, \texttt{22887fd8} & Anistina Dsouza & CT-199: Contribution reports & Added authenticated report-generation routes, report metrics and content validation, signed Markdown/HTML output, report tests, and the frontend contribution-report layout and validation certificate. \\
+01 Nov. & \texttt{94b8617a}, \texttt{705ba726} & Meet Sheth & CT-200: PDF export and runtime hardening & Added client-side PDF generation and structural validation, PDF export tests, workspace and execution runtime fixes, activity-log model corrections, and regression suites; merged the feature branch into main. \\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Key Accomplishments in the Reporting Period}
+
+\subsection{Delivered Features}
+\begin{itemize}
+    \item \textbf{Live Contribution Telemetry:} Connected activity, workspace, and workspace-session flows so contribution data can be collected and synchronized while a collaborative session is active. (Commit \texttt{40a75a84})
+    \item \textbf{Contribution Analytics APIs:} Implemented authenticated endpoints for contribution scores, coding activity, participation metrics, aggregate validation, session summaries, and standalone session validation. (Commits \texttt{40a75a84}, \texttt{f3ef5ed3})
+    \item \textbf{Analytics Dashboard:} Added a dedicated \texttt{ContributionAnalytics} view with contributor leaderboard, action-type breakdown, coding metrics, participation time, session information, refresh behavior, and validation status. (Commits \texttt{40a75a84}, \texttt{f3ef5ed3})
+    \item \textbf{Session Analytics Validation:} Added checks for duration and timestamp boundaries, participant counts and activity shares, event-category totals, duplicate events, execution rates, and mathematical consistency of session summaries. (Commit \texttt{f3ef5ed3})
+    \item \textbf{Regression and Edge-Case Testing:} Added tests for empty sessions, single and multi-participant sessions, zero-activity members, invalid timestamps, duplicate events, large activity datasets, category consistency, and successful or failed master validation scenarios. (Commit \texttt{f3ef5ed3})
+    \item \textbf{Contribution Report Generation (CT-199):} Implemented standard and custom contribution-report endpoints, report IDs and cryptographic signatures, executive metrics, contributor rankings, session details, Markdown/HTML formatting, and report-content validation. Added a dedicated contribution-report view with validation-certificate presentation. (Commits \texttt{55f7c3a0}, \texttt{22887fd8})
+    \item \textbf{PDF Export and Validation (CT-200):} Added branded client-side PDF generation with multi-page tables, metadata, page numbering, report signatures, safe filenames, and structural/content validation for generated PDFs. (Commits \texttt{94b8617a}, \texttt{705ba726})
+    \item \textbf{Runtime and Regression Hardening:} Corrected workspace member-role and removal handling, canonicalized activity-log roles, secured execution access checks, and added PDF-export, runtime-fix, and workspace-regression test suites. (Commits \texttt{94b8617a}, \texttt{705ba726})
+    \item \textbf{Application Configuration and Documentation:} Improved route mounting, frontend API configuration, OAuth environment handling, authentication-page fixes, dependency lock data, and system documentation. (21 October commits)
+\end{itemize}
+
+\section{Planned vs.\ Actual}
+
+\small
+\begin{tabularx}{\textwidth}{p{0.16\textwidth} p{0.16\textwidth} p{0.16\textwidth} p{0.16\textwidth} Y}
+\toprule
+\textbf{Task/} & \textbf{Planned} & \textbf{Current} & \textbf{Actual} & \textbf{Notes} \\
+\textbf{Deliverable} & \textbf{Completion} & \textbf{Forecast} & \textbf{Status} & \\
+\midrule
+Module 6: Live Telemetry & Oct.\ 26 & --- & Done & Workspace activity synchronized through backend and Socket.IO flows \\
+Contribution Analytics APIs & Oct.\ 30 & --- & Done & Contribution, coding, participation, and validation routes implemented \\
+Session Analytics & Nov.\ 1 & --- & Done & Session summaries and participant-level metrics added \\
+Analytics Validation Suite & Nov.\ 1 & --- & Done & CT-198/CT-201 edge cases and consistency checks added \\
+Contribution Report Generation & Nov.\ 1 & --- & Done & CT-199 report APIs, signed content, validation, and report view added \\
+PDF Export and Validation & Nov.\ 1 & --- & Done & CT-200 PDF generation, structural checks, and export tests added \\
+Final integration and demonstration & Nov.\ 8 & Nov.\ 8 & In Progress & Remaining work is release hardening, documentation, and demonstration preparation \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\section{Project Risks, Issues, \& Dependencies}
+
+\small
+\begin{tabularx}{\textwidth}{p{1.35cm} Y p{1.2cm} p{1.45cm} Y}
+\toprule
+\textbf{Type (ID)} & \textbf{Description} & \textbf{Impact} & \textbf{Owner} & \textbf{Mitigation / Next Step} \\
+\midrule
+Dependency (D-04) & Reports and PDF exports require authenticated backend access, workspace data, configured session data, and frontend PDF dependencies & High & Meet Sheth / Maryam Shaikh & Validate the deployed environment and repeat end-to-end checks for JSON, Markdown, HTML, and PDF formats. \\
+Issue (I-06) & Analytics responses combine live session data and aggregated activity data, creating consistency risk during concurrent updates & Medium & Rishika Shah & Keep server-side validation checks and compare aggregate values with raw activity events. \\
+Risk (R-07) & Large event histories can increase analytics response and rendering time & Medium & Frontend / Backend team & Preserve bounded queries and event streams, then profile and paginate analytics surfaces if required. \\
+Risk (R-08) & Final integration now spans execution, telemetry, audit, analytics, report generation, and PDF export modules & Medium & Project manager & Use the commit-to-module map and run the complete regression suite before demonstration. \\
+Issue (I-07) & The backend test index contains unresolved Git conflict markers after feature integration & High & Meet Sheth / Project manager & Resolve the conflict markers, preserve all intended test imports, and rerun the complete backend suite. \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\section{Project Decisions}
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm}
+                Y
+                >{\raggedright\arraybackslash}p{3.1cm}
+                >{\centering\arraybackslash}p{1.6cm}
+                >{\centering\arraybackslash}p{1.2cm}}
+\toprule
+\textbf{Decision} & \textbf{Rationale} & \textbf{Impact} & \textbf{Decided By} & \textbf{Date} \\
+\midrule
+Expose analytics through authenticated workspace routes & Analytics contains participant and contribution information and must follow the existing workspace authorization boundary. & Consistent access control across analytics endpoints. & Team & Oct.\ 30 \\
+Use a dedicated analytics dashboard & A separate view keeps contribution, coding, participation, and session metrics discoverable without overloading the workspace editor. & Clearer reporting and easier demonstration of Module 6. & Team & Oct.\ 30 \\
+Validate aggregates against raw activity data & Summary percentages, line counts, event categories, and execution rates require mathematical consistency checks. & More trustworthy contribution reporting and diagnosable failures. & Rishika & Nov.\ 1 \\
+Support empty and partial sessions explicitly & New sessions may have no participants, events, or executions and must not fail with divide-by-zero or invalid timestamp errors. & Safe initial-state behavior and stronger edge-case coverage. & Team & Nov.\ 1 \\
+Sign contribution reports cryptographically & Report signatures provide an integrity check for generated contribution summaries and exported artifacts. & Report tampering can be detected during validation and audit review. & Anistina & Nov.\ 1 \\
+Validate PDF structure before export completion & Generated files must contain valid PDF markers, page structure, required report content, and preserved signatures. & More reliable downloadable reports and clearer diagnostics for corrupted output. & Meet & Nov.\ 1 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Project Scope Changes}
+
+\small
+\begin{tabularx}{\textwidth}{p{2.6cm} p{1.1cm} Y p{1.35cm} p{1.25cm}}
+\toprule
+\textbf{Change} & \textbf{Action} & \textbf{Reason} & \textbf{Schedule Impact} & \textbf{Approved By} \\
+\midrule
+Module 6 analytics and live telemetry & Added & Implements the approved functional module for contribution and session reporting. & None & Team \\
+Contribution reports and PDF export & Added & Extends analytics into signed, validated, downloadable contribution-report artifacts (CT-199/CT-200). & None & Team \\
+\bottomrule
+\end{tabularx}
+\normalsize
+
+\section{Upcoming Work (Next Two Weeks' Plan~-- Bi-Weekly 7 Target)}
+
+\begin{itemize}
+    \item Perform end-to-end validation of live workspace sessions and contribution reports with the backend, database, Socket.IO, and frontend running together.
+    \item Validate JSON, Markdown, HTML, and PDF report exports using populated, empty, and large workspaces.
+    \item Profile analytics queries, report generation, PDF rendering, and dashboard behavior for large activity histories.
+    \item Resolve remaining frontend lint or integration warnings and review production bundle behavior.
+    \item Complete final integration testing across execution, telemetry, audit, analytics, report, and PDF workflows.
+    \item Finalize technical documentation, user demonstration material, and submission evidence.
+\end{itemize}
+
+\section{Team Member Contributions}
+
+\textit{Each member performed manual unit testing for their assigned components. The designated members also created test cases and contributed to the cumulative test documentation.}
+
+\subsection{Manushri Thakkar --- Integration and Configuration}
+\field{Name}{Manushri Thakkar (202512122)}
+\field{Role}{Project Manager / DevOps / Backend Developer}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Corrected backend route mounting and authentication-related integration issues, added the frontend API configuration and environment example, enabled configurable Google OAuth, consolidated system documentation, and created test cases and cumulative test documentation for the completed work. \\
+Contribution Type & Development / Integration / Documentation \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/index.js}, \texttt{frontend/src/config/api.js}, \texttt{frontend/.env.example}, \texttt{Documents/CodeTrail\_System\_Documentation.md}; commits \texttt{891581b5}, \texttt{e700f75b}, \texttt{56a7614d}, \texttt{d2bcd674}, \texttt{979afec8} \\
+Testing & Performed manual unit testing of the configuration, authentication, and route changes. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Shaikh Maryam --- Telemetry Integration}
+\field{Name}{Shaikh Maryam (202512074)}
+\field{Role}{Full-Stack Developer / UI Architect}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Led the Module 6 integration by connecting activity and workspace-session telemetry, implementing analytics controller and route integration, updating workspace and dashboard surfaces, and coordinating the live contribution telemetry delivery. Also debugged and resolved major Module 5 telemetry, audit, workspace-integration, and execution-interface issues during integration. \\
+Contribution Type & Development / UI Architecture / Integration / Debugging \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/controllers/analyticsController.js}, \texttt{backend/sockets/workspaceSessionSocket.js}, \texttt{frontend/src/hooks/useContributionTelemetry.js}, \texttt{frontend/src/modules/analytics/ContributionAnalytics.jsx}, \texttt{frontend/src/modules/telemetry/ContributionDossier.jsx}; commits \texttt{40a75a84}, \texttt{4cfc152b}, \texttt{47b4e834}, \texttt{55321f9e} \\
+Testing & Combined backend Module 5 and Module 6 test suite completed successfully; performed manual unit testing of telemetry synchronization, analytics routes, dashboard integration, and the Module 5 fixes. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Mahi Kansara --- Socket.IO and Analytics Support}
+\field{Name}{Mahi Kansara (202512078)}
+\field{Role}{Frontend Developer / Socket.IO Integration Lead}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Supported the live telemetry and Socket.IO integration, refined the analytics dashboard and contribution data flow, and created test cases and contributed to the cumulative test documentation. \\
+Contribution Type & Development / Testing / Documentation \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/utils/telemetryStore.js}, \texttt{frontend/src/hooks/useContributionTelemetry.js}, \texttt{frontend/src/modules/analytics/ContributionAnalytics.jsx} \\
+Testing & Performed manual unit testing of Socket.IO synchronization, telemetry updates, and analytics dashboard behavior; created test cases and contributed to the cumulative test documentation. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Rishika Shah --- Session Analytics}
+\field{Name}{Rishika Shah (202512041)}
+\field{Role}{Frontend Developer / Analytics and Validation Lead}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Implemented session analytics and participant activity validation, expanded the analytics dashboard with session information and validation behavior, and created the comprehensive CT-198/CT-201 test suite. \\
+Contribution Type & Development / Testing / Analytics \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/tests/sessionAnalytics.test.js}, \texttt{backend/utils/analyticsValidator.js}, \texttt{frontend/src/modules/analytics/ContributionAnalytics.jsx}; commit \texttt{f3ef5ed3} \\
+Testing & Session analytics tests cover empty, single-participant, multi-participant, timestamp, deduplication, category, execution, and large-dataset cases; performed manual unit testing of session analytics, validation feedback, and dashboard behavior. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Meet Sheth --- PDF Export and Runtime Hardening}
+\field{Name}{Meet Sheth (202512057)}
+\field{Role}{Backend Architect / System Designer}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Supported the backend architecture and workspace integration required for the new authenticated analytics and live session telemetry routes. \\
+Contribution Type & Architecture / Integration \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/routes/workspaceRoutes.js}, \texttt{backend/routes/workspaceSessionRoutes.js}, \texttt{backend/controllers/workspaceSessionController.js}, \texttt{frontend/src/utils/pdfReportGenerator.js}; commits \texttt{94b8617a}, \texttt{705ba726} \\
+Testing & Implemented PDF export and structural-validation functionality, added PDF export and workspace regression tests, and performed manual unit testing of the workspace-session integration, execution access, and PDF report behavior. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Dudhat Monar --- Quality Assurance}
+\field{Name}{Dudhat Monar (202512019)}
+\field{Role}{Backend Developer / QA Engineer}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Continued the integrity and validation focus from Module 5 while the analytics pipeline was extended to include cross-checks against activity data. Also created test cases and contributed to the cumulative test documentation. \\
+Contribution Type & Testing / Quality Assurance \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/tests/integrityAuditor.test.js}, \texttt{backend/utils/cryptoProof.js} \\
+Testing & Performed manual unit testing of integrity, validation, and analytics behavior; created test cases and contributed to the cumulative test documentation. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Anistina Dsouza --- Contribution Reports}
+\field{Name}{Anistina Dsouza (202512081)}
+\field{Role}{Full-Stack Developer / Module Lead}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Implemented CT-199 contribution-report generation, report-content validation, signed Markdown/HTML output, the contribution-report view, and validation-certificate presentation, while supporting regression coverage for the existing execution and telemetry modules. \\
+Contribution Type & Development / Testing / Documentation \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{backend/tests/executionValidation.test.js}, \texttt{backend/tests/telemetrySync.test.js}, \texttt{backend/controllers/reportController.js}, \texttt{backend/utils/reportGenerator.js}; commits \texttt{55f7c3a0}, \texttt{22887fd8} \\
+Testing & Implemented CT-199 report generation and content-validation tests, added the contribution-report view, and performed manual unit testing of execution, telemetry, report-generation, and regression scenarios. \\
+\bottomrule
+\end{tabularx}
+}
+
+\subsection{Ruchita Patadiya --- Dossier and Audit Export}
+\field{Name}{Ruchita Patadiya (202512070)}
+\field{Role}{Frontend Developer / Backend Developer}
+{\small
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth}Y}
+\toprule
+Tasks Completed & Supported the existing contribution dossier and audit-export surfaces that provide the activity data consumed by the new analytics and reporting workflow. Also created test cases and contributed to the cumulative test documentation. \\
+Contribution Type & Development / Integration \\
+Hours / Capacity & 30/30\,hrs logged \\
+Evidence & \texttt{frontend/src/modules/telemetry/ContributionDossier.jsx}, \texttt{frontend/src/utils/auditExport.js} \\
+Testing & Performed manual unit testing of contribution-dossier, telemetry, and audit-export workflows; created test cases and contributed to the cumulative test documentation. \\
+\bottomrule
+\end{tabularx}
+}
+
+\section{Validation Evidence}
+
+\subsection{Current Validation Position}
+\begin{itemize}
+    \item Backend command executed: \texttt{cd backend \&\& npm test}.
+    \item Result: the expanded test runner is currently blocked before execution because \texttt{backend/tests/index.js} contains unresolved Git conflict markers.
+    \item The test runner includes proof-of-work, activity-controller, telemetry synchronization, integrity auditing, contribution analytics, session analytics, CT-199 report generation, CT-200 PDF export, runtime-fix, and workspace-regression suites.
+    \item Manual unit testing was performed by every team member for the components and workflows assigned to them.
+    \item Final validation action: resolve the test-index conflict, then rerun \texttt{cd backend \&\& npm test}.
+\end{itemize}
+
+\end{document}

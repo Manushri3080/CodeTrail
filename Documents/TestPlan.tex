@@ -1,0 +1,521 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=0.72in,headheight=14pt]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{xltabular}
+\usepackage{enumitem}
+\usepackage[table]{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{listings}
+\usepackage{pdflscape}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{microtype}
+\usepackage{caption}
+\usepackage{needspace}
+
+\definecolor{passgreen}{HTML}{2E7D32}
+\definecolor{codegray}{HTML}{F3F4F6}
+\definecolor{linkblue}{HTML}{1558A6}
+\definecolor{tableblue}{HTML}{EAF2F8}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    urlcolor=linkblue
+}
+
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{codegray},
+    frame=single,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false
+}
+
+\captionsetup{
+    font=small,
+    labelfont=bf,
+    justification=raggedright,
+    singlelinecheck=false,
+    skip=5pt
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{CodeTrail Test Plan}
+\rhead{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\large\bfseries}{}{0pt}{}[\vspace{2pt}\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0pt}{}
+\setlist[itemize]{leftmargin=1.5em,itemsep=2pt,topsep=3pt}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=2pt,topsep=3pt}
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.22}
+\setlength{\LTpre}{4pt}
+\setlength{\LTpost}{8pt}
+\setlength{\LTleft}{0pt}
+\setlength{\LTright}{0pt}
+\setlength{\LTcapwidth}{\textwidth}
+\emergencystretch=2em
+\raggedbottom
+
+\newcommand{\pass}{\textcolor{passgreen}{\textbf{PASS}}}
+\newcommand{\code}[1]{\path{#1}}
+\newcommand{\field}[2]{\textbf{#1:} #2\par}
+\newcommand{\tableheader}[1]{\textbf{#1}}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{Z}{>{\centering\arraybackslash}X}
+\setlength{\LTchunksize}{20}
+\setlength{\arrayrulewidth}{0.4pt}
+\arrayrulecolor{gray!55}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+    {\LARGE\bfseries CodeTrail}\\[5pt]
+    {\Large Comprehensive Software Test Plan and Results}\\[16pt]
+    {\large Unit, Integration, API, Database, Non-functional and Defect Documentation}
+\end{center}
+\vfill
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.25\textwidth} Y}
+Project & CodeTrail --- Real-Time Collaborative Code Editor with Cryptographic Contribution Tracking\\
+Course & Web Services \& Service-Oriented Architecture (IT645)\\
+Institution & Dhirubhai Ambani University (Formerly DA-IICT)\\
+Document type & Formal software test plan, test-case specifications, database seeding strategy and bug log\\
+Version & 1.0.0 (Release Candidate / Final Audit)\\
+Execution date & November 2026\\
+Test leads & Anistina Dsouza (202512081) and Dudhat Monar (202512019)\\
+Project manager & Manushri Thakkar (202512122)\\
+Status & Approved; 100\% reported core-test pass rate\\
+\end{tabularx}
+\vfill
+\begin{center}
+\textit{Prepared for academic submission}
+\end{center}
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+\section{Test Plan Overview and Objectives}
+
+\subsection{Purpose and scope}
+This document defines the verification strategy and reported results for CodeTrail, a
+full-stack collaborative coding platform. It covers unit and integration testing,
+REST API and Socket.IO testing, meaningful database population, UI and other
+non-functional testing, regression verification, and defect tracking.
+
+The scope includes:
+\begin{enumerate}
+    \item authentication, authorization, profiles and password recovery;
+    \item workspace creation, discovery, invitations and role-based access control;
+    \item the Monaco multi-file collaborative editor and peer presence;
+    \item multi-language Piston code execution, standard input and diagnostics;
+    \item SHA-256 activity chaining and forensic tamper auditing;
+    \item telemetry, contribution analytics, reports and session validation; and
+    \item the interactive terminal and landing-page visual engine.
+\end{enumerate}
+
+\subsection{System under test}
+The client uses React 19 and Vite. Express 5 controllers expose REST endpoints,
+Socket.IO provides real-time collaboration, MongoDB/Mongoose provides persistence,
+and Piston v2 provides sandboxed execution. The principal data domains are users,
+workspaces, files, sessions, executions and cryptographic activity logs.
+
+\subsection{Test strategy}
+\begin{itemize}
+    \item \textbf{Unit tests} isolate cryptographic hashing, canonical serialization,
+    mathematical aggregation, validation and diagnostic parsing.
+    \item \textbf{Integration tests} exercise multi-user sessions, activity chains,
+    execution flows and persistence boundaries.
+    \item \textbf{API tests} verify request validation, authentication, authorization,
+    response bodies and HTTP status codes.
+    \item \textbf{Real-time tests} verify rooms, event delivery, cursor throttling,
+    deduplication, presence and monotonic versions.
+    \item \textbf{Non-functional tests} cover usability, performance, security,
+    reliability, offline behavior and browser compatibility.
+    \item \textbf{Regression tests} verify previously fixed runtime and workflow bugs.
+\end{itemize}
+
+\subsection{Environment}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{0.28\textwidth} Y}
+Operating system & Windows 11 Enterprise, x64\\
+Runtime & Node.js v24.18.0 LTS\\
+Backend & Express v5.2.1, Mongoose v9.9.1\\
+Frontend & React v19.2.8, Vite v8.2.1\\
+Editor and transport & Monaco Editor v4.7.0, Socket.IO v4.8.3\\
+Database & MongoDB Atlas or local MongoDB 7.0 replica set\\
+Execution & Local Piston v2 on port 2000, with EMKC cloud fallback\\
+Static analysis and crypto & Oxlint v1.75.0; Node.js SHA-256 and bcryptjs v3.0.3\\
+\end{tabularx}
+
+\section{Functional Testing}
+
+\subsection{Cryptographic proof-of-work ledger}
+The ledger uses a fixed 64-zero genesis anchor and a canonical payload containing
+\code{action}, \code{details}, \code{fileId}, line metrics, sequence, timestamp,
+\code{userId} and \code{workspaceId}. Each block is calculated as:
+\[
+\mathit{currentHash}_n =
+\operatorname{SHA256}(\operatorname{CanonicalJSON}(\mathit{payload}_n)
+    \mathbin\Vert \mathit{currentHash}_{n-1}).
+\]
+The reported suite \code{proofOfWork.test.js} verifies deterministic hashing,
+avalanche behavior, single-block verification, valid four-block chains, payload
+tampering, broken links and sequence gaps. The integrity auditor additionally
+detects \code{PAYLOAD\_ALTERED}, \code{CHAIN\_LINK\_BROKEN},
+\code{SEQUENCE\_GAP} and \code{TIMESTAMP\_ANOMALY}. All reported checks passed.
+
+\subsection{Telemetry and real-time synchronization}
+\code{telemetryStore.js} maintains a 50-event ring buffer, millisecond ISO-8601
+timestamps and a monotonic sequence counter initialized at 100. The telemetry
+suite reports 7/7 tests passed, including timestamp validity, sequence generation,
+hashed envelopes, peer-action recalculation, ring-buffer ordering, active typing
+tracking and heartbeat persistence.
+
+\subsection{Analytics, sessions and reports}
+The analytics suites verify percentage shares, streak detection, participation
+scores and category consistency. The principal score is:
+\[
+\mathit{score}=(\mathit{linesAdded}\times2)-\mathit{linesDeleted}
+                  +(\mathit{executions}\times5).
+\]
+Session validation covers empty and multi-participant sessions, timestamps,
+durations, duplicate sequences, category totals and execution metrics. The
+reported boundary test processes 1,500 events from ten participants in under
+10\,ms. The contribution-report suite reports 9/9 passed, including ranking,
+filters, mathematical validation, SHA-256 certificates and Markdown/HTML export.
+
+\subsection{Code-execution sandbox}
+\scriptsize
+\begin{xltabular}{\textwidth}{L{1.0cm} L{2.1cm} Y Y C{1.0cm}}
+\caption{Execution test specifications}\label{tab:execution}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Feature} & \tableheader{Input or scenario} & \tableheader{Expected result} & \tableheader{Result}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Feature} & \tableheader{Input or scenario} & \tableheader{Expected result} & \tableheader{Result}\\
+\midrule
+\endhead
+EXEC-01 & JavaScript baseline & \code{console.log(...)} & Exit 0 and matching stdout & \pass\\
+EXEC-02 & JavaScript stdin & Program reads a supplied line & Output matches stdin & \pass\\
+EXEC-03 & JavaScript error & \code{throw new Error(...)} & Exit 1 and stack trace & \pass\\
+EXEC-04 & Python baseline & \code{print(...)} & Clean stdout and exit 0 & \pass\\
+EXEC-05 & Python stdin & \code{input()} and formatted output & Echoed value returned & \pass\\
+EXEC-06 & Python runtime error & Division by zero & \code{ZeroDivisionError} captured & \pass\\
+EXEC-07 & C++ compile/run & Valid \code{iostream} program & Exit 0 and clean output & \pass\\
+EXEC-08 & C++ interactive & \code{std::cin} arithmetic & Correct calculated output & \pass\\
+EXEC-09 & C++ diagnostics & Missing declaration or semicolon & Compiler diagnostic captured & \pass\\
+EXEC-10 & Java compile/run & \code{public class Main} & Compiles and executes & \pass\\
+EXEC-11 & Timeout & Infinite loop & Killed at 10-second ceiling & \pass\\
+EXEC-12 & Empty payload & Blank or whitespace-only code & HTTP 400, empty-code error & \pass\\
+EXEC-13 & Size boundary & Code larger than 256 KB & HTTP 400, size error & \pass\\
+EXEC-14 & Language aliases & \code{py}, \code{js}, \code{cpp} & Normalized language names & \pass\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\subsection{Runtime and workspace regression}
+\begin{itemize}
+    \item Member role updates return success, 404 for missing members and 403 for
+    unauthorized users.
+    \item Member removal protects the owner and returns meaningful 404/400 errors.
+    \item Execution history requires authentication and enforces workspace membership.
+    \item Display role ``CodeTrail Learner'' normalizes to canonical ``editor''.
+    \item Workspace visibility, membership, language normalization, creation summaries
+    and empty-dashboard metrics pass the reported nine regression checks.
+\end{itemize}
+
+\subsection{REST API coverage}
+\scriptsize
+\begin{xltabular}{\textwidth}{L{1.1cm} Y Y C{1.0cm} Y}
+\caption{REST API test coverage}\label{tab:api}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{Verb} & \tableheader{Endpoint} & \tableheader{Purpose} & \tableheader{Auth} & \tableheader{Representative errors}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{Verb} & \tableheader{Endpoint} & \tableheader{Purpose} & \tableheader{Auth} & \tableheader{Representative errors}\\
+\midrule
+\endhead
+POST & \code{/api/auth/register} & Register with bcrypt password & No & 400, 409\\
+POST & \code{/api/auth/login} & Authenticate and issue JWT & No & 400, 401\\
+POST & \code{/api/auth/google} & Verify Google OAuth token & No & 400\\
+POST & \code{/api/auth/forgot-password} & Generate reset token and email & No & 404, 500\\
+POST & \code{/api/auth/reset-password} & Set password with token & No & 400\\
+GET/PUT & \code{/api/auth/profile} & Read or update profile & Yes & 400, 401\\
+POST & \code{/api/workspaces} & Create workspace and starter files & Yes & 400\\
+GET & \code{/api/workspaces} & List owned and joined workspaces & Yes & 401\\
+GET/PATCH & \code{/api/workspaces/:id} & Read or autosave workspace & Yes & 403, 404\\
+POST & \code{/api/workspaces/join/:code} & Join by invite code & Yes & 400, 404\\
+PUT/DELETE & \code{/api/workspaces/:id/members/:uid} & Manage membership & Yes & 400, 403, 404\\
+POST/PATCH & \code{/api/workspaces/:id/session/*} & Enter, leave, focus and heartbeat & Yes & 404\\
+POST/GET & \code{/api/workspaces/:id/activities} & Append or query ledger & Yes & 400, 404, 500\\
+GET & \code{/api/workspaces/:id/activities/verify} & Audit chain integrity & Yes & 200 with diagnostics\\
+POST & \code{/api/execute} & Execute sandbox program & Optional & 400, 500\\
+GET & \code{/api/workspaces/:id/executions} & Retrieve execution history & Yes & 401, 403\\
+GET/POST & \code{/api/workspaces/:id/reports/*} & Generate, export and validate reports & Yes & 404\\
+GET & \code{/api/health} & Report service and database health & No & Connected/disconnected state\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\subsection{Socket.IO coverage}
+The real-time suite covers session joining, dual workspace rooms, code changes,
+server version guards, viewer-role rejection, cursor updates throttled to 30\,ms,
+telemetry actions and heartbeats, presence updates, leave events and disconnect
+cleanup. Each accepted code update contains the file, code, version and actor;
+stale versions are discarded.
+
+\subsection{Functional test-case matrix}
+\scriptsize
+\begin{xltabular}{\textwidth}{L{1.3cm} L{1.8cm} L{2.0cm} Y C{1.0cm}}
+\caption{Representative functional test cases}\label{tab:functional}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Area} & \tableheader{Type} & \tableheader{Expected verification} & \tableheader{Result}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Area} & \tableheader{Type} & \tableheader{Expected verification} & \tableheader{Result}\\
+\midrule
+\endhead
+TC-F01 & Auth & Unit & Salted bcrypt hash is stored for a valid password & \pass\\
+TC-F02 & Auth & Integration & Registration returns 201 and a valid seven-day JWT & \pass\\
+TC-F03 & Auth & Security & Incorrect password returns 401 & \pass\\
+TC-F04 & Auth & Integration & Expired reset token returns 400 & \pass\\
+TC-F05 & Workspace & Integration & Creation includes language boilerplate files & \pass\\
+TC-F06 & Workspace & Integration & Invite code is exactly eight hexadecimal characters & \pass\\
+TC-F07 & Workspace & Security & Private non-member access returns 403 & \pass\\
+TC-F08 & Workspace & RBAC & Owner self-removal returns 400 & \pass\\
+TC-F09 & Workspace & RBAC & Owner can promote a member to admin & \pass\\
+TC-F10 & Editor & Usability & Multi-file selection switches Monaco model & \pass\\
+TC-F11 & Editor & Security & Viewer mounts Monaco as read-only & \pass\\
+TC-F12 & Editor & Integration & Autosave fires after 2.5 seconds of inactivity & \pass\\
+TC-F13 & Editor & Resilience & Offline edits persist locally and show status & \pass\\
+TC-F14--F17 & Sandbox & Integration & Execution, stdin, diagnostics and timeout behavior & \pass\\
+TC-F18--F23 & Ledger & Crypto & Genesis, canonical hashing and tamper detection & \pass\\
+TC-F24--F25 & Telemetry & Concurrency & ISO timestamps and cursor throttle are correct & \pass\\
+TC-F26--F27 & Analytics & Performance & Shares sum to 100\% and 1,500 events are processed & \pass\\
+TC-F28--F29 & Reports & Integration & Category totals and report signatures validate & \pass\\
+TC-F30 & Database & Resilience & Database outage returns HTTP 503 & \pass\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\section{Database Seeding and Verification}
+
+\subsection{Seeding objectives}
+The seeding harness creates interconnected records so that authentication,
+multi-user presence, execution history, contribution analytics and cryptographic
+auditing can be demonstrated against meaningful data rather than empty collections.
+
+\subsection{Seeded records}
+\begin{itemize}
+    \item \textbf{Users:} eight contributor profiles and one academic observer, with
+    bcrypt-hashed credentials and role-specific profiles.
+    \item \textbf{Workspaces:} JavaScript cloud services, a Python graph engine and
+    a C++ memory allocator, each with starter project files.
+    \item \textbf{Sessions:} online and offline presence records with active files,
+    typing state and accumulated durations.
+    \item \textbf{Executions:} successful JavaScript and Python runs, a cryptographic
+    test-vector run and a C++ diagnostic record.
+    \item \textbf{Activity logs:} a seven-block chain beginning at the 64-zero
+    genesis hash and containing file, edit, execution and membership actions.
+\end{itemize}
+
+\subsection{Execution guide}
+\begin{lstlisting}[language=bash]
+cd d:\CodeTrail\CodeTrail\backend
+node scripts/seedDatabase.js
+\end{lstlisting}
+The expected verification is a successful database connection, clean population of
+all collections, seven inserted activity blocks, and an integrity score of 100\%.
+
+\subsection{Verification queries}
+\begin{lstlisting}[language=JavaScript]
+db.users.findOne(
+  { email: "manushri@codetrail.dev" },
+  { password: 0 }
+);
+
+db.activitylogs.findOne({ sequenceNumber: 2 });
+\end{lstlisting}
+These queries verify that credentials are not exposed and that a persisted block
+contains its actor, action, line metrics, sequence, previous hash and current hash.
+
+\section{Non-functional Testing}
+
+\subsection{UI and usability}
+\needspace{10\baselineskip}
+\scriptsize
+\begin{xltabular}{\textwidth}{L{1.1cm} L{3.0cm} Y C{1.5cm}}
+\caption{UI and usability test coverage}\label{tab:ui}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Component} & \tableheader{Verification} & \tableheader{Result}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Component} & \tableheader{Verification} & \tableheader{Result}\\
+\midrule
+\endhead
+UI-01 & Monaco editor & Syntax highlighting across supported languages & \pass\\
+UI-02 & Peer cursors & Remote cursor decorations and colored name tags render & \pass\\
+UI-03 & Viewer guard & Viewer editor and workspace actions are read-only & \pass\\
+UI-04 & Autosave pill & Typing, saving and autosaved states transition correctly & \pass\\
+UI-05 & Offline mode & Local persistence and offline status are visible & \pass\\
+UI-06 & Terminal & Help, status, run, whoami, clear and version respond & \pass\\
+UI-07 & Landing canvas & Three.js particles animate with mouse parallax & \pass\\
+UI-08 & Report view & KPIs, rankings, certificate and print layout render & \pass\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\subsection{Performance and concurrency}
+\begin{itemize}
+    \item Cursor broadcasts are limited to one packet per 30\,ms window (about 33
+    packets per second), reducing continuous-drag traffic by the reported 91\%.
+    \item Analytics process 1,500 events across ten participants, aggregating 10,500
+    lines with no overflow and a reported duration below 10\,ms.
+    \item Local Piston latency is reported at 30--55\,ms; cloud fallback at
+    380--720\,ms. Code above 256\,KB and stdin above 128\,KB are rejected early.
+    \item Oxlint reports zero errors across 46 frontend files and 92 rules.
+\end{itemize}
+
+\subsection{Security and authorization}
+Tests cover SHA-256 tamper evidence, role enforcement for owner/admin/editor/viewer,
+bcrypt password storage, one-hour reset tokens from secure random bytes, and
+sandbox execution limits. Tamper vectors include altered payloads, broken links,
+sequence gaps and timestamp regressions.
+
+\subsection{Reliability and compatibility}
+Database-dependent routes return HTTP 503 when MongoDB is unavailable. The editor
+stores offline changes locally and reconciles them after reconnection. Duplicate
+activity sequences are protected by a compound index and retried with bounded
+backoff. Chrome, Edge, Firefox and Safari are reported compatible with Monaco,
+WebSockets and execution workflows.
+
+\section{Defect Tracking and Bug Log}
+
+\subsection{Severity classification}
+\needspace{12\baselineskip}
+\begin{itemize}
+    \item \textbf{Critical/P1:} crash, data corruption, security failure or blocked suite.
+    \item \textbf{Major/P2:} core function failure or unhandled server failure.
+    \item \textbf{Medium/P3:} edge-case handling or incorrect API/schema behavior.
+    \item \textbf{Minor/P4:} cosmetic or environmental issue.
+\end{itemize}
+
+\scriptsize
+\begin{xltabular}{\textwidth}{L{0.9cm} L{1.5cm} C{0.8cm} Y Y C{1.2cm}}
+\caption{Formal bug log}\label{tab:bugs}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Module} & \tableheader{Sev.} & \tableheader{Defect} & \tableheader{Resolution} & \tableheader{Status}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{ID} & \tableheader{Module} & \tableheader{Sev.} & \tableheader{Defect} & \tableheader{Resolution} & \tableheader{Status}\\
+\midrule
+\endhead
+BUG-001 & Ledger & P1 & Display role rejected by ActivityLog enum & Normalize display roles to canonical ledger roles & Resolved\\
+BUG-002 & Telemetry & P1 & Sequence baseline initialized at zero & Initialize counter at 100 & Resolved\\
+BUG-003 & Auth & P2 & SMTP and documented email variables differed & Support both configuration names & Resolved\\
+BUG-004 & Workspace & P2 & Missing-member operations crashed; owner removable & Validate IDs, return 404 and protect owner & Resolved\\
+BUG-005 & Execution & P2 & Missing authentication caused undefined user access & Return clean HTTP 401 & Resolved\\
+BUG-006 & Workspace & P3 & Unknown history type caused validation error & Validate and normalize to session & Resolved\\
+BUG-007 & Sessions & P3 & Invalid workspace ID implied editor role & Return null role and reject access & Resolved\\
+BUG-008 & Build & P1 & Merge markers caused syntax and lint failures & Remove markers and unify test index & Resolved\\
+BUG-009 & Execution & P4 & Cold C++ sandbox startup timed out & Increase ceiling to 10 seconds and use fallback & Resolved\\
+BUG-010 & Export & P3 & Backend test imported client-only PDF dependency & Decouple report data from browser PDF export & Resolved\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\subsection{Detailed example: role normalization}
+The ActivityLog schema originally accepted canonical roles only, while new users
+could have the display role ``CodeTrail Learner''. The corrective normalization
+maps canonical values directly, maps owner/admin/viewer terms explicitly, and
+falls back to editor for the learner display role. The runtime regression suite
+reports successful preservation of canonical roles and successful normalization.
+
+\section{Execution Summary and Traceability}
+
+\subsection{Automated execution summary}
+\needspace{14\baselineskip}
+\scriptsize
+\begin{xltabular}{\textwidth}{Y C{1.5cm} C{1.5cm} C{1.5cm} C{2.0cm}}
+\caption{Reported automated test results}\label{tab:summary}\\
+\toprule
+\rowcolor{tableblue}
+\tableheader{Suite} & \tableheader{Cases} & \tableheader{Passed} & \tableheader{Failed} & \tableheader{Rate}\\
+\midrule
+\endfirsthead
+\toprule
+\rowcolor{tableblue}
+\tableheader{Suite} & \tableheader{Cases} & \tableheader{Passed} & \tableheader{Failed} & \tableheader{Rate}\\
+\midrule
+\endhead
+proofOfWork.test.js & 6 & 6 & 0 & 100\%\\
+activityController.test.js & 3 & 3 & 0 & 100\%\\
+telemetrySync.test.js & 7 & 7 & 0 & 100\%\\
+integrityAuditor.test.js & 9 & 9 & 0 & 100\%\\
+analytics.test.js & 22 & 22 & 0 & 100\%\\
+sessionAnalytics.test.js & 16 & 16 & 0 & 100\%\\
+contributionReport.test.js & 9 & 9 & 0 & 100\%\\
+runtimeFixes.test.js & 11 & 11 & 0 & 100\%\\
+workspaceRegression.test.js & 9 & 9 & 0 & 100\%\\
+executionValidation.test.js & 16 & 16 & 0 & 100\%\\
+\textbf{Aggregate} & \textbf{108} & \textbf{108} & \textbf{0} & \textbf{100\%}\\
+\bottomrule
+\end{xltabular}
+\normalsize
+
+\subsection{Requirements traceability}
+\begin{tabularx}{\textwidth}{L{2.0cm} Y L{3.5cm} C{1.3cm}}
+\toprule
+\rowcolor{tableblue}
+\tableheader{Requirement} & \tableheader{Description} & \tableheader{Evidence} & \tableheader{Status}\\
+\midrule
+AUTH-01 & bcrypt authentication and seven-day JWT & TC-F01--F03 & Verified\\
+WS-01 & Workspace creation and RBAC & TC-F05--F09, regression suite & Verified\\
+EDIT-01 & Real-time Monaco collaboration & TC-F10--F13, UI suite & Verified\\
+EXEC-01 & JavaScript, Python, C++, Java sandbox & EXEC-01--14 & Verified\\
+POW-01 & Immutable SHA-256 activity ledger & TC-F18--F23 & Verified\\
+TELEM-01 & Sequencing and timestamps & TC-F24--F27 & Verified\\
+REPORT-01 & Signed contribution reports & TC-F28--F29 & Verified\\
+DB-01 & Meaningful seeded records & Seeding harness and queries & Verified\\
+\bottomrule
+\end{tabularx}
+
+\subsection{Quality assurance sign-off}
+The reported evidence covers ten backend suites, 108 automated cases, UI and
+non-functional checks, database population across five collection domains, and
+resolution of ten logged defects. Based on the supplied execution results, the
+CodeTrail test baseline is approved for academic submission.
+
+\end{document}

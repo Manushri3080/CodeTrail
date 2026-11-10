@@ -1015,6 +1015,19 @@ exports.addWorkspaceMember = async (req, res) => {
       roleDetails: rolePerms
     };
 
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user:${targetUserIdStr}`).emit('notification', {
+        type: 'workspace_invitation',
+        title: 'Workspace invitation',
+        message: `${req.user?.name || 'A collaborator'} invited you to join ${workspace.title}.`,
+        workspaceId: workspace._id.toString(),
+        workspaceTitle: workspace.title,
+        invitedBy: req.user?._id?.toString() || null,
+        createdAt: new Date().toISOString()
+      });
+    }
+
     res.status(201).json({
       message: `Successfully invited ${targetUser.name}!`,
       member: newMember
