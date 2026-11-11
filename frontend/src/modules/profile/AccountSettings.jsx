@@ -1,5 +1,36 @@
-import React, { useState } from 'react';
-import { Settings, KeyRound, Bell, LogOut, Lock, Check, AlertCircle, X, ShieldAlert, TrendingUp, Megaphone } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Settings, KeyRound, Bell, LogOut, Lock, Check, AlertCircle, X, ShieldAlert, TrendingUp, Megaphone, Loader2 } from 'lucide-react';
+import { API_BASE } from '../../config/api';
+
+const DEFAULT_NOTIFICATIONS = {
+  securityAlerts: true,
+  weeklyProgress: true,
+  platformNews: false
+};
+
+const NOTIFICATION_CATEGORIES = [
+  {
+    key: 'securityAlerts',
+    title: 'Security & login alerts',
+    description: 'Get immediate emails when critical security events or new logins occur',
+    ariaLabel: 'Toggle Security Alerts',
+    Icon: ShieldAlert
+  },
+  {
+    key: 'weeklyProgress',
+    title: 'Weekly learning & practice digest',
+    description: 'Receive a weekly summary of your coding streak and completed modules',
+    ariaLabel: 'Toggle Practice Digest',
+    Icon: TrendingUp
+  },
+  {
+    key: 'platformNews',
+    title: 'Product updates & feature announcements',
+    description: 'Stay up to date with new features, challenge sets, and platform releases',
+    ariaLabel: 'Toggle Product News',
+    Icon: Megaphone
+  }
+];
 
 export const AccountSettings = ({ authProvider, onChangePassword, onLogout }) => {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -10,26 +41,126 @@ export const AccountSettings = ({ authProvider, onChangePassword, onLogout }) =>
   const [passSuccess, setPassSuccess] = useState('');
   const [submittingPass, setSubmittingPass] = useState(false);
 
-  // Persistent Email Notification Preferences State
-  const [notifications, setNotifications] = useState(() => {
-    const saved = localStorage.getItem('ct-notification-prefs');
-    return saved ? JSON.parse(saved) : {
-      securityAlerts: true,
-      weeklyProgress: true,
-      platformNews: false
-    };
-  });
-
+  // MongoDB-backed Notification Preferences State
+  const [notifications, setNotifications] = useState(DEFAULT_NOTIFICATIONS);
+  const [loadingPrefs, setLoadingPrefs] = useState(true);
+  const [savingKey, setSavingKey] = useState(null);
+  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [notifError, setNotifError] = useState('');
   const [toastMsg, setToastMsg] = useState('');
+  const toastTimerRef = useRef(null);
 
-  const toggleNotification = (key) => {
-    setNotifications(prev => {
-      const updated = { ...prev, [key]: !prev[key] };
-      localStorage.setItem('ct-notification-prefs', JSON.stringify(updated));
-      setToastMsg('Notification preferences updated!');
-      setTimeout(() => setToastMsg(''), 2500);
-      return updated;
-    });
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadNotificationPreferences = async () => {
+      const token = localStorage.getItem('ct-auth-token');
+      if (!token) {
+        if (isMounted) {
+          setLoadingPrefs(false);
+          setPrefsLoaded(false);
+          setNotifError('Sign in required to load and update notification preferences.');
+        }
+        return;
+      }
+
+      try {
+        setLoadingPrefs(true);
+        setNotifError('');
+        const res = await fetch(`${API_BASE}/notifications/preferences`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.message || 'Failed to load notification preferences.');
+        }
+
+        if (isMounted && data.preferences) {
+          setNotifications({
+            securityAlerts: Boolean(data.preferences.securityAlerts),
+            weeklyProgress: Boolean(data.preferences.weeklyProgress),
+            platformNews: Boolean(data.preferences.platformNews)
+          });
+          setPrefsLoaded(true);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setPrefsLoaded(false);
+          setNotifError(err.message || 'Unable to load saved notification preferences.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingPrefs(false);
+        }
+      }
+    };
+
+    loadNotificationPreferences();
+
+    return () => {
+      isMounted = false;
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  const showToast = (msg) => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToastMsg(msg);
+    toastTimerRef.current = setTimeout(() => {
+      setToastMsg('');
+    }, 2500);
+  };
+
+  const toggleNotification = async (key) => {
+    if (loadingPrefs || savingKey || !prefsLoaded) {
+      return;
+    }
+
+    const token = localStorage.getItem('ct-auth-token');
+    if (!token) {
+      setNotifError('Authentication required. Please sign in again.');
+      return;
+    }
+
+    const nextValue = !notifications[key];
+    setSavingKey(key);
+    setNotifError('');
+    setToastMsg('');
+
+    try {
+      const res = await fetch(`${API_BASE}/notifications/preferences`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ [key]: nextValue })
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.preferences) {
+        throw new Error(data.message || 'Failed to update notification preferences.');
+      }
+
+      setNotifications({
+        securityAlerts: Boolean(data.preferences.securityAlerts),
+        weeklyProgress: Boolean(data.preferences.weeklyProgress),
+        platformNews: Boolean(data.preferences.platformNews)
+      });
+      showToast('Notification preferences saved!');
+    } catch (err) {
+      setNotifError(err.message || 'Failed to save notification preference. Changes were not persisted.');
+    } finally {
+      setSavingKey(null);
+    }
   };
 
   const handlePasswordSubmit = async (e) => {
@@ -103,7 +234,7 @@ export const AccountSettings = ({ authProvider, onChangePassword, onLogout }) =>
           </div>
 
           {/* Email Preferences Row */}
-          <div className="ct-settings-row">
+          <div className="ct-settings-row flex-wrap gap-3">
             <div className="ct-settings-info">
               <div className="ct-settings-icon-box">
                 <Bell size={16} />
@@ -113,77 +244,64 @@ export const AccountSettings = ({ authProvider, onChangePassword, onLogout }) =>
                 <p className="ct-settings-desc">Manage what emails you receive from CodeTrail</p>
               </div>
             </div>
-            {toastMsg && (
-              <span className="text-xs text-purple-400 bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20 flex items-center gap-1.5 animate-fade-in">
+            {loadingPrefs && (
+              <span className="text-xs text-gray-300 bg-white/5 px-3 py-1 rounded-full border border-white/10 flex items-center gap-1.5" role="status">
+                <Loader2 size={12} className="animate-spin text-purple-400" />
+                <span>Loading preferences...</span>
+              </span>
+            )}
+            {!loadingPrefs && savingKey && (
+              <span className="text-xs text-purple-300 bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20 flex items-center gap-1.5" role="status">
+                <Loader2 size={12} className="animate-spin" />
+                <span>Saving...</span>
+              </span>
+            )}
+            {!loadingPrefs && !savingKey && toastMsg && (
+              <span className="text-xs text-purple-400 bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20 flex items-center gap-1.5 animate-fade-in" role="status">
                 <Check size={12} />
                 <span>{toastMsg}</span>
               </span>
             )}
           </div>
 
+          {notifError && (
+            <div className="ct-alert error mt-3" role="alert">
+              <AlertCircle size={15} />
+              <span>{notifError}</span>
+            </div>
+          )}
+
           <div className="ct-notification-toggles">
-            {/* Toggle Item 1: Security */}
-            <div className="ct-notification-card">
-              <div className="ct-notification-info">
-                <div className="ct-notification-icon-box">
-                  <ShieldAlert size={16} />
-                </div>
-                <div>
-                  <h5 className="ct-notification-name">Security & login alerts</h5>
-                  <p className="ct-notification-sub">Get immediate emails when critical security events or new logins occur</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`ct-switch ${notifications.securityAlerts ? 'active' : ''}`}
-                onClick={() => toggleNotification('securityAlerts')}
-                aria-label="Toggle Security Alerts"
-              >
-                <span className="ct-switch-handle" />
-              </button>
-            </div>
+            {NOTIFICATION_CATEGORIES.map((category) => {
+              const CategoryIcon = category.Icon;
+              const isEnabled = Boolean(notifications[category.key]);
+              const isDisabled = loadingPrefs || Boolean(savingKey) || !prefsLoaded;
 
-            {/* Toggle Item 2: Practice Digest */}
-            <div className="ct-notification-card">
-              <div className="ct-notification-info">
-                <div className="ct-notification-icon-box">
-                  <TrendingUp size={16} />
+              return (
+                <div key={category.key} className="ct-notification-card gap-3">
+                  <div className="ct-notification-info">
+                    <div className="ct-notification-icon-box">
+                      <CategoryIcon size={16} />
+                    </div>
+                    <div>
+                      <h5 className="ct-notification-name">{category.title}</h5>
+                      <p className="ct-notification-sub">{category.description}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className={`ct-switch ${isEnabled ? 'active' : ''} ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                    onClick={() => toggleNotification(category.key)}
+                    disabled={isDisabled}
+                    aria-label={category.ariaLabel}
+                    aria-pressed={isEnabled}
+                    aria-busy={savingKey === category.key}
+                  >
+                    <span className="ct-switch-handle" />
+                  </button>
                 </div>
-                <div>
-                  <h5 className="ct-notification-name">Weekly learning & practice digest</h5>
-                  <p className="ct-notification-sub">Receive a weekly summary of your coding streak and completed modules</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`ct-switch ${notifications.weeklyProgress ? 'active' : ''}`}
-                onClick={() => toggleNotification('weeklyProgress')}
-                aria-label="Toggle Practice Digest"
-              >
-                <span className="ct-switch-handle" />
-              </button>
-            </div>
-
-            {/* Toggle Item 3: Product News */}
-            <div className="ct-notification-card">
-              <div className="ct-notification-info">
-                <div className="ct-notification-icon-box">
-                  <Megaphone size={16} />
-                </div>
-                <div>
-                  <h5 className="ct-notification-name">Product updates & feature announcements</h5>
-                  <p className="ct-notification-sub">Stay up to date with new features, challenge sets, and platform releases</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className={`ct-switch ${notifications.platformNews ? 'active' : ''}`}
-                onClick={() => toggleNotification('platformNews')}
-                aria-label="Toggle Product News"
-              >
-                <span className="ct-switch-handle" />
-              </button>
-            </div>
+              );
+            })}
           </div>
 
           {/* Logout Row */}
