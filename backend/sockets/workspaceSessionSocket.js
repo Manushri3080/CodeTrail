@@ -1,19 +1,21 @@
 const WorkspaceSession = require('../models/WorkspaceSession');
 const Workspace = require('../models/Workspace');
 const telemetryStore = require('../utils/telemetryStore');
+const { dispatchNotification } = require('../utils/notificationDeliveryService');
 
 // In-memory version tracking: fileVersionMap[`${workspaceId}:${fileId}`] = currentVersionNumber
 const fileVersionMap = new Map();
 
-const emitWorkspaceNotification = (io, workspaceId, notification, includeSender = false) => {
-  const room = `workspace:${workspaceId}`;
-  if (includeSender) {
-    io.to(room).emit('notification', notification);
-  } else if (notification.actorId) {
-    io.to(room).except(`user:${notification.actorId}`).emit('notification', notification);
-  } else {
-    io.to(room).emit('notification', notification);
-  }
+const emitWorkspaceNotification = (io, workspaceId, notification, includeSender = false, workspaceContext = null) => {
+  return dispatchNotification({
+    io,
+    notification: {
+      ...notification,
+      workspaceId: notification.workspaceId || String(workspaceId)
+    },
+    workspaceContext,
+    includeSender
+  });
 };
 
 /**
@@ -52,9 +54,10 @@ const initWorkspaceSessionSocket = (io) => {
 
         if (socket.userId) {
           socket.join(`user:${socket.userId}`);
+          let ws = null;
           // Verify actual member role against Workspace document if available
           try {
-            const ws = await Workspace.findById(workspaceId);
+            ws = await Workspace.findById(workspaceId);
             if (ws) {
               if (ws.owner && ws.owner.toString() === socket.userId.toString()) {
                 socket.userRole = 'owner';
@@ -111,7 +114,7 @@ const initWorkspaceSessionSocket = (io) => {
             workspaceId: String(workspaceId),
             actorId: String(socket.userId),
             createdAt: new Date().toISOString()
-          });
+          }, false, ws);
         }
 
         // Send updated workspace active presence list
@@ -205,6 +208,22 @@ const initWorkspaceSessionSocket = (io) => {
         actorId: socket.userId ? String(socket.userId) : null,
         status,
         filename: data.filename || null,
+        createdAt: new Date().toISOString()
+      }, true);
+    });
+
+    // Session Summary Alert Event
+    socket.on('session_summary', (data = {}) => {
+      const targetWorkspaceId = data.workspaceId || socket.workspaceId;
+      if (!targetWorkspaceId) return;
+
+      emitWorkspaceNotification(io, targetWorkspaceId, {
+        type: 'session_summary',
+        title: data.title || 'Session Summary',
+        message: data.message || `Session completed with ${data.totalEvents || 0} activity events.`,
+        workspaceId: String(targetWorkspaceId),
+        actorId: socket.userId ? String(socket.userId) : null,
+        summary: data.summary || null,
         createdAt: new Date().toISOString()
       }, true);
     });
@@ -540,3 +559,4 @@ const initWorkspaceSessionSocket = (io) => {
 };
 
 module.exports = initWorkspaceSessionSocket;
+module.exports.emitWorkspaceNotification = emitWorkspaceNotification;

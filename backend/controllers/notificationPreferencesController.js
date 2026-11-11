@@ -147,6 +147,13 @@ exports.updateNotificationPreferences = async (req, res) => {
       return res.status(404).json({ message: 'User account not found.' });
     }
 
+    try {
+      const { invalidateUserPreferenceCache } = require('../utils/notificationDeliveryService');
+      invalidateUserPreferenceCache(userId);
+    } catch (cacheErr) {
+      // Non-blocking
+    }
+
     return res.status(200).json({
       message: 'Notification preferences updated successfully.',
       preferences: normalizeNotificationPreferences(updatedUser.notificationPreferences)

@@ -1,11 +1,37 @@
 import React from "react";
-import { Bell, CheckCircle2, Code2, Mail, UserMinus, UserPlus, X } from "lucide-react";
+import {
+  Bell,
+  CheckCircle2,
+  Code2,
+  Mail,
+  UserMinus,
+  UserPlus,
+  Sliders,
+  Clock,
+  ShieldAlert,
+  ShieldCheck,
+  X
+} from "lucide-react";
 
 const ICONS = {
   participant_joined: UserPlus,
   participant_left: UserMinus,
   workspace_invitation: Mail,
   execution_status: Code2,
+  settings_updated: Sliders,
+  session_summary: Clock,
+  role_updated: ShieldCheck,
+  security_alert: ShieldAlert,
+};
+
+const ICON_COLORS = {
+  participant_joined: "text-cyan-300",
+  participant_left: "text-gray-400",
+  workspace_invitation: "text-purple-300",
+  settings_updated: "text-blue-300",
+  session_summary: "text-amber-300",
+  role_updated: "text-emerald-400",
+  security_alert: "text-rose-400",
 };
 
 const getIcon = (type) => ICONS[type] || Bell;
@@ -59,14 +85,20 @@ const NotificationCenter = ({ notifications, isOpen, onToggle, onDismiss, onClea
             ) : (
               notifications.map((notification) => {
                 const Icon = getIcon(notification.type);
+                const iconColor = notification.type === 'execution_status'
+                  ? (notification.status === 'success' ? 'text-emerald-400' : 'text-rose-400')
+                  : (ICON_COLORS[notification.type] || 'text-cyan-300');
+
                 return (
                   <div key={notification.id} className="flex gap-3 border-b border-white/5 px-4 py-3 last:border-0">
-                    <Icon size={16} className="mt-0.5 shrink-0 text-cyan-300" />
+                    <Icon size={16} className={`mt-0.5 shrink-0 ${iconColor}`} />
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium text-gray-100">{notification.title}</p>
                       <p className="mt-1 text-xs leading-5 text-gray-400">{notification.message}</p>
                       <time className="mt-1 block text-[10px] text-gray-500">
-                        {new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {notification.createdAt
+                          ? new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                          : "Just now"}
                       </time>
                     </div>
                     <button
