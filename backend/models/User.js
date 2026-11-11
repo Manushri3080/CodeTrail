@@ -12,6 +12,11 @@ const UserSchema = new mongoose.Schema({
   authProvider: { type: String, enum: ['local', 'google'], default: 'local' },
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date },
+  notificationPreferences: {
+    securityAlerts: { type: Boolean, default: true },
+    weeklyProgress: { type: Boolean, default: true },
+    platformNews: { type: Boolean, default: false }
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
