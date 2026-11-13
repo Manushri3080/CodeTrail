@@ -6130,9 +6130,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
                     {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
                     {outputTab === "telemetry" && (
-                      <div className="space-y-5">
-                        <div className="flex items-center justify-between p-4 pb-5 border-b border-white/10 flex-wrap gap-5">
-                          <div className="flex items-center gap-4 text-xs font-bold text-purple-300">
+                      <div className="space-y-6 px-1">
+                        <div className="flex items-center justify-between p-5 border-b border-white/10 flex-wrap gap-6">
+                          <div className="flex items-center gap-4 px-1 text-xs font-bold text-purple-300">
                             <ShieldCheck
                               size={15}
                               className="text-purple-400"
@@ -6157,12 +6157,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3 flex-wrap">
+                          <div className="flex items-center gap-3 px-1 flex-wrap">
                             <button
                               type="button"
                               onClick={() => fetchWorkspaceTelemetry()}
                               disabled={isTelemetryLoading}
-                              className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              className="px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
                               title="Re-verify blockchain activity chain"
                             >
                               <RefreshCw
@@ -6186,7 +6186,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📄 Exported ${fileName}`, "success");
                               }}
-                              className="px-3 py-2 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
+                              className="px-4 py-2.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
                               title="Download JSON machine-verifiable audit manifest"
                             >
                               <Download size={11} />
@@ -6203,7 +6203,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📋 Exported ${fileName}`, "success");
                               }}
-                              className="px-3 py-2 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              className="px-4 py-2.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
                               title="Download formatted Markdown Certificate"
                             >
                               <FileText size={11} />
@@ -6215,7 +6215,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         {/* Tamper Diagnostic Banner in Output Tab */}
                         {telemetryVerification &&
                           !telemetryVerification.isValid && (
-                            <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-2.5">
+                            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-3">
                               <AlertTriangle
                                 size={15}
                                 className="text-rose-400 shrink-0 mt-0.5"
@@ -6224,7 +6224,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 <div className="font-bold text-rose-300">
                                   Cryptographic Tamper Warning Detected
                                 </div>
-                                <div className="text-[11px] text-gray-300 mt-0.5">
+                                <div className="text-[11px] text-gray-300 mt-1 leading-5">
                                   {telemetryVerification.tamperDiagnostics
                                     ?.details ||
                                     telemetryVerification.error ||
@@ -6236,8 +6236,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                           )}
 
                         {/* Top Summary Cards */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-1">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
                             <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Activity
                                 size={11}
@@ -6252,7 +6252,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
                             <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Layers size={11} className="text-purple-400" />
                               <span>BLOCKCHAIN BLOCKS</span>
@@ -6262,7 +6262,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
                             <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Users size={11} className="text-sky-400" />
                               <span>CONTRIBUTORS</span>
@@ -6272,7 +6272,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             </div>
                           </div>
 
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl">
+                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
                             <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
                               <Hash size={11} className="text-amber-400" />
                               <span>LATEST HASH</span>
@@ -6289,9 +6289,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         </div>
 
                         {/* Contributor Breakdown Table */}
-                        <div className="space-y-2.5 max-h-40 overflow-y-auto pr-1">
+                        <div className="space-y-3 max-h-40 overflow-y-auto px-1 pr-2">
                           {(telemetryData?.contributors || []).length === 0 ? (
-                            <div className="text-gray-500 italic py-4 text-center">
+                            <div className="text-gray-500 italic p-5 text-center">
                               No contribution telemetry recorded yet. Code edits
                               and executions will chain automatically!
                             </div>
@@ -6306,7 +6306,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               return (
                                 <div
                                   key={c.id || idx}
-                                  className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-4"
+                                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-5"
                                 >
                                   <div className="flex items-center gap-3 min-w-0">
                                     <span
@@ -6318,7 +6318,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     >
                                       {c.name ? c.name[0] : "U"}
                                     </span>
-                                    <span className="font-bold text-gray-200 truncate px-1">
+                                    <span className="font-bold text-gray-200 truncate">
                                       {c.name}
                                     </span>
                                     <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
@@ -6326,8 +6326,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     </span>
                                   </div>
 
-                                  <div className="flex items-center gap-5 shrink-0 font-mono">
-                                    <div className="text-[11px] text-gray-300 px-1">
+                                  <div className="flex items-center justify-between gap-5 w-full sm:w-auto sm:justify-end shrink-0 font-mono">
+                                    <div className="text-[11px] text-gray-300">
                                       <strong>
                                         {c.lines?.toLocaleString() || 0}
                                       </strong>{" "}
@@ -6375,7 +6375,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                           );
                                         }
                                       }}
-                                      className="flex items-center gap-1 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-2 py-0.5 rounded border border-purple-500/20 transition-colors"
+                                      className="flex items-center gap-2 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-3.5 py-2 rounded-lg border border-purple-500/20 transition-colors"
                                       title={`Full SHA-256: ${fullHash}`}
                                     >
                                       <Hash
