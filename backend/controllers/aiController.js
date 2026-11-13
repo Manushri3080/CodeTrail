@@ -22,7 +22,7 @@ const aiService = require('../services/aiService');
  */
 exports.chat = async (req, res) => {
   try {
-    const { message, conversation, context, attachments, actionType } = req.body;
+    const { message, conversation, context, attachments, actionType, workspaceId, files } = req.body;
 
     // Validate prompt message
     if (!message || typeof message !== 'string' || !message.trim()) {
@@ -38,10 +38,15 @@ exports.chat = async (req, res) => {
       context: typeof context === 'object' && context !== null ? context : {},
       attachments: Array.isArray(attachments) ? attachments : [],
       actionType: actionType || 'general',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
-    return res.json(aiResult);
+    return res.json({
+      ...aiResult,
+      references: aiResult.references || []
+    });
   } catch (err) {
     console.error('[CodeTrail AI Controller Error]:', err);
     return res.status(500).json({
@@ -57,7 +62,7 @@ exports.chat = async (req, res) => {
  */
 exports.chatStream = async (req, res) => {
   try {
-    const { message, conversation, context, attachments, actionType } = req.body || {};
+    const { message, conversation, context, attachments, actionType, workspaceId, files } = req.body || {};
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({
@@ -83,7 +88,9 @@ exports.chatStream = async (req, res) => {
       context: typeof context === 'object' && context !== null ? context : {},
       attachments: Array.isArray(attachments) ? attachments : [],
       actionType: actionType || 'general',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     const fullText = result.response || result.message || '';
@@ -115,7 +122,7 @@ exports.chatStream = async (req, res) => {
  */
 exports.explainCode = async (req, res) => {
   try {
-    const { code, context, message } = req.body;
+    const { code, context, message, workspaceId, files } = req.body;
     const promptMessage = message || 'Explain how this code works step by step.';
 
     const mergedContext = {
@@ -127,7 +134,9 @@ exports.explainCode = async (req, res) => {
       message: promptMessage,
       context: mergedContext,
       actionType: 'explain',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     return res.json(result);
@@ -141,7 +150,7 @@ exports.explainCode = async (req, res) => {
  */
 exports.debugError = async (req, res) => {
   try {
-    const { error, code, context, message } = req.body;
+    const { error, code, context, message, workspaceId, files } = req.body;
     const promptMessage = message || `Debug this error: ${error || 'Runtime or execution error'}`;
 
     const mergedContext = {
@@ -153,7 +162,9 @@ exports.debugError = async (req, res) => {
       message: promptMessage,
       context: mergedContext,
       actionType: 'debug',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     return res.json(result);
@@ -167,7 +178,7 @@ exports.debugError = async (req, res) => {
  */
 exports.reviewCode = async (req, res) => {
   try {
-    const { code, context, message } = req.body;
+    const { code, context, message, workspaceId, files } = req.body;
     const promptMessage = message || 'Review this code for duplication, complexity, security, and performance.';
 
     const mergedContext = {
@@ -179,7 +190,9 @@ exports.reviewCode = async (req, res) => {
       message: promptMessage,
       context: mergedContext,
       actionType: 'review',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     return res.json(result);
@@ -193,7 +206,7 @@ exports.reviewCode = async (req, res) => {
  */
 exports.generateTests = async (req, res) => {
   try {
-    const { code, context, message } = req.body;
+    const { code, context, message, workspaceId, files } = req.body;
     const promptMessage = message || 'Generate unit and edge-case test cases for this code.';
 
     const mergedContext = {
@@ -205,7 +218,9 @@ exports.generateTests = async (req, res) => {
       message: promptMessage,
       context: mergedContext,
       actionType: 'tests',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     return res.json(result);
@@ -219,7 +234,7 @@ exports.generateTests = async (req, res) => {
  */
 exports.generateDocs = async (req, res) => {
   try {
-    const { code, context, message } = req.body;
+    const { code, context, message, workspaceId, files } = req.body;
     const promptMessage = message || 'Generate documentation, JSDoc/docstrings, and usage examples for this code.';
 
     const mergedContext = {
@@ -231,7 +246,9 @@ exports.generateDocs = async (req, res) => {
       message: promptMessage,
       context: mergedContext,
       actionType: 'docs',
-      user: req.user || null
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
     });
 
     return res.json(result);

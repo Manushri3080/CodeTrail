@@ -13,6 +13,7 @@
  */
 
 const axios = require('axios');
+const workspaceContextService = require('./workspaceContextService');
 
 // Supported Providers & Defaults
 const PROVIDERS = {
@@ -70,8 +71,13 @@ FORMATTING GUIDELINES:
 /**
  * Format prompt and context into a consolidated user message
  */
-function buildFullPrompt({ message, context, attachments, actionType }) {
+function buildFullPrompt({ message, context, attachments, actionType, workspaceContext }) {
   let promptText = '';
+
+  // Prepend workspace context if available
+  if (workspaceContext && workspaceContext.formattedContext) {
+    promptText += `${workspaceContext.formattedContext}\n`;
+  }
 
   // Inject active file/selection context if present
   if (context && (context.content || context.fileName)) {
@@ -127,11 +133,13 @@ function buildFullPrompt({ message, context, attachments, actionType }) {
  * Intelligent Local Fallback Engine
  * Generates tailored, production-grade responses for all 5 core features without external API calls
  */
-function generateLocalHeuristicResponse({ message, context, actionType }) {
+function generateLocalHeuristicResponse({ message, context, actionType, workspaceContext }) {
   const content = String(context?.content || '').trim();
   const fileName = context?.fileName || 'code file';
   const language = (context?.language || 'javascript').toLowerCase();
   const userQuery = (message || '').toLowerCase();
+
+  let response = '';
 
   // 1. DEBUGGING ASSISTANT MODE
   if (
@@ -146,7 +154,7 @@ function generateLocalHeuristicResponse({ message, context, actionType }) {
                        message.match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError)[^\n]*/i);
     const errText = errorMatch ? errorMatch[0] : 'Potential runtime or syntax discrepancy';
 
-    return `### AI DEBUGGING ANALYSIS
+    response = `### AI DEBUGGING ANALYSIS
 
 **Problem:**
 ${errText} detected in \`${fileName}\`.
@@ -174,11 +182,9 @@ try {
 \`\`\`
 
 Would you like me to generate a tailored fix for a specific line of code?`;
-  }
-
-  // 2. CODE REVIEW MODE
-  if (actionType === 'review' || userQuery.includes('review') || userQuery.includes('audit')) {
-    return `### AI CODE REVIEW REPORT: \`${fileName}\`
+  } else if (actionType === 'review' || userQuery.includes('review') || userQuery.includes('audit')) {
+    // 2. CODE REVIEW MODE
+    response = `### AI CODE REVIEW REPORT: \`${fileName}\`
 
 **Summary:** Evaluated syntax structure, error resilience, and algorithm efficiency.
 
@@ -198,11 +204,9 @@ function executeSafeOperation(options = {}) {
   return { success: true, timestamp: Date.now() };
 }
 \`\`\``;
-  }
-
-  // 3. TEST CASE GENERATION MODE
-  if (actionType === 'tests' || userQuery.includes('test') || userQuery.includes('spec')) {
-    return `### AI-GENERATED TEST SUITE: \`${fileName}\`
+  } else if (actionType === 'tests' || userQuery.includes('test') || userQuery.includes('spec')) {
+    // 3. TEST CASE GENERATION MODE
+    response = `### AI-GENERATED TEST SUITE: \`${fileName}\`
 
 \`\`\`${language}
 // Comprehensive test suite covering standard and boundary edge cases
@@ -235,11 +239,9 @@ describe('CodeTrail Module Test Suite', () => {
 \`\`\`
 
 You can copy and execute these test cases directly inside CodeTrail!`;
-  }
-
-  // 4. DOCUMENTATION GENERATION MODE
-  if (actionType === 'docs' || userQuery.includes('doc') || userQuery.includes('comment') || userQuery.includes('readme')) {
-    return `### AI-GENERATED DOCUMENTATION
+  } else if (actionType === 'docs' || userQuery.includes('doc') || userQuery.includes('comment') || userQuery.includes('readme')) {
+    // 4. DOCUMENTATION GENERATION MODE
+    response = `### AI-GENERATED DOCUMENTATION
 
 \`\`\`${language}
 /**
@@ -258,11 +260,10 @@ You can copy and execute these test cases directly inside CodeTrail!`;
 \`\`\`
 
 **Summary:** Added JSDoc-compliant documentation and typed parameters ready to paste into your codebase.`;
-  }
-
-  // 5. CODE EXPLANATION & GENERAL CODING ASSISTANT
-  const lines = content ? content.split('\n').length : 0;
-  return `### CodeTrail AI Assistant
+  } else {
+    // 5. CODE EXPLANATION & GENERAL CODING ASSISTANT
+    const lines = content ? content.split('\n').length : 0;
+    response = `### CodeTrail AI Assistant
 
 I analyzed **\`${fileName}\`** (${lines} lines, language: **${language}**).
 
@@ -280,6 +281,17 @@ function performOptimizedTask() {
 \`\`\`
 
 Feel free to ask me to **refactor**, **debug an error**, **generate test cases**, or **write documentation** for any part of this file!`;
+  }
+
+  // Append workspace references if present
+  if (workspaceContext && Array.isArray(workspaceContext.references) && workspaceContext.references.length > 0) {
+    const refLines = workspaceContext.references
+      .map(ref => `- \`${ref.file}:${ref.startLine}-${ref.endLine}\``)
+      .join('\n');
+    response += `\n\n### 📚 Workspace References\n${refLines}`;
+  }
+
+  return response;
 }
 
 /**
@@ -396,13 +408,30 @@ exports.generateAIResponse = async ({
   context = {},
   attachments = [],
   actionType = 'general',
-  user = null
+  user = null,
+  workspaceId = null,
+  files = null
 }) => {
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
   const openAiKey = process.env.OPENAI_API_KEY;
   const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL;
 
-  const fullPrompt = buildFullPrompt({ message, context, attachments, actionType });
+  let workspaceContext = null;
+  if (workspaceId || (files && files.length > 0)) {
+    try {
+      workspaceContext = await workspaceContextService.retrieveWorkspaceContext({
+        workspaceId,
+        query: message,
+        activeFileName: context?.fileName,
+        activeFileContent: context?.content,
+        files
+      });
+    } catch (wsErr) {
+      console.warn('[CodeTrail AI] Workspace context retrieval warning:', wsErr.message);
+    }
+  }
+
+  const fullPrompt = buildFullPrompt({ message, context, attachments, actionType, workspaceContext });
 
   // 1. Attempt Google Gemini if API Key is available
   if (geminiKey && geminiKey.trim()) {
@@ -418,7 +447,12 @@ exports.generateAIResponse = async ({
         model: DEFAULT_CONFIG.geminiModel,
         response,
         message: response,
-        content: response
+        content: response,
+        references: workspaceContext?.references || [],
+        workspaceContextSummary: {
+          totalFiles: workspaceContext?.totalFiles || 0,
+          matchedChunksCount: workspaceContext?.matchedChunksCount || 0
+        }
       };
     } catch (err) {
       console.warn(`[CodeTrail AI] Gemini API attempt failed (${err.message}). Checking fallbacks...`);
@@ -440,7 +474,12 @@ exports.generateAIResponse = async ({
         model: DEFAULT_CONFIG.openaiModel,
         response,
         message: response,
-        content: response
+        content: response,
+        references: workspaceContext?.references || [],
+        workspaceContextSummary: {
+          totalFiles: workspaceContext?.totalFiles || 0,
+          matchedChunksCount: workspaceContext?.matchedChunksCount || 0
+        }
       };
     } catch (err) {
       console.warn(`[CodeTrail AI] OpenAI API attempt failed (${err.message}). Checking local engine fallback...`);
@@ -448,14 +487,19 @@ exports.generateAIResponse = async ({
   }
 
   // 3. Resilient Local Engine Fallback (guarantees offline demo & zero-cost testing functionality)
-  const localResponse = generateLocalHeuristicResponse({ message, context, actionType });
+  const localResponse = generateLocalHeuristicResponse({ message, context, actionType, workspaceContext });
   return {
     success: true,
     provider: PROVIDERS.FALLBACK,
     model: 'codetrail-heuristic-v1',
     response: localResponse,
     message: localResponse,
-    content: localResponse
+    content: localResponse,
+    references: workspaceContext?.references || [],
+    workspaceContextSummary: {
+      totalFiles: workspaceContext?.totalFiles || 0,
+      matchedChunksCount: workspaceContext?.matchedChunksCount || 0
+    }
   };
 };
 

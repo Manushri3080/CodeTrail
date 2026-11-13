@@ -44,6 +44,9 @@ require('./workspaceRegression.test');
   // AI-Integrated CodeTrail: Backend & Model Integration Tests (Manushri)
   await require('./aiAssistant.test');
 
+  // Workspace Context & AI Knowledge Tests (Ruchita)
+  await require('./workspaceContextAI.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);
