@@ -7733,6 +7733,9 @@ export const ModularWorkspace = ({
             selectedCode={selectedCode}
             onInsertCode={handleInsertAssistantCode}
             triggerAction={aiAssistantTrigger}
+            workspaceId={currentWorkspace?._id || currentWorkspace?.id || workspaceId}
+            files={customFiles}
+            activeWorkspace={currentWorkspace}
           />
         </AssistantErrorBoundary>
       </section>

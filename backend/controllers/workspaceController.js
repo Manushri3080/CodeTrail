@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Workspace = require('../models/Workspace');
 const User = require('../models/User');
 const ActivityLog = require('../models/ActivityLog');
+const workspaceContextService = require('../services/workspaceContextService');
 const {
   validateWorkspaceTitle,
   validateWorkspaceDescription,
@@ -487,6 +488,7 @@ exports.updateWorkspace = async (req, res) => {
 
     if (files && Array.isArray(files)) {
       workspace.files = files;
+      workspaceContextService.invalidateWorkspaceIndex(id);
       try {
         const { recordActivity } = require('./activityController');
         let totalLines = 0;
@@ -534,6 +536,7 @@ exports.updateWorkspace = async (req, res) => {
 
     workspace.lastActiveAt = new Date();
     await workspace.save();
+    workspaceContextService.invalidateWorkspaceIndex(id);
 
     const io = req.app?.get ? req.app.get('io') : null;
     if (io && changingMetadata) {
@@ -659,6 +662,7 @@ exports.deleteWorkspace = async (req, res) => {
     }
 
     await Workspace.findByIdAndDelete(id);
+    workspaceContextService.invalidateWorkspaceIndex(id);
 
     res.json({ message: 'Workspace deleted successfully.' });
 
@@ -707,6 +711,7 @@ exports.updateWorkspaceSession = async (req, res) => {
 
     if (files && Array.isArray(files)) {
       workspace.files = files;
+      workspaceContextService.invalidateWorkspaceIndex(id);
     }
 
     await workspace.save();

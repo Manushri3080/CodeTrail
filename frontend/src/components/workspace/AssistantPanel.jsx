@@ -124,8 +124,13 @@ function AIAssistantPanel({
   selectedCode,
   onInsertCode,
   triggerAction,
+  workspaceId,
+  files,
+  activeWorkspace,
   apiUrl = import.meta.env.VITE_AI_ASSISTANT_API_URL || `${API_BASE}/ai/chat`,
 }) {
+  const resolvedWorkspaceId = workspaceId || activeWorkspace?._id || activeWorkspace?.id;
+  const workspaceFiles = files || activeWorkspace?.files || [];
   const [messages, setMessages] = useState([createWelcomeMessage()]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -365,6 +370,7 @@ describe("${fileName} Test Suite", () => {
 
     try {
       let answer;
+      let references = [];
       if (apiUrl) {
         try {
           const token = localStorage.getItem("ct-auth-token");
@@ -378,6 +384,8 @@ describe("${fileName} Test Suite", () => {
               message: question,
               conversation: messages,
               actionType: customActionType,
+              workspaceId: resolvedWorkspaceId,
+              files: workspaceFiles,
               context: {
                 fileName: activeFile,
                 language: activeLanguage,
@@ -394,6 +402,7 @@ describe("${fileName} Test Suite", () => {
             throw new Error(`Assistant request failed (${response.status})`);
           const payload = await response.json();
           answer = payload.response || payload.message || payload.content;
+          references = Array.isArray(payload.references) ? payload.references : [];
           if (!answer)
             throw new Error("The assistant returned an empty response.");
         } catch (fetchErr) {
@@ -406,7 +415,12 @@ describe("${fileName} Test Suite", () => {
       }
       setMessages((previous) => [
         ...previous,
-        { id: `assistant-${Date.now()}`, role: "assistant", content: answer },
+        {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          content: answer,
+          references
+        },
       ]);
     } catch (requestError) {
       setError(
@@ -504,6 +518,21 @@ describe("${fileName} Test Suite", () => {
               <div className="ai-assistant-message-content">
                 {renderMessageContent(message.content, copyCode, handleInsertCode, insertedKey)}
               </div>
+              {Array.isArray(message.references) && message.references.length > 0 && (
+                <div className="ai-assistant-references mt-2 pt-2 border-t border-white/10 flex flex-wrap gap-1.5 items-center">
+                  <span className="text-[10px] text-gray-400 font-medium">References:</span>
+                  {message.references.map((ref, rIdx) => (
+                    <span
+                      key={`ref-${rIdx}`}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-fuchsia-950/40 border border-fuchsia-800/40 text-[10px] text-fuchsia-300 font-mono"
+                      title={`${ref.file} (Lines ${ref.startLine}-${ref.endLine})`}
+                    >
+                      <FileCode2 size={10} className="text-fuchsia-400 shrink-0" />
+                      [Ref: {ref.file}:{ref.startLine}-{ref.endLine}]
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
