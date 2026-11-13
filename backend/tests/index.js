@@ -35,6 +35,12 @@ require('./workspaceRegression.test');
   // Participant Permissions & RBAC Unit & Integration Tests (Rishika Shah)
   await require('./participantPermissions.test');
 
+  // Task 4: Notification Preferences Tests (Meet Sheth)
+  await require('./notificationPreferences.test');
+
+  // Workspace Configuration & Notification Validation Tests (Rishika Shah)
+  await require('./workspaceNotificationValidation.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);

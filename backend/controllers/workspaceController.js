@@ -509,14 +509,15 @@ exports.updateWorkspace = async (req, res) => {
     }
 
     // Record activity log for workspace settings updates
+    const changeSummaries = [];
     if (changingMetadata) {
+      if (title !== undefined) changeSummaries.push(`title to "${workspace.title}"`);
+      if (language !== undefined) changeSummaries.push(`language to ${workspace.language}`);
+      if (settings !== undefined) changeSummaries.push('preferences');
+      if (brandColor !== undefined) changeSummaries.push(`theme to ${workspace.brandColor}`);
+
       try {
         const { recordActivity } = require('./activityController');
-        const changeSummaries = [];
-        if (title !== undefined) changeSummaries.push(`title to "${workspace.title}"`);
-        if (language !== undefined) changeSummaries.push(`language to ${workspace.language}`);
-        if (settings !== undefined) changeSummaries.push('preferences');
-        if (brandColor !== undefined) changeSummaries.push(`theme to ${workspace.brandColor}`);
 
         await recordActivity({
           workspaceId: id,
@@ -533,6 +534,39 @@ exports.updateWorkspace = async (req, res) => {
 
     workspace.lastActiveAt = new Date();
     await workspace.save();
+
+    const io = req.app?.get ? req.app.get('io') : null;
+    if (io && changingMetadata) {
+      try {
+        const { dispatchNotification } = require('../utils/notificationDeliveryService');
+        io.to(`workspace:${id}`).to(`workspace_${id}`).emit('settings_updated', {
+          workspaceId: id,
+          title: workspace.title,
+          description: workspace.description,
+          language: workspace.language,
+          brandColor: workspace.brandColor,
+          icon: workspace.icon,
+          settings: workspace.settings,
+          updatedBy: req.user ? { id: req.user._id, name: req.user.name } : null
+        });
+
+        await dispatchNotification({
+          io,
+          notification: {
+            type: 'settings_updated',
+            title: 'Workspace settings updated',
+            message: `${req.user?.name || 'A manager'} updated workspace settings (${changeSummaries.join(', ') || 'metadata updated'}).`,
+            workspaceId: String(id),
+            actorId: String(userId),
+            createdAt: new Date().toISOString()
+          },
+          workspaceContext: workspace,
+          includeSender: false
+        });
+      } catch (notifyErr) {
+        console.warn('Settings update notification warning:', notifyErr.message);
+      }
+    }
 
     res.json({
       message: 'Workspace updated successfully',
@@ -1015,17 +1049,27 @@ exports.addWorkspaceMember = async (req, res) => {
       roleDetails: rolePerms
     };
 
-    const io = req.app.get('io');
+    const io = req.app?.get ? req.app.get('io') : null;
     if (io) {
-      io.to(`user:${targetUserIdStr}`).emit('notification', {
-        type: 'workspace_invitation',
-        title: 'Workspace invitation',
-        message: `${req.user?.name || 'A collaborator'} invited you to join ${workspace.title}.`,
-        workspaceId: workspace._id.toString(),
-        workspaceTitle: workspace.title,
-        invitedBy: req.user?._id?.toString() || null,
-        createdAt: new Date().toISOString()
-      });
+      try {
+        const { dispatchNotification } = require('../utils/notificationDeliveryService');
+        await dispatchNotification({
+          io,
+          notification: {
+            type: 'workspace_invitation',
+            title: 'Workspace invitation',
+            message: `${req.user?.name || 'A collaborator'} invited you to join ${workspace.title}.`,
+            workspaceId: workspace._id.toString(),
+            workspaceTitle: workspace.title,
+            invitedBy: req.user?._id?.toString() || null,
+            targetUserId: targetUserIdStr,
+            createdAt: new Date().toISOString()
+          },
+          workspaceContext: workspace
+        });
+      } catch (notifyErr) {
+        console.warn('Workspace invitation notification warning:', notifyErr.message);
+      }
     }
 
     res.status(201).json({
@@ -1109,6 +1153,48 @@ exports.updateWorkspaceMemberRole = async (req, res) => {
     await workspace.save();
 
     const rolePerms = getRolePermissions(normalizedRole);
+    const targetUserIdStr = targetUserId ? targetUserId.toString() : String(memberId);
+
+    const io = req.app?.get ? req.app.get('io') : null;
+    if (io) {
+      try {
+        const { dispatchNotification } = require('../utils/notificationDeliveryService');
+
+        // Broadcast member role update to workspace room for real-time collaborator UI updates
+        io.to(`workspace:${id}`).to(`workspace_${id}`).emit('member_role_updated', {
+          workspaceId: id,
+          memberId: targetUserIdStr,
+          newRole: normalizedRole,
+          permissions: rolePerms.capabilities
+        });
+
+        // Personal role update event directly to target user
+        io.to(`user:${targetUserIdStr}`).emit('role_updated', {
+          workspaceId: id,
+          newRole: normalizedRole,
+          permissions: rolePerms.capabilities
+        });
+
+        // Personal security alert notification (gated by target user's securityAlerts preference)
+        await dispatchNotification({
+          io,
+          notification: {
+            type: 'security_alert',
+            title: 'Role permissions updated',
+            message: `Your role in "${workspace.title}" was updated to ${normalizedRole.toUpperCase()} by ${req.user?.name || 'an administrator'}.`,
+            workspaceId: String(id),
+            actorId: req.user?._id ? String(req.user._id) : null,
+            targetUserId: targetUserIdStr,
+            newRole: normalizedRole,
+            createdAt: new Date().toISOString()
+          },
+          workspaceContext: workspace
+        });
+      } catch (notifyErr) {
+        console.warn('Update member role notification warning:', notifyErr.message);
+      }
+    }
+
     res.json({
       message: 'Member role updated successfully.',
       member: {
@@ -1192,6 +1278,42 @@ exports.removeWorkspaceMember = async (req, res) => {
     ];
 
     await workspace.save();
+
+    const targetUserIdStr = targetUserId ? targetUserId.toString() : String(memberId);
+    const io = req.app?.get ? req.app.get('io') : null;
+    if (io) {
+      try {
+        const { dispatchNotification } = require('../utils/notificationDeliveryService');
+
+        io.to(`workspace:${id}`).to(`workspace_${id}`).emit('member_removed', {
+          workspaceId: id,
+          memberId: targetUserIdStr
+        });
+
+        if (targetUserId) {
+          io.to(`user:${targetUserIdStr}`).emit('workspace_removed', {
+            workspaceId: id,
+            workspaceTitle: workspace.title
+          });
+
+          await dispatchNotification({
+            io,
+            notification: {
+              type: 'security_alert',
+              title: 'Removed from workspace',
+              message: `You were removed from workspace "${workspace.title}" by ${req.user?.name || 'an administrator'}.`,
+              workspaceId: String(id),
+              actorId: req.user?._id ? String(req.user._id) : null,
+              targetUserId: targetUserIdStr,
+              createdAt: new Date().toISOString()
+            },
+            workspaceContext: workspace
+          });
+        }
+      } catch (notifyErr) {
+        console.warn('Remove member notification warning:', notifyErr.message);
+      }
+    }
 
     res.json({ message: 'Member removed successfully.', memberId });
 

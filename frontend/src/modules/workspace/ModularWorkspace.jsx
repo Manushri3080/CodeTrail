@@ -399,7 +399,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
   const addNotification = useCallback((notification) => {
     if (!notification?.type || !notification?.message) return;
     const createdAt = notification.createdAt || new Date().toISOString();
-    const notificationId = `${notification.type}:${notification.createdAt || createdAt}:${notification.actorId || "system"}`;
+    const notificationId = notification.id || `${notification.type}:${notification.createdAt || createdAt}:${notification.actorId || "system"}`;
     if (notificationIdsRef.current.has(notificationId)) return;
     notificationIdsRef.current.add(notificationId);
 
@@ -420,6 +420,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       ].slice(0, 50);
     });
   }, []);
+
+  // Hydrate initial notifications from workspace history/activity logs across reloads
+  useEffect(() => {
+    if (currentWorkspace?.activityLogs && Array.isArray(currentWorkspace.activityLogs) && notifications.length === 0) {
+      const recentLogs = currentWorkspace.activityLogs.slice(0, 8).map((log) => {
+        const notifType = log.type === 'settings' ? 'settings_updated'
+          : log.type === 'member' ? 'participant_joined'
+          : log.type === 'execution' ? 'execution_status'
+          : 'info';
+        const logId = `log-${log.id || log.timestamp || Math.random()}`;
+        notificationIdsRef.current.add(logId);
+        return {
+          id: logId,
+          type: notifType,
+          title: log.title || 'Workspace Activity',
+          message: log.details || '',
+          createdAt: log.timestamp || new Date().toISOString()
+        };
+      });
+      if (recentLogs.length > 0) {
+        setNotifications(recentLogs);
+      }
+    }
+  }, [currentWorkspace?._id]);
 
   // Interactive CLI Terminal Console State
   const [terminalEntries, setTerminalEntries] = useState([
@@ -3169,6 +3193,38 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       });
 
       socket.on("notification", addNotification);
+
+      socket.on("settings_updated", (data) => {
+        if (!data) return;
+        setCurrentWorkspace((prev) => ({
+          ...prev,
+          ...(data.title ? { title: data.title } : {}),
+          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.language ? { language: data.language } : {}),
+          ...(data.brandColor ? { brandColor: data.brandColor } : {}),
+          ...(data.icon ? { icon: data.icon } : {}),
+          settings: {
+            ...(prev?.settings || {}),
+            ...(data.settings || {})
+          }
+        }));
+      });
+
+      socket.on("role_updated", (data) => {
+        if (!data?.newRole) return;
+        setCurrentWorkspace((prev) => ({
+          ...prev,
+          role: data.newRole
+        }));
+        showToast(`Your permissions were updated: you are now an ${data.newRole.toUpperCase()}.`, "info");
+      });
+
+      socket.on("member_role_updated", ({ memberId, newRole }) => {
+        if (!memberId || !newRole) return;
+        setActiveUsers((prev) =>
+          prev.map((u) => (String(u.userId || u.id) === String(memberId) ? { ...u, role: newRole } : u))
+        );
+      });
 
       socket.io.on("reconnect_attempt", () => {
         wasDisconnectedRef.current = true;
