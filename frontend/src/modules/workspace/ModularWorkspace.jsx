@@ -10,7 +10,6 @@ import {
   GitCommit,
   FileCode,
   ArrowLeft,
-  KeyRound,
   Globe,
   Lock,
   Clock,
@@ -49,11 +48,14 @@ import {
   Radio,
   Bell,
   Sparkles,
+  GripVertical,
+  GripHorizontal,
 } from "lucide-react";
 import Editor from "@monaco-editor/react";
 import { WORKSPACE_FILES } from "../../constants/workspace.constants";
 import WorkspaceSettingsModal from "../../components/workspace/WorkspaceSettingsModal";
 import NotificationCenter from "../../components/workspace/NotificationCenter";
+import AssistantPanel from "../../components/workspace/AssistantPanel";
 import { exportAuditJson, exportAuditMarkdown } from "../../utils/auditExport";
 import {
   createTelemetryEnvelope,
@@ -333,7 +335,11 @@ const DEFAULT_FILES_CONTENT = {
   "README.md": `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`,
 };
 
-export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWorkspaces }) => {
+export const ModularWorkspace = ({
+  activeWorkspace,
+  onBackToHome,
+  onNavigateToWorkspaces,
+}) => {
   const [currentWorkspace, setCurrentWorkspace] = useState(activeWorkspace);
 
   useEffect(() => {
@@ -391,22 +397,165 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
   // Project Scaffolding Modal Open State
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [settingsModalInitialTab, setSettingsModalInitialTab] = useState("general");
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const [isExplorerOpen, setIsExplorerOpen] = useState(() => {
+    try {
+      return localStorage.getItem(`ct-explorer-open-${wsId}`) !== "false";
+    } catch (e) {
+      return true;
+    }
+  });
+  const [explorerWidth, setExplorerWidth] = useState(() => {
+    try {
+      const savedWidth = Number(localStorage.getItem(`ct-explorer-width-${wsId}`));
+      return Number.isFinite(savedWidth) ? Math.min(380, Math.max(240, savedWidth)) : 280;
+    } catch (e) {
+      return 320;
+    }
+  });
+  const explorerResizeRef = useRef(null);
+  const outputResizeRef = useRef(null);
+  const outputResizeRafRef = useRef(null);
+  const outputResizePendingHeightRef = useRef(null);
+  const stdinTextareaRef = useRef(null);
+  const [outputPanelHeight, setOutputPanelHeight] = useState(() => {
+    try {
+      const savedHeight = Number(
+        localStorage.getItem(`ct-output-panel-height-${wsId}`),
+      );
+      return Number.isFinite(savedHeight)
+        ? Math.min(700, Math.max(260, savedHeight))
+        : 420;
+    } catch (e) {
+      return 420;
+    }
+  });
+  const [isOutputPanelOpen, setIsOutputPanelOpen] = useState(false);
+  const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
+  const [isOutputResizing, setIsOutputResizing] = useState(false);
+  const [selectedCode, setSelectedCode] = useState("");
+  const [settingsModalInitialTab, setSettingsModalInitialTab] =
+    useState("general");
   const [notifications, setNotifications] = useState([]);
-  const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
+  const [isNotificationCenterOpen, setIsNotificationCenterOpen] =
+    useState(false);
   const notificationIdsRef = useRef(new Set());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`ct-explorer-open-${wsId}`, String(isExplorerOpen));
+      localStorage.setItem(`ct-explorer-width-${wsId}`, String(explorerWidth));
+      localStorage.setItem(`ct-output-panel-height-${wsId}`, String(outputPanelHeight));
+    } catch (e) {}
+  }, [explorerWidth, isExplorerOpen, outputPanelHeight, wsId]);
+
+  const startExplorerResize = (event) => {
+    event.preventDefault();
+    explorerResizeRef.current = {
+      startX: event.clientX,
+      startWidth: explorerWidth,
+    };
+
+    const handleResize = (moveEvent) => {
+      if (!explorerResizeRef.current) return;
+      const nextWidth =
+        explorerResizeRef.current.startWidth +
+        moveEvent.clientX -
+        explorerResizeRef.current.startX;
+      setExplorerWidth(Math.min(380, Math.max(240, nextWidth)));
+    };
+    const stopResize = () => {
+      explorerResizeRef.current = null;
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      window.removeEventListener("pointermove", handleResize);
+      window.removeEventListener("pointerup", stopResize);
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handleResize);
+    window.addEventListener("pointerup", stopResize);
+  };
+
+  const startOutputResize = (event) => {
+    if (isOutputPanelMinimized) return;
+    event.preventDefault();
+    event.currentTarget?.setPointerCapture?.(event.pointerId);
+    outputResizeRef.current = {
+      startY: event.clientY,
+      startHeight: outputPanelHeight,
+    };
+    setIsOutputResizing(true);
+
+    const handleResize = (moveEvent) => {
+      if (!outputResizeRef.current) return;
+      const delta = outputResizeRef.current.startY - moveEvent.clientY;
+      const maxHeight = Math.max(220, Math.floor(window.innerHeight * 0.85));
+      const nextHeight = Math.min(
+        maxHeight,
+        Math.max(220, outputResizeRef.current.startHeight + delta),
+      );
+      outputResizePendingHeightRef.current = nextHeight;
+      if (outputResizeRafRef.current == null) {
+        outputResizeRafRef.current = window.requestAnimationFrame(() => {
+          outputResizeRafRef.current = null;
+          if (outputResizePendingHeightRef.current != null) {
+            setOutputPanelHeight(outputResizePendingHeightRef.current);
+          }
+        });
+      }
+    };
+    const stopResize = (upEvent) => {
+      try {
+        event.currentTarget?.releasePointerCapture?.(upEvent?.pointerId ?? event.pointerId);
+      } catch {
+        /* ignore */
+      }
+      if (outputResizeRafRef.current != null) {
+        window.cancelAnimationFrame(outputResizeRafRef.current);
+        outputResizeRafRef.current = null;
+      }
+      if (outputResizePendingHeightRef.current != null) {
+        setOutputPanelHeight(outputResizePendingHeightRef.current);
+      }
+      outputResizePendingHeightRef.current = null;
+      outputResizeRef.current = null;
+      setIsOutputResizing(false);
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+      window.removeEventListener("pointermove", handleResize);
+      window.removeEventListener("pointerup", stopResize);
+      window.removeEventListener("pointercancel", stopResize);
+    };
+
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", handleResize);
+    window.addEventListener("pointerup", stopResize);
+    window.addEventListener("pointercancel", stopResize);
+  };
 
   const addNotification = useCallback((notification) => {
     if (!notification?.type || !notification?.message) return;
     const createdAt = notification.createdAt || new Date().toISOString();
-    const notificationId = notification.id || `${notification.type}:${notification.createdAt || createdAt}:${notification.actorId || "system"}`;
+    const notificationId =
+      notification.id ||
+      `${notification.type}:${notification.createdAt || createdAt}:${notification.actorId || "system"}`;
     if (notificationIdsRef.current.has(notificationId)) return;
     notificationIdsRef.current.add(notificationId);
 
-    const toastType = notification.type === "execution_status"
-      ? (notification.status === "success" ? "success" : "warning")
-      : "info";
-    showToast(`${notification.title || "Workspace notification"}: ${notification.message}`, toastType, 5000);
+    const toastType =
+      notification.type === "execution_status"
+        ? notification.status === "success"
+          ? "success"
+          : "warning"
+        : "info";
+    showToast(
+      `${notification.title || "Workspace notification"}: ${notification.message}`,
+      toastType,
+      5000,
+    );
 
     setNotifications((previous) => {
       if (previous.some((item) => item.id === notificationId)) return previous;
@@ -423,22 +572,32 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
   // Hydrate initial notifications from workspace history/activity logs across reloads
   useEffect(() => {
-    if (currentWorkspace?.activityLogs && Array.isArray(currentWorkspace.activityLogs) && notifications.length === 0) {
-      const recentLogs = currentWorkspace.activityLogs.slice(0, 8).map((log) => {
-        const notifType = log.type === 'settings' ? 'settings_updated'
-          : log.type === 'member' ? 'participant_joined'
-          : log.type === 'execution' ? 'execution_status'
-          : 'info';
-        const logId = `log-${log.id || log.timestamp || Math.random()}`;
-        notificationIdsRef.current.add(logId);
-        return {
-          id: logId,
-          type: notifType,
-          title: log.title || 'Workspace Activity',
-          message: log.details || '',
-          createdAt: log.timestamp || new Date().toISOString()
-        };
-      });
+    if (
+      currentWorkspace?.activityLogs &&
+      Array.isArray(currentWorkspace.activityLogs) &&
+      notifications.length === 0
+    ) {
+      const recentLogs = currentWorkspace.activityLogs
+        .slice(0, 8)
+        .map((log) => {
+          const notifType =
+            log.type === "settings"
+              ? "settings_updated"
+              : log.type === "member"
+                ? "participant_joined"
+                : log.type === "execution"
+                  ? "execution_status"
+                  : "info";
+          const logId = `log-${log.id || log.timestamp || Math.random()}`;
+          notificationIdsRef.current.add(logId);
+          return {
+            id: logId,
+            type: notifType,
+            title: log.title || "Workspace Activity",
+            message: log.details || "",
+            createdAt: log.timestamp || new Date().toISOString(),
+          };
+        });
       if (recentLogs.length > 0) {
         setNotifications(recentLogs);
       }
@@ -972,6 +1131,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       }
     };
   }, [wsId]);
+
+  // Auto-grow custom input textarea with content
+  useEffect(() => {
+    if (!editorRef.current || !monacoRef.current) return;
+    editorRef.current.layout();
+    editorRef.current.setScrollPosition({ scrollTop: 0, scrollLeft: 0 });
+  }, [isOutputPanelOpen, isOutputPanelMinimized, outputPanelHeight, wsId]);
 
   // Keep filesContent in sync if workspace files load from backend
   useEffect(() => {
@@ -2360,14 +2526,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
   const [isExecuting, setIsExecuting] = useState(false);
   const [executionStatus, setExecutionStatus] = useState("idle"); // 'idle' | 'running' | 'success' | 'error' | 'compile_error' | 'timeout'
   const [executionResult, setExecutionResult] = useState(null);
-  const [isOutputPanelOpen, setIsOutputPanelOpen] = useState(false);
-  const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
 
   // Custom Input (stdin) & Output Console Tabbed Navigation State
   const [customInput, setCustomInput] = useState("");
   const [outputTab, setOutputTab] = useState("output"); // 'output' | 'input' | 'history' | 'telemetry'
   const [executionHistoryList, setExecutionHistoryList] = useState([]);
   const [selectedHistoryItem, setSelectedHistoryItem] = useState(null);
+
+  // Auto-grow custom input textarea with content
+  useEffect(() => {
+    const el = stdinTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [customInput]);
 
   // Telemetry & Proof-of-Work Audit State (CT-163 & CT-168)
   const [telemetryData, setTelemetryData] = useState(null);
@@ -3199,14 +3371,16 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
         setCurrentWorkspace((prev) => ({
           ...prev,
           ...(data.title ? { title: data.title } : {}),
-          ...(data.description !== undefined ? { description: data.description } : {}),
+          ...(data.description !== undefined
+            ? { description: data.description }
+            : {}),
           ...(data.language ? { language: data.language } : {}),
           ...(data.brandColor ? { brandColor: data.brandColor } : {}),
           ...(data.icon ? { icon: data.icon } : {}),
           settings: {
             ...(prev?.settings || {}),
-            ...(data.settings || {})
-          }
+            ...(data.settings || {}),
+          },
         }));
       });
 
@@ -3214,15 +3388,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
         if (!data?.newRole) return;
         setCurrentWorkspace((prev) => ({
           ...prev,
-          role: data.newRole
+          role: data.newRole,
         }));
-        showToast(`Your permissions were updated: you are now an ${data.newRole.toUpperCase()}.`, "info");
+        showToast(
+          `Your permissions were updated: you are now an ${data.newRole.toUpperCase()}.`,
+          "info",
+        );
       });
 
       socket.on("member_role_updated", ({ memberId, newRole }) => {
         if (!memberId || !newRole) return;
         setActiveUsers((prev) =>
-          prev.map((u) => (String(u.userId || u.id) === String(memberId) ? { ...u, role: newRole } : u))
+          prev.map((u) =>
+            String(u.userId || u.id) === String(memberId)
+              ? { ...u, role: newRole }
+              : u,
+          ),
         );
       });
 
@@ -3860,6 +4041,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
     if (onBackToHome) onBackToHome();
   };
 
+  const handleInsertAssistantCode = (code) => {
+    if (!editorRef.current || !code) return;
+    const editor = editorRef.current;
+    const selection = editor.getSelection();
+    const range =
+      selection && !selection.isEmpty()
+        ? selection
+        : editor.getModel()?.getFullModelRange();
+    if (!range) return;
+    editor.executeEdits("ai-assistant-assistant", [
+      { range, text: code, forceMoveMarkers: true },
+    ]);
+    editor.focus();
+    showToast("Inserted code from AI Assistant.", "success", 3000);
+  };
+
   const wsTitle =
     currentWorkspace?.title || currentWorkspace?.name || "Project Workspace";
   const wsFiles =
@@ -3885,11 +4082,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
     <div className="w-full h-screen overflow-hidden flex flex-col bg-[#08090E] text-white">
       {/* Workspace Session Top Navbar (STUCK AT TOP AS PRIMARY WORKSPACE NAVBAR) */}
       <header
-        className="sticky top-0 z-50 w-full bg-[#12131F]/95 backdrop-blur-2xl border-b border-white/15 shadow-xl flex items-center justify-between flex-wrap shrink-0"
+        className="ct-workspace-ribbon sticky top-0 z-50 w-full bg-[#12131F]/95 backdrop-blur-2xl border-b border-white/15 shadow-xl flex items-center justify-between flex-nowrap shrink-0"
         style={{ padding: "14px 36px", minHeight: "68px", gap: "24px" }}
       >
         {/* Left: Back to Home + Workspace Title + Room Code */}
-        <div className="flex items-center flex-wrap" style={{ gap: "24px" }}>
+        <div className="ct-workspace-ribbon-group ct-workspace-ribbon-brand flex items-center flex-nowrap" style={{ gap: "24px" }}>
           {onBackToHome && (
             <button
               type="button"
@@ -3938,7 +4135,6 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
             onClick={handleCopyCode}
             title="Click to copy room code"
           >
-            <KeyRound size={14} className="text-purple-400" />
             <span>
               Room: <strong className="text-white font-bold">{wsCode}</strong>
             </span>
@@ -3951,10 +4147,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
         </div>
 
         {/* Center Info: Session Clock, Active Contribution & Auto-Save */}
-        <div
-          className="hidden lg:flex items-center flex-wrap"
-          style={{ gap: "12px" }}
-        >
+        <details className="ct-workspace-ribbon-dropdown ct-workspace-ribbon-status hidden lg:block">
+          <summary className="ct-workspace-ribbon-dropdown-trigger">
+            <Clock size={14} className="text-purple-400" />
+            <span>Session Info</span>
+            <ChevronDown size={13} />
+          </summary>
+          <div className="ct-workspace-ribbon-dropdown-menu ct-workspace-ribbon-status-menu">
           <div
             className="flex items-center text-xs font-mono text-gray-200 bg-white/[0.08] border border-white/15 rounded-xl shadow-sm"
             style={{ padding: "8px 14px", gap: "8px" }}
@@ -4042,10 +4241,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
               <span>Viewer (Read-Only)</span>
             </div>
           )}
-        </div>
+          </div>
+        </details>
 
         {/* Right Actions: Start / Record Session & Leave Session Controls */}
-        <div className="flex items-center" style={{ gap: "14px" }}>
+        <div className="ct-workspace-ribbon-group ct-workspace-ribbon-actions flex items-center" style={{ gap: "14px" }}>
           {isSessionRunning ? (
             <button
               type="button"
@@ -4070,41 +4270,63 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={handleResetSession}
-            className="ct-workspace-header-btn ct-workspace-reset-session-btn"
-            title="Reset the session timer without changing workspace files"
-          >
-            <RefreshCw size={14} />
-            <span>Reset Session</span>
-          </button>
+          <details className="ct-workspace-ribbon-dropdown">
+            <summary className="ct-workspace-ribbon-dropdown-trigger ct-workspace-ribbon-tools-trigger">
+              <Settings size={14} className="text-purple-400" />
+              <span>More</span>
+              <ChevronDown size={13} />
+            </summary>
+            <div className="ct-workspace-ribbon-dropdown-menu ct-workspace-ribbon-tools-menu">
+              <button
+                type="button"
+                onClick={handleResetSession}
+                className="ct-workspace-ribbon-menu-item"
+                title="Reset the session timer without changing workspace files"
+              >
+                <RefreshCw size={14} />
+                <span>Reset Session</span>
+              </button>
 
-          {/* Scaffold Project Button */}
+              <button
+                type="button"
+                onClick={() => setIsScaffoldModalOpen(true)}
+                className="ct-workspace-ribbon-menu-item ct-workspace-ribbon-menu-item-cyan"
+                title="Scaffold React, FastAPI, Django, or Express Project Framework"
+              >
+                <Sparkles size={14} className="text-cyan-400" />
+                <span>Scaffold Project</span>
+              </button>
+
           <button
             type="button"
-            onClick={() => setIsScaffoldModalOpen(true)}
-            className="flex items-center bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
+            onClick={() => setIsAIAssistantOpen((previous) => !previous)}
+            className={`flex items-center rounded-full text-xs font-bold transition-all cursor-pointer ${
+              isAIAssistantOpen
+                ? "bg-fuchsia-500/30 border-fuchsia-400 text-fuchsia-100"
+                : "bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border-fuchsia-500/40 text-fuchsia-200"
+            } border`}
             style={{ padding: "10px 22px", gap: "10px" }}
-            title="Scaffold React, FastAPI, Django, or Express Project Framework"
+            title="Open AI assistant"
+            aria-expanded={isAIAssistantOpen}
           >
-            <Sparkles size={15} className="text-cyan-400 animate-pulse" />
-            <span>Scaffold Project</span>
+            <Sparkles size={15} className="text-fuchsia-300" />
+            <span>Ask AI Assistant</span>
           </button>
 
-          <button
+              <button
             type="button"
             onClick={() => {
               setSettingsModalInitialTab("general");
               setIsSettingsModalOpen(true);
             }}
-            className="flex items-center bg-white/10 hover:bg-purple-500/25 border border-white/15 hover:border-purple-500/40 text-gray-200 hover:text-white rounded-full text-xs font-bold transition-all cursor-pointer"
-            style={{ padding: "10px 22px", gap: "10px" }}
+            className="ct-workspace-ribbon-menu-item"
             title="Workspace Settings & History Log"
           >
             <Settings size={15} className="text-purple-400" />
             <span>Settings</span>
-          </button>
+              </button>
+            </div>
+          </details>
 
           {/* Run Code Button (Capsule Pill Styling, No Outer Glow) */}
           <button
@@ -4220,17 +4442,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
       {/* Main Workspace View Container (FULL WIDTH & FLUSH DIRECTLY BELOW NAVBAR) */}
       <section
         id="modular-workspace"
-        className="w-full flex-1 min-h-0 flex flex-col justify-start overflow-hidden bg-[#0D0E15]"
+        className="w-full flex-1 min-h-0 flex flex-row justify-start overflow-hidden bg-[#0D0E15]"
       >
         {/* IDE Split View (100% FULL SCREEN WIDTH & HEIGHT) */}
-        <div className="flex flex-col md:flex-row w-full flex-1 min-h-0 overflow-hidden bg-[#0D0E15]">
-          {/* LEFT SIDEBAR: File Explorer & Active Members List (FIXED TO SIDE, NO OUTER SCROLL) */}
-          <div className="w-full md:w-72 lg:w-80 shrink-0 border-r border-white/15 bg-[#12131F] flex flex-col justify-between overflow-hidden select-none h-full">
+        <div className="ct-editor-workspace-main flex flex-col md:flex-row w-full flex-1 min-w-0 min-h-0 overflow-hidden bg-[#0D0E15]">
+          {/* LEFT SIDEBAR: File Explorer & Active Members List */}
+          {isExplorerOpen ? (
+          <div
+            className="ct-explorer-sidebar shrink-0 flex flex-col justify-between overflow-hidden select-none h-full"
+            style={{ width: `${explorerWidth}px` }}
+          >
+            <button
+              type="button"
+              className="ct-sidebar-resize-handle ct-explorer-resize-handle"
+              onPointerDown={startExplorerResize}
+              title="Drag to resize Explorer"
+              aria-label="Resize Explorer"
+            >
+              <GripVertical size={14} />
+            </button>
             {/* Top Explorer Section (Flex grow & Scrollable for all files) */}
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               {/* Explorer Header */}
               <div
-                className="border-b border-white/15 flex items-center justify-between bg-white/[0.03] shrink-0"
+                className="ct-explorer-header border-b border-white/15 flex items-center justify-between bg-white/[0.03] shrink-0"
                 style={{
                   height: "52px",
                   paddingLeft: "24px",
@@ -4241,7 +4476,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   <Folder size={15} className="text-purple-400" />
                   <span>Explorer</span>
                 </span>
-                <div className="flex items-center gap-1.5 text-gray-400">
+                <div className="ct-explorer-header-actions flex items-center gap-1.5 text-gray-400">
                   {canEditFiles && (
                     <button
                       type="button"
@@ -4288,6 +4523,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                     title="Refresh Explorer"
                   >
                     <RefreshCw size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsExplorerOpen(false)}
+                    className="ct-sidebar-icon-btn"
+                    title="Close Explorer"
+                    aria-label="Close Explorer"
+                  >
+                    <X size={14} />
                   </button>
                 </div>
               </div>
@@ -4959,7 +5203,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
             )}
 
             {/* SIDEBAR BOTTOM: Active Session Members Panel (PROPER SPACING & COLLAPSIBLE TOGGLE) */}
-            <div className="border-t border-white/15 bg-[#0E0F17] flex flex-col shrink-0 transition-all">
+            <div className="ct-session-members border-t border-white/15 bg-[#0E0F17] flex flex-col shrink-0 transition-all">
               <button
                 type="button"
                 onClick={() => setIsMembersCollapsed((prev) => !prev)}
@@ -5047,7 +5291,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                       return (
                         <div
                           key={session._id || idx}
-                          className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.08] transition-all shadow-md group"
+                          className="ct-session-member flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.08] transition-all shadow-md group"
                           style={{ padding: "14px 18px" }}
                         >
                           <div
@@ -5076,7 +5320,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 </span>
                                 {isMe && (
                                   <span
-                                    className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
+                                    className="ct-session-you-badge inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
                                     style={{
                                       padding: "2px 10px",
                                       fontSize: "11px",
@@ -5089,10 +5333,26 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     You
                                   </span>
                                 )}
+                                {(() => {
+                                  const r = (session.role || "editor").toLowerCase();
+                                  const badgeStyle =
+                                    r === "owner"
+                                      ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                                      : r === "admin"
+                                        ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                                        : r === "viewer"
+                                          ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                          : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+                                  return (
+                                    <span className={`ct-session-role-badge inline-flex items-center rounded-full text-[10px] font-mono font-bold border uppercase ${badgeStyle}`}>
+                                      {r}
+                                    </span>
+                                  );
+                                })()}
                               </div>
 
                               <div
-                                className="flex items-center text-xs font-mono text-gray-400"
+                                className="ct-session-member-meta flex items-center text-xs font-mono text-gray-400"
                                 style={{ gap: "8px" }}
                               >
                                 <span className="flex items-center gap-1.5 truncate text-purple-300 font-medium">
@@ -5104,20 +5364,6 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     {session.currentFileId || "index.js"}
                                   </span>
                                 </span>
-                                <span className="text-gray-600">•</span>
-                                {(() => {
-                                  const r = (session.role || "editor").toLowerCase();
-                                  const badgeStyle = 
-                                    r === "owner" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
-                                    r === "admin" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
-                                    r === "viewer" ? "bg-amber-500/20 text-amber-300 border-amber-500/40" :
-                                    "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
-                                  return (
-                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${badgeStyle}`}>
-                                      {r}
-                                    </span>
-                                  );
-                                })()}
                               </div>
                             </div>
                           </div>
@@ -5147,7 +5393,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             {currentUser?.name || "You"}
                           </span>
                           <span
-                            className="inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
+                            className="ct-session-you-badge inline-flex items-center justify-center font-mono font-bold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 rounded-full shrink-0 shadow-sm self-center"
                             style={{
                               padding: "3px 14px",
                               fontSize: "11px",
@@ -5159,9 +5405,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                           >
                             You
                           </span>
+                          {(() => {
+                            const r = (activeWorkspace?.role || "editor").toLowerCase();
+                            const badgeStyle =
+                              r === "owner"
+                                ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                                : r === "admin"
+                                  ? "bg-blue-500/20 text-blue-300 border-blue-500/40"
+                                  : r === "viewer"
+                                    ? "bg-amber-500/20 text-amber-300 border-amber-500/40"
+                                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
+                            return (
+                              <span className={`ct-session-role-badge inline-flex items-center rounded-full text-[10px] font-mono font-bold border uppercase ${badgeStyle}`}>
+                                {r}
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div
-                          className="flex items-center text-xs font-mono text-gray-400"
+                          className="ct-session-member-meta flex items-center text-xs font-mono text-gray-400"
                           style={{ gap: "8px" }}
                         >
                           <span className="flex items-center gap-1.5 truncate text-purple-300 font-medium">
@@ -5173,34 +5435,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               {activeFile || "index.js"}
                             </span>
                           </span>
-                          <span className="text-gray-600">•</span>
-                          {(() => {
-                            const r = (activeWorkspace?.role || "editor").toLowerCase();
-                            const badgeStyle = 
-                              r === "owner" ? "bg-purple-500/20 text-purple-300 border-purple-500/40" :
-                              r === "admin" ? "bg-blue-500/20 text-blue-300 border-blue-500/40" :
-                              r === "viewer" ? "bg-amber-500/20 text-amber-300 border-amber-500/40" :
-                              "bg-emerald-500/20 text-emerald-300 border-emerald-500/40";
-                            return (
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border uppercase tracking-wider ${badgeStyle}`}>
-                                {r}
-                              </span>
-                            );
-                          })()}
                         </div>
                       </div>
                     </div>
                   )}
 
                   {/* View Participant Permissions Action Button */}
-                  <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                  <div className="ct-permissions-action flex items-center justify-between">
                     <button
                       type="button"
                       onClick={() => {
                         setSettingsModalInitialTab("members");
                         setIsSettingsModalOpen(true);
                       }}
-                      className="w-full py-3.5 px-5 rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 hover:text-white border border-purple-500/30 hover:border-purple-500/60 text-xs font-mono font-bold flex items-center justify-center gap-3 transition-all cursor-pointer shadow-sm"
+                      className="ct-permissions-button w-full rounded-xl bg-purple-600/20 hover:bg-purple-600/35 text-purple-200 hover:text-white border border-purple-500/30 hover:border-purple-500/60 text-xs font-mono font-bold flex items-center justify-center transition-all cursor-pointer shadow-sm"
                       title="View workspace participant permissions and RBAC role matrix"
                     >
                       <Shield size={14} className="text-purple-400" />
@@ -5211,6 +5459,20 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
               )}
             </div>
           </div>
+          ) : (
+            <div className="ct-explorer-collapsed">
+              <button
+                type="button"
+                onClick={() => setIsExplorerOpen(true)}
+                className="ct-explorer-reopen"
+                title="Open Explorer"
+                aria-label="Open Explorer"
+              >
+                <Folder size={16} />
+                <span>Explorer</span>
+              </button>
+            </div>
+          )}
 
           {/* RIGHT MAIN PANEL: Code Editor Window (Fills remaining width & height) */}
           <div className="flex-1 flex flex-col bg-[#0D0E15] min-w-0 h-full">
@@ -5291,16 +5553,25 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setIsActiveEditorsOpen((previous) => !previous)}
+                    onClick={() =>
+                      setIsActiveEditorsOpen((previous) => !previous)
+                    }
                     className="flex min-h-9 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-6 py-2 text-xs font-mono text-gray-300 transition-colors hover:border-purple-400/40 hover:bg-purple-500/10 hover:text-white"
                     aria-expanded={isActiveEditorsOpen}
                     aria-haspopup="true"
                   >
                     <span>Active Editors</span>
                     <span className="rounded-full bg-purple-500/20 px-1.5 py-0.5 text-[10px] font-bold text-purple-200">
-                      {activeSessions.filter((s) => s.status !== "offline").length}
+                      {
+                        activeSessions.filter((s) => s.status !== "offline")
+                          .length
+                      }
                     </span>
-                    {isActiveEditorsOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    {isActiveEditorsOpen ? (
+                      <ChevronUp size={13} />
+                    ) : (
+                      <ChevronDown size={13} />
+                    )}
                   </button>
 
                   {isActiveEditorsOpen && (
@@ -5309,7 +5580,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         <span className="text-[11px] font-mono font-bold uppercase tracking-wider text-gray-300">
                           Active Editors
                         </span>
-                        <span className="text-[10px] text-emerald-300">Live</span>
+                        <span className="text-[10px] text-emerald-300">
+                          Live
+                        </span>
                       </div>
                       <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
                         {isViewer && (
@@ -5321,21 +5594,21 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         {activeSessions
                           .filter((s) => s.status !== "offline")
                           .map((s, idx) => {
-                      const uid =
-                        s.userId?._id ||
-                        s.userId?.id ||
-                        s.userId ||
-                        `peer-${idx}`;
-                      const name = s.userId?.name || `Peer ${idx + 1}`;
-                      const color = getPeerColor(uid, idx);
-                      const isMe = uid === currentUserId;
-                      const peerCur = peerCursors[uid];
-                      const isOnSameFile =
-                        peerCur?.fileId === activeFile ||
-                        s.currentFileId === activeFile;
-                      const posInfo = peerCur?.position
-                        ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}`
-                        : null;
+                            const uid =
+                              s.userId?._id ||
+                              s.userId?.id ||
+                              s.userId ||
+                              `peer-${idx}`;
+                            const name = s.userId?.name || `Peer ${idx + 1}`;
+                            const color = getPeerColor(uid, idx);
+                            const isMe = uid === currentUserId;
+                            const peerCur = peerCursors[uid];
+                            const isOnSameFile =
+                              peerCur?.fileId === activeFile ||
+                              s.currentFileId === activeFile;
+                            const posInfo = peerCur?.position
+                              ? `Ln ${peerCur.position.lineNumber}, Col ${peerCur.position.column}`
+                              : null;
 
                             return (
                               <div
@@ -5343,9 +5616,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2"
                                 title={`${name}${isMe ? " (You)" : ""}${posInfo && isOnSameFile ? ` - Editing at ${posInfo}` : ""}`}
                               >
-                                <span className="ct-editor-peer-dot" style={{ "--peer-color": color }} />
+                                <span
+                                  className="ct-editor-peer-dot"
+                                  style={{ "--peer-color": color }}
+                                />
                                 <span className="min-w-0 flex-1 truncate text-xs text-gray-200">
-                                  {name}{isMe ? " (You)" : ""}
+                                  {name}
+                                  {isMe ? " (You)" : ""}
                                 </span>
                                 {isOnSameFile && posInfo && !isMe && (
                                   <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-gray-300">
@@ -5355,9 +5632,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               </div>
                             );
                           })}
-                        {activeSessions.filter((s) => s.status !== "offline").length === 0 && !isViewer && (
-                          <span className="py-2 text-center text-xs text-gray-500">No active editors</span>
-                        )}
+                        {activeSessions.filter((s) => s.status !== "offline")
+                          .length === 0 &&
+                          !isViewer && (
+                            <span className="py-2 text-center text-xs text-gray-500">
+                              No active editors
+                            </span>
+                          )}
                       </div>
                     </div>
                   )}
@@ -5454,6 +5735,11 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   // Track cursor selection in Monaco (onDidChangeCursorSelection) (CT-86)
                   editor.onDidChangeCursorSelection((e) => {
                     handleLocalCursorChange(editor.getPosition(), e.selection);
+                    setSelectedCode(
+                      e.selection.isEmpty()
+                        ? ""
+                        : editor.getModel()?.getValueInRange(e.selection) || "",
+                    );
                   });
 
                   // Initial decoration pass
@@ -5468,7 +5754,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
                   tabSize: currentWorkspace?.settings?.tabSize || 2,
-                  wordWrap: currentWorkspace?.settings?.wordWrap === false ? "off" : "on",
+                  wordWrap:
+                    currentWorkspace?.settings?.wordWrap === false
+                      ? "off"
+                      : "on",
                   scrollBeyondLastColumn: 0,
                   smoothScrolling: true,
                   cursorBlinking: "smooth",
@@ -5481,14 +5770,36 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
               />
             </div>
 
+            {/* Output Panel Splitter (Horizontal Drag Bar) */}
+            {isOutputPanelOpen && !isOutputPanelMinimized && (
+              <div
+                className={`ct-output-splitter${isOutputResizing ? " ct-output-splitter-active" : ""}`}
+                onPointerDown={startOutputResize}
+                title="Drag to adjust output panel height"
+                aria-label="Adjust output panel height"
+              >
+                <GripHorizontal size={14} />
+              </div>
+            )}
+
             {/* Integrated Execution Output & Custom Input Console Panel */}
             {isOutputPanelOpen && (
               <div
-                className={`border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 transition-all ${isOutputPanelMinimized ? "h-14" : "h-72 md:h-96"}`}
+                className={`ct-output-panel border-t border-white/15 bg-[#0B0C14] flex flex-col shrink-0 overflow-hidden ${isOutputPanelMinimized ? "ct-output-panel-minimized" : ""} ${isOutputResizing ? "ct-output-panel-resizing" : ""}`}
+                style={
+                  isOutputPanelMinimized
+                    ? { height: "56px", minHeight: "56px", maxHeight: "56px" }
+                    : {
+                        "--ct-output-panel-height": `${outputPanelHeight}px`,
+                        height: `${outputPanelHeight}px`,
+                        minHeight: "220px",
+                        maxHeight: "85vh",
+                      }
+                }
               >
                 {/* Output Panel Header & Tabs */}
                 <div
-                  className="h-14 bg-[#12131F] border-b border-white/10 flex items-center justify-between select-none shrink-0"
+                  className="ct-output-panel-header h-14 bg-[#12131F] border-b border-white/10 flex items-center justify-between select-none shrink-0"
                   style={{ paddingLeft: "28px", paddingRight: "20px" }}
                 >
                   <div className="flex items-center gap-4 min-w-0">
@@ -5563,7 +5874,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                       />
                       <span>Execution History</span>
                       {executionHistoryList.length > 0 && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-100 text-xs font-bold border border-indigo-400/40 ml-1">
+                        <span
+                          className="inline-flex items-center justify-center rounded-full bg-indigo-500/30 text-indigo-100 text-xs font-bold border border-indigo-400/40 ml-1"
+                          style={{ padding: "4px 12px", minWidth: "28px" }}
+                        >
                           {executionHistoryList.length}
                         </span>
                       )}
@@ -5716,15 +6030,14 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   </div>
                 </div>
 
-                {/* Output Panel Body Tabs */}
+                  {/* Output Panel Body Tabs */}
                 {!isOutputPanelMinimized && (
                   <div
-                    className="flex-1 overflow-y-auto font-mono text-xs leading-relaxed select-text space-y-6"
-                    style={{ padding: "24px 32px" }}
+                    className="ct-output-panel-body flex-1 overflow-y-auto font-mono text-xs leading-relaxed select-text space-y-4"
                   >
                     {/* TAB 1: EXECUTION OUTPUT CONSOLE */}
                     {outputTab === "output" && (
-                      <div className="space-y-5">
+                      <div className="space-y-3">
                         {executionStatus === "running" &&
                           !executionResult?.stdout &&
                           !executionResult?.stderr && (
@@ -5741,7 +6054,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                           )}
 
                         {executionResult && (
-                          <div className="flex flex-col space-y-5">
+                          <div className="flex flex-col space-y-3">
                             {/* Card Header Bar - Distinct Padded Pill Container */}
                             <div className="bg-[#141624] border border-white/15 px-7 py-4.5 rounded-2xl flex items-center justify-between flex-wrap gap-4 text-xs font-mono shadow-md">
                               <div className="flex items-center gap-4">
@@ -5948,11 +6261,18 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         </div>
 
                         <textarea
+                          ref={stdinTextareaRef}
                           value={customInput}
                           onChange={(e) => setCustomInput(e.target.value)}
                           placeholder="Type single-line or multiline standard input (stdin) here...&#10;Example:&#10;10&#10;20&#10;Alice"
-                          className="w-full h-40 bg-[#06070C] border border-cyan-500/30 focus:border-cyan-400 rounded-xl text-xs text-cyan-100 placeholder-gray-500 font-mono outline-none resize-y leading-relaxed my-2"
-                          style={{ padding: "16px 20px", lineHeight: "1.8" }}
+                          className="w-full bg-[#06070C] border border-cyan-500/30 focus:border-cyan-400 rounded-xl text-xs text-cyan-100 placeholder-gray-500 font-mono outline-none leading-relaxed my-2"
+                          style={{
+                            padding: "16px 20px",
+                            lineHeight: "1.8",
+                            overflow: "hidden",
+                            resize: "none",
+                            minHeight: "160px",
+                          }}
                         />
 
                         <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs text-gray-400 flex-wrap gap-4">
@@ -5999,13 +6319,22 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
                     {/* TAB 3: EXECUTION HISTORY LOGS */}
                     {outputTab === "history" && (
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between pb-1 border-b border-white/10">
+                      <div className="space-y-16">
+                        <div
+                          className="flex items-center justify-between pb-4"
+                          style={{ marginBottom: "32px" }}
+                        >
                           <div className="flex items-center gap-2 text-xs font-bold text-indigo-300">
                             <History size={14} className="text-indigo-400" />
                             <span>Execution History Log</span>
                             <span className="text-gray-400 text-[11px] font-normal font-mono">
-                              ({executionHistoryList.length} past execution
+                              (<span
+                                className="inline-flex items-center justify-center rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 font-semibold"
+                                style={{ padding: "4px 12px", minWidth: "28px" }}
+                              >
+                                {executionHistoryList.length}
+                              </span>{" "}
+                              past execution
                               {executionHistoryList.length === 1
                                 ? ""
                                 : "s"}{" "}
@@ -6020,7 +6349,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             Run code to build history!
                           </div>
                         ) : (
-                          <div className="space-y-2 max-h-48 md:max-h-56 overflow-y-auto pr-1">
+                          <div className="space-y-6">
                             {executionHistoryList.map((item, idx) => {
                               const isSelected =
                                 selectedHistoryItem?._id === item._id;
@@ -6040,16 +6369,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               return (
                                 <div
                                   key={item._id || idx}
-                                  className={`p-3.5 rounded-xl border transition-all ${
+                                  className={`my-4 py-7 px-6 rounded-xl transition-all border-b border-white/10 ${
                                     isSelected
-                                      ? "bg-purple-600/20 border-purple-500/60"
-                                      : "bg-white/[0.03] border-white/10 hover:border-white/20 hover:bg-white/[0.06]"
+                                      ? "bg-purple-600/20"
+                                      : "bg-white/[0.03] hover:bg-white/[0.06]"
                                   }`}
                                 >
-                                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                                    <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                                  <div className="flex items-center justify-between gap-8 flex-wrap">
+                                    <div className="flex items-center gap-5 min-w-0 flex-wrap pb-2">
                                       <span
-                                        className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${badgeColor}`}
+                                        className={`rounded-full text-xs font-bold border ${badgeColor}`}
+                                        style={{
+                                          padding: "8px 20px",
+                                        }}
                                       >
                                         {isSuccess
                                           ? "Exit 0"
@@ -6059,27 +6391,35 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                               ? "Timeout"
                                               : `Exit ${item.exitCode ?? 1}`}
                                       </span>
-                                      <span className="font-bold text-gray-200 truncate">
+                                      <span className="font-bold text-gray-200 truncate py-2.5 px-1">
                                         {item.filename}
                                       </span>
-                                      <span className="text-[11px] text-gray-400 font-mono">
-                                        ({item.language})
+                                      <span className="text-[11px] text-gray-400 font-mono py-2.5 px-2 rounded-md bg-white/[0.04]">
+                                        {item.language}
                                       </span>
                                       {item.stdin ? (
-                                        <span className="text-[10px] px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
+                                        <span className="text-[10px] px-3 py-2 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-bold">
                                           +stdin
                                         </span>
                                       ) : null}
                                     </div>
 
-                                    <div className="flex items-center gap-4 shrink-0 text-xs text-gray-400 font-mono">
+                                    <div className="flex items-center gap-5 shrink-0 text-xs text-gray-400 font-mono flex-wrap">
                                       {item.executionTimeMs !== null &&
                                         item.executionTimeMs !== undefined && (
-                                          <span className="text-gray-400">
+                                          <span
+                                            className="text-gray-400 text-xs font-mono rounded-full bg-white/5"
+                                            style={{
+                                              padding: "8px 22px",
+                                            }}
+                                          >
                                             {item.executionTimeMs}ms
                                           </span>
                                         )}
-                                      <span>
+                                      <span
+                                        className="rounded-full bg-white/[0.04]"
+                                        style={{ padding: "8px 18px" }}
+                                      >
                                         {new Date(
                                           item.timestamp,
                                         ).toLocaleTimeString()}
@@ -6093,8 +6433,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                         }
                                         className="flex items-center rounded-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 hover:text-purple-200 font-semibold text-xs transition-all cursor-pointer"
                                         style={{
-                                          padding: "6px 18px",
-                                          gap: "6px",
+                                          padding: "8px 24px",
+                                          gap: "8px",
                                         }}
                                       >
                                         {isSelected
@@ -6186,24 +6526,30 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
 
                     {/* TAB 4: WORKSPACE TELEMETRY & PROOF-OF-WORK AUDIT */}
                     {outputTab === "telemetry" && (
-                      <div className="space-y-6 px-1">
-                        <div className="flex items-center justify-between p-5 border-b border-white/10 flex-wrap gap-6">
-                          <div className="flex items-center gap-4 px-1 text-xs font-bold text-purple-300">
+                      <div className="space-y-8 px-2 pt-0 pb-4">
+                        <div
+                          className="flex items-center justify-between flex-wrap gap-4"
+                          style={{ padding: "2px 24px 16px 32px" }}
+                        >
+                          <div className="flex items-center gap-3 text-xs font-bold text-purple-300 flex-wrap">
                             <ShieldCheck
                               size={15}
                               className="text-purple-400"
                             />
-                            <span>
-                              Proof-of-Work Contribution Telemetry & Audit
-                            </span>
                             {telemetryVerification?.isValid ? (
-                              <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                              <span
+                                className="flex items-center gap-2 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(16,185,129,0.2)]"
+                                style={{ padding: "8px 14px" }}
+                              >
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                 <CheckCircle2 size={11} /> 100%
                                 Cryptographically Verified
                               </span>
                             ) : (
-                              <span className="flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse">
+                              <span
+                                className="flex items-center gap-2 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-[10px] font-bold shadow-[0_0_10px_rgba(244,63,94,0.3)] animate-pulse"
+                                style={{ padding: "8px 14px" }}
+                              >
                                 <AlertTriangle
                                   size={11}
                                   className="text-rose-400"
@@ -6213,12 +6559,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                             )}
                           </div>
 
-                          <div className="flex items-center gap-3 px-1 flex-wrap">
+                          <div className="flex items-center gap-3 flex-wrap">
                             <button
                               type="button"
                               onClick={() => fetchWorkspaceTelemetry()}
                               disabled={isTelemetryLoading}
-                              className="px-4 py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              className="rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              style={{ padding: "10px 18px" }}
                               title="Re-verify blockchain activity chain"
                             >
                               <RefreshCw
@@ -6242,7 +6589,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📄 Exported ${fileName}`, "success");
                               }}
-                              className="px-4 py-2.5 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
+                              className="rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
+                              style={{ padding: "10px 18px" }}
                               title="Download JSON machine-verifiable audit manifest"
                             >
                               <Download size={11} />
@@ -6259,7 +6607,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                 );
                                 showToast(`📋 Exported ${fileName}`, "success");
                               }}
-                              className="px-4 py-2.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              className="rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
+                              style={{ padding: "10px 18px" }}
                               title="Download formatted Markdown Certificate"
                             >
                               <FileText size={11} />
@@ -6271,16 +6620,19 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         {/* Tamper Diagnostic Banner in Output Tab */}
                         {telemetryVerification &&
                           !telemetryVerification.isValid && (
-                            <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-3">
+                            <div
+                              className="rounded-xl bg-rose-950/40 border border-rose-500/40 text-rose-200 text-xs font-mono flex items-start gap-4 mx-1"
+                              style={{ padding: "20px 20px" }}
+                            >
                               <AlertTriangle
                                 size={15}
                                 className="text-rose-400 shrink-0 mt-0.5"
                               />
-                              <div className="flex-1">
+                              <div className="flex-1 space-y-2">
                                 <div className="font-bold text-rose-300">
                                   Cryptographic Tamper Warning Detected
                                 </div>
-                                <div className="text-[11px] text-gray-300 mt-1 leading-5">
+                                <div className="text-[11px] text-gray-300 leading-6">
                                   {telemetryVerification.tamperDiagnostics
                                     ?.details ||
                                     telemetryVerification.error ||
@@ -6292,49 +6644,43 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                           )}
 
                         {/* Top Summary Cards */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-1">
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
-                              <Activity
-                                size={11}
-                                className="text-emerald-400"
-                              />
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pr-1 pt-4 pl-4" style={{ marginBottom: "48px" }}>
+                          <div className="bg-white/[0.03] border border-white/10 rounded-xl shadow-sm" style={{ padding: "12px 16px" }}>
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 mb-2">
+                              <Activity size={11} className="text-emerald-400" />
                               <span>TOTAL LINES SYNCED</span>
                             </div>
-                            <div className="text-base font-bold text-white mt-3">
+                            <div className="text-xl font-bold text-white leading-tight">
                               {(
                                 telemetryData?.summary?.totalLinesChanged ?? 0
                               ).toLocaleString()}
                             </div>
                           </div>
-
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
+                          <div className="bg-white/[0.03] border border-white/10 rounded-xl shadow-sm" style={{ padding: "12px 16px" }}>
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 mb-2">
                               <Layers size={11} className="text-purple-400" />
                               <span>BLOCKCHAIN BLOCKS</span>
                             </div>
-                            <div className="text-base font-bold text-purple-300 mt-3">
+                            <div className="text-xl font-bold text-purple-300 leading-tight">
                               {telemetryData?.summary?.totalBlocks ?? 0}
                             </div>
                           </div>
-
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
+                          <div className="bg-white/[0.03] border border-white/10 rounded-xl shadow-sm" style={{ padding: "12px 16px" }}>
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 mb-2">
                               <Users size={11} className="text-sky-400" />
                               <span>CONTRIBUTORS</span>
                             </div>
-                            <div className="text-base font-bold text-sky-300 mt-3">
+                            <div className="text-xl font-bold text-sky-300 leading-tight">
                               {telemetryData?.contributors?.length ?? 0}
                             </div>
                           </div>
-
-                          <div className="bg-white/[0.03] border border-white/10 p-5 rounded-xl shadow-sm">
-                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 leading-5">
+                          <div className="bg-white/[0.03] border border-white/10 rounded-xl shadow-sm" style={{ padding: "12px 16px" }}>
+                            <div className="text-[10px] text-gray-400 font-mono flex items-center gap-2 mb-2">
                               <Hash size={11} className="text-amber-400" />
                               <span>LATEST HASH</span>
                             </div>
                             <div
-                              className="text-xs font-mono text-amber-300 mt-3 truncate"
+                              className="text-sm font-mono text-amber-300 truncate leading-tight"
                               title={telemetryData?.summary?.latestBlockHash}
                             >
                               {telemetryData?.summary?.latestBlockHash
@@ -6345,9 +6691,9 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         </div>
 
                         {/* Contributor Breakdown Table */}
-                        <div className="space-y-3 max-h-40 overflow-y-auto px-1 pr-2">
+                        <div className="space-y-3 px-1 pb-2" style={{ marginTop: "32px", paddingTop: "8px" }}>
                           {(telemetryData?.contributors || []).length === 0 ? (
-                            <div className="text-gray-500 italic p-5 text-center">
+                            <div className="text-gray-500 italic text-center rounded-xl bg-white/[0.02] border border-white/5 p-4">
                               No contribution telemetry recorded yet. Code edits
                               and executions will chain automatically!
                             </div>
@@ -6362,11 +6708,12 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                               return (
                                 <div
                                   key={c.id || idx}
-                                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors gap-5"
+                                  className="flex flex-col sm:flex-row sm:items-center sm:justify-between rounded-xl bg-white/[0.02] border border-white/5 hover:border-purple-500/30 text-xs transition-colors"
+                                  style={{ padding: "12px 16px", marginBottom: "8px", gap: "12px" }}
                                 >
-                                  <div className="flex items-center gap-3 min-w-0">
+                                  <div className="flex items-center min-w-0 flex-wrap" style={{ gap: "10px" }}>
                                     <span
-                                      className="w-5 h-5 rounded flex items-center justify-center font-bold text-[10px] shrink-0"
+                                      className="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-[10px] shrink-0"
                                       style={{
                                         backgroundColor: `${c.color || "#8B5CF6"}30`,
                                         color: c.color || "#8B5CF6",
@@ -6374,21 +6721,24 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                     >
                                       {c.name ? c.name[0] : "U"}
                                     </span>
-                                    <span className="font-bold text-gray-200 truncate">
+                                    <span className="font-bold text-gray-200 truncate text-sm">
                                       {c.name}
                                     </span>
-                                    <span className="text-[10px] px-1.5 py-0.2 rounded font-mono bg-white/5 text-gray-300 border border-white/10">
+                                    <span
+                                      className="text-[10px] rounded-full font-mono bg-white/5 text-gray-300 border border-white/10"
+                                      style={{ padding: "4px 10px" }}
+                                    >
                                       {c.badge || c.role || "Member"}
                                     </span>
                                   </div>
 
-                                  <div className="flex items-center justify-between gap-5 w-full sm:w-auto sm:justify-end shrink-0 font-mono">
+                                  <div className="flex items-center justify-between w-full sm:w-auto sm:justify-end shrink-0 font-mono flex-wrap" style={{ gap: "12px" }}>
                                     <div className="text-[11px] text-gray-300">
                                       <strong>
                                         {c.lines?.toLocaleString() || 0}
                                       </strong>{" "}
                                       lines
-                                      <span className="text-[10px] text-gray-500 ml-1">
+                                      <span className="text-[10px] text-gray-500 ml-1.5">
                                         (
                                         <span className="text-emerald-400">
                                           +{c.linesAdded || 0}
@@ -6401,7 +6751,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                       </span>
                                     </div>
 
-                                    <div className="w-20 hidden sm:flex items-center gap-1.5">
+                                    <div className="w-28 hidden sm:flex items-center" style={{ gap: "8px" }}>
                                       <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
                                         <div
                                           className="h-full rounded-full"
@@ -6412,7 +6762,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                           }}
                                         />
                                       </div>
-                                      <span className="text-[10px] text-gray-400 w-7 text-right">
+                                      <span className="text-[10px] text-gray-400 w-8 text-right">
                                         {c.percent || 0}%
                                       </span>
                                     </div>
@@ -6431,7 +6781,8 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                                           );
                                         }
                                       }}
-                                      className="flex items-center gap-2 text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 px-3.5 py-2 rounded-lg border border-purple-500/20 transition-colors"
+                                      className="flex items-center text-[11px] text-purple-300 hover:text-purple-100 bg-purple-500/10 hover:bg-purple-500/20 rounded-lg border border-purple-500/20 transition-colors"
+                                      style={{ padding: "6px 10px", gap: "6px" }}
                                       title={`Full SHA-256: ${fullHash}`}
                                     >
                                       <Hash
@@ -6462,24 +6813,10 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
             )}
 
             {/* IDE Bottom Status Bar */}
-            <div
-              className="border-t border-white/15 flex items-center text-xs font-mono text-gray-400 bg-[#090A10] shrink-0 min-h-[44px]"
-              style={{
-                minHeight: "44px",
-                padding: "0 16px",
-              }}
-            >
-              <div
-                className="w-full flex items-center justify-between gap-3 flex-wrap text-xs font-mono text-gray-400 bg-[#090A10] shrink-0"
-                style={{
-                  minHeight: "44px",
-                  padding: "8px 12px",
-                  columnGap: "12px",
-                  rowGap: "8px",
-                }}
-              >
+            {!isOutputPanelOpen && (
+            <div className="ct-editor-statusbar">
                 <div
-                  className="flex items-center flex-wrap min-w-0"
+                  className="ct-editor-status-group ct-editor-status-details flex items-center flex-wrap min-w-0"
                   style={{ gap: "8px" }}
                 >
                   <div
@@ -6522,7 +6859,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                 </div>
 
                 <div
-                  className="flex items-center justify-end flex-wrap min-w-0"
+                  className="ct-editor-status-group ct-editor-status-tools flex items-center justify-end flex-wrap min-w-0"
                   style={{ gap: "8px" }}
                 >
                   <button
@@ -6580,9 +6917,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   <NotificationCenter
                     notifications={notifications}
                     isOpen={isNotificationCenterOpen}
-                    onToggle={() => setIsNotificationCenterOpen((previous) => !previous)}
+                    onToggle={() =>
+                      setIsNotificationCenterOpen((previous) => !previous)
+                    }
                     onDismiss={(notificationId) =>
-                      setNotifications((previous) => previous.filter((item) => item.id !== notificationId))
+                      setNotifications((previous) =>
+                        previous.filter((item) => item.id !== notificationId),
+                      )
                     }
                     onClear={() => setNotifications([])}
                   />
@@ -6599,14 +6940,13 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                   </div>
                 </div>
               </div>
+            )}
 
-            </div>
           </div>
 
           {/* RIGHT SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
-          {/* RIGHT SIDE-BY-SIDE TELEMETRY & CONTRIBUTION PANEL (CT-164 & CT-167) */}
           {showTelemetryDrawer && (
-            <div className="w-[min(450px,90vw)] 2xl:w-[520px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-30 shadow-2xl font-sans transition-all duration-300">
+            <div className="ct-telemetry-panel w-[min(450px,90vw)] 2xl:w-[520px] shrink-0 border-l border-white/10 bg-[#07080F] flex flex-col h-full z-30 shadow-2xl font-sans transition-all duration-300">
               {/* 1. Panel Header */}
               <div
                 className="flex items-start justify-between border-b border-white/10 bg-gradient-to-r from-purple-950/40 via-[#0B0C16] to-cyan-950/30 shrink-0"
@@ -6869,7 +7209,7 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
                         </button>
                       </div>
                     ) : (
-                      <div className="flex flex-col" style={{ gap: "16px" }}>
+                      <div className="flex flex-col" style={{ gap: "16px", marginTop: "24px" }}>
                         {dossierContributors.map((user, uIdx) => {
                           const uColor = user.color || "#38BDF8";
                           return (
@@ -7253,6 +7593,15 @@ export const ModularWorkspace = ({ activeWorkspace, onBackToHome, onNavigateToWo
             </div>
           )}
         </div>
+        <AssistantPanel
+          isOpen={isAIAssistantOpen}
+          onClose={() => setIsAIAssistantOpen(false)}
+          activeFile={activeFile}
+          activeLanguage={getMonacoLanguage(activeFile)}
+          fileContent={getActiveFileContent()}
+          selectedCode={selectedCode}
+          onInsertCode={handleInsertAssistantCode}
+        />
       </section>
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
