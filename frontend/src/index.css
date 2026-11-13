@@ -1575,6 +1575,27 @@ html {
   border-color: rgba(110, 231, 183, 0.45);
 }
 
+.ct-editor-action-btn-ai {
+  color: #f0abfc;
+  background: rgba(217, 70, 239, 0.12);
+  border-color: rgba(232, 121, 249, 0.35);
+}
+
+.ct-editor-action-btn-ai:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(217, 70, 239, 0.25);
+  border-color: rgba(240, 171, 252, 0.6);
+  box-shadow: 0 0 10px rgba(217, 70, 239, 0.3);
+}
+
+.ai-assistant-quick-actions-card {
+  margin: 12px 14px 6px;
+  padding: 12px;
+  background: #181a22;
+  border: 1px solid #2d313e;
+  border-radius: 8px;
+}
+
 .ct-editor-action-btn:disabled {
   color: #6B7280;
   background: rgba(255, 255, 255, 0.03);

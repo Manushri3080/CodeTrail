@@ -41,6 +41,9 @@ require('./workspaceRegression.test');
   // Workspace Configuration & Notification Validation Tests (Rishika Shah)
   await require('./workspaceNotificationValidation.test');
 
+  // AI-Integrated CodeTrail: Backend & Model Integration Tests (Manushri)
+  await require('./aiAssistant.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);
