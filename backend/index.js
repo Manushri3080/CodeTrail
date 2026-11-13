@@ -32,6 +32,7 @@ const activityRoutes = require('./routes/activityRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const notificationPreferencesRoutes = require('./routes/notificationPreferencesRoutes');
+const aiRoutes = require('./routes/aiRoutes');
 const initWorkspaceSessionSocket = require('./sockets/workspaceSessionSocket');
 
 // Disable Mongoose command buffering so queries fail immediately when DB is offline instead of hanging
@@ -130,6 +131,9 @@ app.use('/api/workspaces/:workspaceId', activityRoutes);
 app.use('/api/workspaces/:workspaceId', analyticsRoutes);
 // CT-199: Contribution Report Routes (Anistina Dsouza)
 app.use('/api/workspaces/:workspaceId', reportRoutes);
+
+// AI Coding Assistant & Model Integration Routes (Manushri)
+app.use('/api/ai', aiRoutes);
 
 // Initialize Real-time Socket.IO Presence Engine
 initWorkspaceSessionSocket(io);

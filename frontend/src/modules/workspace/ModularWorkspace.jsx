@@ -335,6 +335,36 @@ const DEFAULT_FILES_CONTENT = {
   "README.md": `# Project Workspace\n\nWelcome to your collaborative CodeTrail workspace.\n`,
 };
 
+class AssistantErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("[CodeTrail AI Assistant Error]", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <aside className="ai-assistant-panel p-6 text-center text-gray-300 flex flex-col items-center justify-center gap-3">
+          <p className="text-sm font-semibold text-red-400">AI Assistant encountered an issue.</p>
+          <button
+            type="button"
+            onClick={() => this.setState({ hasError: false, error: null })}
+            className="px-3 py-1.5 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded text-xs font-semibold cursor-pointer"
+          >
+            Reload Assistant
+          </button>
+        </aside>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export const ModularWorkspace = ({
   activeWorkspace,
   onBackToHome,
@@ -398,6 +428,7 @@ export const ModularWorkspace = ({
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const [aiAssistantTrigger, setAiAssistantTrigger] = useState(null);
   const [isExplorerOpen, setIsExplorerOpen] = useState(() => {
     try {
       return localStorage.getItem(`ct-explorer-open-${wsId}`) !== "false";
@@ -434,6 +465,17 @@ export const ModularWorkspace = ({
   const [isOutputPanelMinimized, setIsOutputPanelMinimized] = useState(false);
   const [isOutputResizing, setIsOutputResizing] = useState(false);
   const [selectedCode, setSelectedCode] = useState("");
+
+  useEffect(() => {
+    const handleGlobalAIAssistantKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.altKey || e.shiftKey) && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        setIsAIAssistantOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleGlobalAIAssistantKey);
+    return () => window.removeEventListener("keydown", handleGlobalAIAssistantKey);
+  }, []);
   const [settingsModalInitialTab, setSettingsModalInitialTab] =
     useState("general");
   const [notifications, setNotifications] = useState([]);
@@ -4045,12 +4087,19 @@ export const ModularWorkspace = ({
     if (!editorRef.current || !code) return;
     const editor = editorRef.current;
     const selection = editor.getSelection();
-    const range =
-      selection && !selection.isEmpty()
-        ? selection
-        : editor.getModel()?.getFullModelRange();
-    if (!range) return;
-    editor.executeEdits("ai-assistant-assistant", [
+    let range;
+    if (selection && !selection.isEmpty()) {
+      range = selection;
+    } else {
+      const pos = editor.getPosition() || { lineNumber: 1, column: 1 };
+      range = {
+        startLineNumber: pos.lineNumber,
+        startColumn: pos.column,
+        endLineNumber: pos.lineNumber,
+        endColumn: pos.column,
+      };
+    }
+    editor.executeEdits("ai-assistant", [
       { range, text: code, forceMoveMarkers: true },
     ]);
     editor.focus();
@@ -4270,6 +4319,23 @@ export const ModularWorkspace = ({
             </button>
           )}
 
+          {/* Ask AI Assistant Ribbon Button */}
+          <button
+            type="button"
+            onClick={() => setIsAIAssistantOpen((previous) => !previous)}
+            className={`flex items-center rounded-full text-xs font-bold transition-all cursor-pointer ${
+              isAIAssistantOpen
+                ? "bg-fuchsia-500/30 border-fuchsia-400 text-fuchsia-100 shadow-[0_0_12px_rgba(217,70,239,0.35)]"
+                : "bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border-fuchsia-500/40 hover:border-fuchsia-400 text-fuchsia-200"
+            } border`}
+            style={{ padding: "10px 22px", gap: "10px" }}
+            title="Open CodeTrail AI Assistant (Ctrl+Alt+A)"
+            aria-expanded={isAIAssistantOpen}
+          >
+            <Sparkles size={15} className="text-fuchsia-300" />
+            <span>Ask AI</span>
+          </button>
+
           <details className="ct-workspace-ribbon-dropdown">
             <summary className="ct-workspace-ribbon-dropdown-trigger ct-workspace-ribbon-tools-trigger">
               <Settings size={14} className="text-purple-400" />
@@ -4297,33 +4363,27 @@ export const ModularWorkspace = ({
                 <span>Scaffold Project</span>
               </button>
 
-          <button
-            type="button"
-            onClick={() => setIsAIAssistantOpen((previous) => !previous)}
-            className={`flex items-center rounded-full text-xs font-bold transition-all cursor-pointer ${
-              isAIAssistantOpen
-                ? "bg-fuchsia-500/30 border-fuchsia-400 text-fuchsia-100"
-                : "bg-fuchsia-500/15 hover:bg-fuchsia-500/25 border-fuchsia-500/40 text-fuchsia-200"
-            } border`}
-            style={{ padding: "10px 22px", gap: "10px" }}
-            title="Open AI assistant"
-            aria-expanded={isAIAssistantOpen}
-          >
-            <Sparkles size={15} className="text-fuchsia-300" />
-            <span>Ask AI Assistant</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setIsAIAssistantOpen(true)}
+                className="ct-workspace-ribbon-menu-item text-fuchsia-300 hover:text-fuchsia-200"
+                title="Open CodeTrail AI Assistant (Ctrl+Alt+A)"
+              >
+                <Sparkles size={14} className="text-fuchsia-400" />
+                <span>Ask AI Assistant</span>
+              </button>
 
               <button
-            type="button"
-            onClick={() => {
-              setSettingsModalInitialTab("general");
-              setIsSettingsModalOpen(true);
-            }}
-            className="ct-workspace-ribbon-menu-item"
-            title="Workspace Settings & History Log"
-          >
-            <Settings size={15} className="text-purple-400" />
-            <span>Settings</span>
+                type="button"
+                onClick={() => {
+                  setSettingsModalInitialTab("general");
+                  setIsSettingsModalOpen(true);
+                }}
+                className="ct-workspace-ribbon-menu-item"
+                title="Workspace Settings & History Log"
+              >
+                <Settings size={15} className="text-purple-400" />
+                <span>Settings</span>
               </button>
             </div>
           </details>
@@ -5661,6 +5721,28 @@ export const ModularWorkspace = ({
               <div className="ct-editor-action-group">
                 <button
                   type="button"
+                  onClick={() => {
+                    setIsAIAssistantOpen(true);
+                    if (selectedCode && selectedCode.trim()) {
+                      setAiAssistantTrigger({
+                        prompt: "Explain this selected code and walk me through its logic step-by-step.",
+                        actionType: "explain",
+                        timestamp: Date.now(),
+                      });
+                    }
+                  }}
+                  className="ct-editor-action-btn ct-editor-action-btn-ai flex items-center gap-1.5"
+                  title={
+                    selectedCode
+                      ? "Ask CodeTrail AI about the selected code (Ctrl+Alt+E)"
+                      : "Ask CodeTrail AI to understand or suggest code (Ctrl+Alt+A)"
+                  }
+                >
+                  <Sparkles size={13} className="text-fuchsia-400" />
+                  <span>{selectedCode ? "Ask AI on Selection" : "Ask AI"}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleFormatDocument}
                   disabled={isViewer}
                   className="ct-editor-action-btn"
@@ -5744,6 +5826,54 @@ export const ModularWorkspace = ({
 
                   // Initial decoration pass
                   updateMonacoDecorations();
+
+                  // Context menu action: Explain with CodeTrail AI
+                  editor.addAction({
+                    id: "codetrail-ai-explain",
+                    label: "✨ CodeTrail AI: Explain Code",
+                    keybindings: [
+                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE,
+                    ],
+                    contextMenuGroupId: "1_modification",
+                    contextMenuOrder: 1.1,
+                    run: (ed) => {
+                      const sel = ed.getSelection();
+                      const codeText = sel && !sel.isEmpty()
+                        ? ed.getModel()?.getValueInRange(sel) || ""
+                        : ed.getValue();
+                      if (codeText) setSelectedCode(codeText);
+                      setIsAIAssistantOpen(true);
+                      setAiAssistantTrigger({
+                        prompt: "Explain this code and walk me through its logic step-by-step.",
+                        actionType: "explain",
+                        timestamp: Date.now(),
+                      });
+                    },
+                  });
+
+                  // Context menu action: Suggest Improvements / Fix
+                  editor.addAction({
+                    id: "codetrail-ai-suggest",
+                    label: "✨ CodeTrail AI: Suggest Improvements & Fixes",
+                    keybindings: [
+                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyS,
+                    ],
+                    contextMenuGroupId: "1_modification",
+                    contextMenuOrder: 1.2,
+                    run: (ed) => {
+                      const sel = ed.getSelection();
+                      const codeText = sel && !sel.isEmpty()
+                        ? ed.getModel()?.getValueInRange(sel) || ""
+                        : ed.getValue();
+                      if (codeText) setSelectedCode(codeText);
+                      setIsAIAssistantOpen(true);
+                      setAiAssistantTrigger({
+                        prompt: "Review this code and suggest performance, quality, and structural improvements with updated code.",
+                        actionType: "review",
+                        timestamp: Date.now(),
+                      });
+                    },
+                  });
                 }}
                 options={{
                   fontSize: 14,
@@ -7593,15 +7723,18 @@ export const ModularWorkspace = ({
             </div>
           )}
         </div>
-        <AssistantPanel
-          isOpen={isAIAssistantOpen}
-          onClose={() => setIsAIAssistantOpen(false)}
-          activeFile={activeFile}
-          activeLanguage={getMonacoLanguage(activeFile)}
-          fileContent={getActiveFileContent()}
-          selectedCode={selectedCode}
-          onInsertCode={handleInsertAssistantCode}
-        />
+        <AssistantErrorBoundary>
+          <AssistantPanel
+            isOpen={isAIAssistantOpen}
+            onClose={() => setIsAIAssistantOpen(false)}
+            activeFile={activeFile}
+            activeLanguage={getMonacoLanguage(activeFile)}
+            fileContent={getActiveFileContent()}
+            selectedCode={selectedCode}
+            onInsertCode={handleInsertAssistantCode}
+            triggerAction={aiAssistantTrigger}
+          />
+        </AssistantErrorBoundary>
       </section>
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
