@@ -191,7 +191,7 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
   } else if (actionType === 'review' || actionType === 'refactor') {
     promptText += `TASK: Refactor/review the provided code. Suggest an improved version with cleaner structure, better naming, safety, and performance. Include the improved code in a complete fenced code block that can be applied to the editor, and briefly explain key changes.\n`;
   } else if (actionType === 'tests') {
-    promptText += `TASK: Generate complete, robust test cases covering standard inputs, edge cases, zero values, and invalid inputs.\n`;
+    promptText += `TASK: Analyze the provided function/code and generate meaningful test cases covering normal inputs, boundary and edge cases, zero values, negative numbers, decimals, and invalid inputs. Return: 1) Function analysis (name, parameters, expected behavior), 2) Test scenarios table (#, input, expectedOutput, category, scenario), 3) Runnable test specs in the matching language, 4) A structured JSON array matching [{"input": [...], "expectedOutput": ..., "description": "..."}].\n`;
   } else if (actionType === 'docs') {
     promptText += `TASK: Generate documentation for the provided code: function/class comments, docstrings/JSDoc, parameter and return-value descriptions, and a short usage/README-style section when useful. Include apply-ready documentation/code in fenced blocks.\n`;
   } else if (actionType === 'generate') {
@@ -303,6 +303,17 @@ ${preview}
 
 Share the exact error or what you expected, and I can give a more specific fix.${refsNote}`;
   } else if (explicitAction === 'tests' || wantsTests) {
+    if (content) {
+      try {
+        const { analyzeFunction, generateHeuristicTestCases, formatTestCasesMarkdown, validateAndCleanTestCases } = require('./aiTestCaseService');
+        const analysis = analyzeFunction(content, language);
+        const heuristicCases = generateHeuristicTestCases(analysis, content);
+        const cleanedCases = validateAndCleanTestCases(heuristicCases, []);
+        return formatTestCasesMarkdown(analysis, cleanedCases);
+      } catch (tcErr) {
+        console.warn('[CodeTrail AI] Test generation error:', tcErr.message);
+      }
+    }
     response = `### AI-GENERATED TEST SUITE: \`${fileName}\`
 
 \`\`\`${isPy ? 'python' : language}
