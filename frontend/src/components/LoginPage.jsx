@@ -193,8 +193,8 @@ export function LoginPage({ onLoginSuccess }) {
           {/* Traditional Credentials Form */}
           <form onSubmit={handleLoginSubmit} className="flex flex-col gap-5">
             {error && (
-              <div className="ct-auth-error bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded-xl font-mono text-center">
-                {error}
+              <div className="ct-auth-error bg-red-500/10 border border-red-500/20 text-red-400 text-xs sm:text-sm rounded-xl font-mono text-center px-6 py-5">
+                <span className="block leading-relaxed whitespace-pre-line break-words">{error}</span>
               </div>
             )}
 

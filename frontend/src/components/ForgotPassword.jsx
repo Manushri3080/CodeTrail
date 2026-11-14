@@ -61,13 +61,13 @@ export function ForgotPassword() {
         {/* Forgot Password Form */}
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs p-3.5 rounded-xl font-mono text-center">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-5 py-4 rounded-xl font-mono text-center leading-relaxed whitespace-pre-line break-words">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs p-3.5 rounded-xl font-mono text-center flex flex-col items-center gap-2">
+            <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs px-5 py-4 rounded-xl font-mono text-center flex flex-col items-center gap-3 leading-relaxed whitespace-pre-line break-words">
               <ShieldCheck size={20} className="text-emerald-400" />
               <span>{success}</span>
             </div>

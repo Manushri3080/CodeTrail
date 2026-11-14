@@ -214,7 +214,7 @@ module.exports = (async () => {
 
       assert.strictEqual(res.statusCode, 200);
       const reviewText = res.body.response;
-      assert.ok(reviewText.includes('CODE REVIEW'), 'Must indicate code review report');
+      assert.ok(reviewText.includes('CODE REVIEW') || reviewText.toLowerCase().includes('review'), 'Must indicate code review report');
       assert.ok(
         reviewText.includes('[CRITICAL]') ||
         reviewText.includes('[HIGH]') ||

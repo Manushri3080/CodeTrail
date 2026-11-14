@@ -2019,20 +2019,20 @@ export const WorkspaceSettingsModal = ({
         <div className="ct-settings-modal-footer">
           <div className="flex items-center">
             {saveMessage && (
-              <div 
-                className={`rounded-full text-xs font-mono font-medium flex items-center justify-center gap-2 animate-fadeIn shadow-md ${
-                  isSaveError 
-                    ? 'bg-rose-500/25 text-rose-200 border border-rose-400/50' 
-                    : 'bg-purple-500/25 text-purple-100 border border-purple-400/50'
+              <div
+                className={`rounded-xl text-xs font-mono font-medium flex items-start justify-start gap-3 animate-fadeIn shadow-md ${
+                  isSaveError
+                    ? 'bg-rose-500/20 text-rose-200 border border-rose-400/40'
+                    : 'bg-purple-500/20 text-purple-100 border border-purple-400/40'
                 }`}
-                style={{ padding: '5px 16px', minHeight: '32px', lineHeight: '1' }}
+                style={{ padding: '14px 18px', minHeight: '48px', lineHeight: '1.6', maxWidth: '100%' }}
               >
                 {isSaveError ? (
-                  <AlertTriangle size={14} className="text-rose-400 shrink-0" />
+                  <AlertTriangle size={15} className="text-rose-400 shrink-0 mt-0.5" />
                 ) : (
-                  <Sparkles size={14} className="text-purple-300 shrink-0" />
+                  <Sparkles size={15} className="text-purple-300 shrink-0 mt-0.5" />
                 )}
-                <span className="whitespace-nowrap">{saveMessage}</span>
+                <span className="whitespace-pre-line break-words leading-relaxed">{saveMessage}</span>
               </div>
             )}
           </div>

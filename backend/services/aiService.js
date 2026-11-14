@@ -13,6 +13,8 @@
  */
 
 const axios = require('axios');
+const path = require('path');
+try { require('dotenv').config({ path: path.join(__dirname, '../.env') }); } catch {}
 const workspaceContextService = require('./workspaceContextService');
 
 // Supported Providers & Defaults
@@ -23,50 +25,121 @@ const PROVIDERS = {
 };
 
 const DEFAULT_CONFIG = {
-  geminiModel: process.env.GEMINI_MODEL || process.env.AI_MODEL || 'gemini-1.5-flash',
+  geminiModel: process.env.GEMINI_MODEL || process.env.GOOGLE_AI_MODEL || process.env.AI_MODEL || 'gemini-2.0-flash',
   openaiModel: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-4o-mini',
   maxContextLines: 1500,
   maxContextCharacters: 40000,
   requestTimeoutMs: 30000
 };
 
+const providerState = {
+  gemini: { disabledUntil: 0, cooldownUntil: 0, lastLogAt: 0, lastReason: '' },
+  openai: { disabledUntil: 0, cooldownUntil: 0, lastLogAt: 0, lastReason: '' }
+};
+
+function getStatusCode(err) {
+  return err?.response?.status || err?.status || null;
+}
+
+function getRetryAfterMs(err) {
+  const header = err?.response?.headers?.['retry-after'];
+  if (!header) return null;
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) return Math.max(1000, seconds * 1000);
+  const dateMs = Date.parse(header);
+  if (Number.isFinite(dateMs)) return Math.max(1000, dateMs - Date.now());
+  return null;
+}
+
+function isGeminiModelNotFound(err) {
+  const status = getStatusCode(err);
+  if (status !== 404) return false;
+  const msg = String(err?.response?.data?.error?.message || err?.message || '').toLowerCase();
+  return msg.includes('model') || msg.includes('not found') || msg.includes('not supported');
+}
+
+function classifyProviderFailure(provider, err) {
+  const status = getStatusCode(err);
+  const msg = String(err?.response?.data?.error?.message || err?.message || 'request failed');
+  if (status === 401 || status === 403) return { action: 'disable', ms: 24 * 60 * 60 * 1000, reason: `${provider} auth/permission error (${status})` };
+  if (status === 429) return { action: 'cooldown', ms: getRetryAfterMs(err) || 60 * 1000, reason: `${provider} rate limited (${status})` };
+  if (provider === PROVIDERS.GEMINI && isGeminiModelNotFound(err)) return { action: 'disable', ms: 24 * 60 * 60 * 1000, reason: `Gemini model unavailable (${status})` };
+  if (status >= 500) return { action: 'cooldown', ms: 30 * 1000, reason: `${provider} server error (${status || 'unknown'})` };
+  if (!status) return { action: 'cooldown', ms: 30 * 1000, reason: `${provider} network/timeout error` };
+  return { action: 'cooldown', ms: 60 * 1000, reason: `${provider} request failed (${status})` };
+}
+
+function markProviderFailure(provider, err) {
+  const state = providerState[provider];
+  if (!state) return;
+  const info = classifyProviderFailure(provider, err);
+  const until = Date.now() + info.ms;
+  if (info.action === 'disable') state.disabledUntil = Math.max(state.disabledUntil, until);
+  else state.cooldownUntil = Math.max(state.cooldownUntil, until);
+  state.lastReason = info.reason;
+}
+
+function providerUnavailable(provider) {
+  const state = providerState[provider];
+  if (!state) return null;
+  const now = Date.now();
+  if (state.disabledUntil > now) return state.lastReason || `${provider} unavailable`;
+  if (state.cooldownUntil > now) return state.lastReason || `${provider} cooling down`;
+  return null;
+}
+
+function logProviderFailure(provider, err, contextLabel = 'API') {
+  const state = providerState[provider];
+  const now = Date.now();
+  const reason = state?.lastReason || `${provider} ${contextLabel} failed`;
+  const status = getStatusCode(err);
+  const detail = String(err?.response?.data?.error?.message || err?.message || 'request failed').replace(/\s+/g, ' ').slice(0, 180);
+  if (state && now - state.lastLogAt < 60 * 1000 && state.lastLoggedStatus === status) return;
+  if (state) {
+    state.lastLogAt = now;
+    state.lastLoggedStatus = status;
+  }
+  console.warn(`[CodeTrail AI] ${reason}: ${detail}. Using fallback/local engine.`);
+}
+
+function getGeminiModelCandidates() {
+  const configured = (process.env.GEMINI_MODEL || process.env.GOOGLE_AI_MODEL || process.env.AI_MODEL || '').trim();
+  // Respect explicit .env model configuration first. Only try safe fallbacks if no model is configured.
+  if (configured) return [configured];
+  const list = [DEFAULT_CONFIG.geminiModel, 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
+    .filter(Boolean);
+  return [...new Set(list)];
+}
+
 /**
  * Master System Prompt defining CodeTrail AI persona and operational boundaries
  */
-const SYSTEM_INSTRUCTION = `You are CodeTrail AI, an expert, senior full-stack AI coding assistant and peer programmer integrated into the CodeTrail collaborative web IDE.
+const SYSTEM_INSTRUCTION = `You are CodeTrail AI, a helpful coding assistant in the CodeTrail editor.
 
-Your core capabilities:
-1. AI CODING ASSISTANT:
-   - Explain selected code clearly and step-by-step.
-   - Generate production-quality code from natural language prompts.
-   - Refactor existing code for cleaner architecture and modern idioms.
-   - Suggest optimal algorithms and algorithmic complexity optimizations.
-   - Explain unfamiliar libraries, frameworks, or functions.
+Use simple, clear language. Avoid jargon when possible. If you must use a technical term, explain it briefly.
 
-2. AI DEBUGGING ASSISTANT:
-   - Pinpoint the exact root causes of compilation, runtime, and logic errors.
-   - Format debugging diagnoses using the canonical CodeTrail structure:
-     ### Problem:
-     [Clear, concise statement of what went wrong]
-     ### Possible Cause:
-     [Why the error occurred in context]
-     ### Suggested Correction:
-     [Step-by-step explanation and fixed code snippet]
+What you can do:
+- Explain code step by step in plain words.
+- Write or improve code from the user's request.
+- Help find and fix bugs.
+- Review code and suggest clear improvements.
+- Write tests and documentation.
 
-3. AI CODE REVIEW:
-   - Identify code duplication, high cyclomatic complexity, naming inconsistencies, and security flaws.
-   - Group recommendations with severity levels: [CRITICAL], [HIGH], [MEDIUM], [LOW].
+How to respond:
+- Answer the user's request directly.
+- Keep explanations short and easy to follow.
+- When code or a file is provided, refer to the actual code.
+- Use fenced code blocks with the language name (e.g. \`\`\`python, \`\`\`javascript).
 
-4. AI TEST CASE GENERATOR:
-   - Generate comprehensive unit and edge-case tests (normal, zero, negative, boundaries, invalid input).
+For debugging, use this structure:
+### Problem:
+[What went wrong]
+### Possible Cause:
+[Why it happened]
+### Suggested Correction:
+[How to fix it, with code if helpful]
 
-5. AI DOCUMENTATION GENERATOR:
-   - Produce concise JSDoc/docstring comments, function specifications, and README summaries.
-
-FORMATTING GUIDELINES:
-- Always format code blocks with triple backticks and the specific language identifier (e.g. \`\`\`javascript, \`\`\`python, \`\`\`cpp).
-- Keep responses concise, direct, and actionable for developers collaborating in real time.
-- If code context or a file is provided, reference the specific functions and variables from that context.`;
+For code review, include severity tags when useful: [CRITICAL], [HIGH], [MEDIUM], [LOW].`;
 
 /**
  * Format prompt and context into a consolidated user message
@@ -112,15 +185,21 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
 
   // Specific Action Framing
   if (actionType === 'explain') {
-    promptText += `TASK: Explain the provided code thoroughly, outlining its purpose, data flow, and key functions.\n`;
+    promptText += `TASK: Explain the provided code thoroughly. For selected functions/classes/blocks, describe purpose, parameters, return values, dependencies, execution flow, and key logic step by step.\n`;
   } else if (actionType === 'debug') {
     promptText += `TASK: Debug this code or error. Provide: Problem, Possible Cause, and Suggested Correction with fixed code.\n`;
-  } else if (actionType === 'review') {
-    promptText += `TASK: Perform a formal Code Review. Flag code smells, security vulnerabilities, and optimizations with severity tags [CRITICAL], [HIGH], [MEDIUM], [LOW].\n`;
+  } else if (actionType === 'review' || actionType === 'refactor') {
+    promptText += `TASK: Refactor/review the provided code. Suggest an improved version with cleaner structure, better naming, safety, and performance. Include the improved code in a complete fenced code block that can be applied to the editor, and briefly explain key changes.\n`;
   } else if (actionType === 'tests') {
     promptText += `TASK: Generate complete, robust test cases covering standard inputs, edge cases, zero values, and invalid inputs.\n`;
   } else if (actionType === 'docs') {
-    promptText += `TASK: Generate clear documentation, inline comments, and function signatures for the provided code.\n`;
+    promptText += `TASK: Generate documentation for the provided code: function/class comments, docstrings/JSDoc, parameter and return-value descriptions, and a short usage/README-style section when useful. Include apply-ready documentation/code in fenced blocks.\n`;
+  } else if (actionType === 'generate') {
+    promptText += `TASK: Generate code from the user's natural-language request. Produce complete, runnable, well-structured code in the requested language/context. Return the primary implementation in a fenced code block ready to insert/apply in the editor, then a short usage note.\n`;
+  } else if (actionType === 'algorithm') {
+    promptText += `TASK: Suggest more efficient algorithms or approaches for this code/problem. Compare current vs suggested approach, explain time/space complexity, trade-offs, and provide an improved implementation in a fenced code block when applicable.\n`;
+  } else if (actionType === 'analyze' || actionType === 'function-analysis') {
+    promptText += `TASK: Perform function/code analysis. Explain parameters, return values, dependencies/imports, side effects, execution flow, callers/callees implied by context, and edge cases.\n`;
   }
 
   // Append user message
@@ -134,172 +213,247 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
  * Generates tailored, production-grade responses for all 5 core features without external API calls
  */
 function generateLocalHeuristicResponse({ message, context, actionType, workspaceContext }) {
-  const content = String(context?.content || '').trim();
-  const fileName = context?.fileName || 'code file';
-  const language = (context?.language || 'javascript').toLowerCase();
-  const userQuery = (message || '').toLowerCase();
+  const ctx = context || {};
+  const matched = Array.isArray(workspaceContext?.matchedChunks) ? workspaceContext.matchedChunks : [];
+  const firstMatch = matched[0] || null;
+  const refs = Array.isArray(workspaceContext?.references) ? workspaceContext.references : [];
+  const refFile = refs[0]?.fileName || refs[0]?.file || firstMatch?.fileName || null;
+
+  const rawContent = String(ctx.content || '');
+  const attached = ctx.attached === true || (ctx.source && ctx.source !== 'No file context attached');
+  const content = rawContent.trim(); // only use explicitly provided/attached editor context; do not auto-pull workspace chunks as "current file"
+  const fileName = ctx.fileName || (attached ? refFile : null) || (rawContent ? (ctx.fileName || 'code file') : 'code');
+  const language = String(ctx.language || (attached ? firstMatch?.language : null) || 'javascript').toLowerCase();
+  const userQuery = String(message || '').toLowerCase();
+  const action = String(actionType || 'general').toLowerCase();
+
+  const baseCode = content;
+  const linesArr = baseCode ? baseCode.split('\n') : [];
+  const fnMatches = [...baseCode.matchAll(/\b(?:function\s+([A-Za-z0-9_$]+)|(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:async\s*)?\(|def\s+([A-Za-z0-9_]+)\s*\(|class\s+([A-Za-z0-9_]+))/g)]
+    .map(m => m[1] || m[2] || m[3] || m[4]).filter(Boolean);
+  const params = [...baseCode.matchAll(/\(([^)]*)\)/g)].map(m => m[1].trim()).find(Boolean) || '';
+  const isPy = /python|\bpy\b/.test(language) || /\.py$/i.test(fileName || '');
+  const isJs = /javascript|typescript|\bjs\b|\bts\b|jsx|tsx/.test(language) || /\.(js|jsx|ts|tsx)$/i.test(fileName || '');
+  const hasCodeContext = content.length > 0;
+  const refersToCurrentCode = /\b(this code|the code|this file|open file|current file|selected code|above code|my code|attached file|\bthis\b)\b/.test(userQuery) || attached || action === 'explain' || action === 'debug' || action === 'tests' || action === 'docs' || action === 'review' || action === 'refactor' || action === 'analyze' || action === 'function-analysis' || action === 'algorithm';
+  const wantsBeginner = /\b(beginner|simple|basic|starter|easy|tutorial|sample|example)\b/.test(userQuery);
+  const wantsExplain = /\b(explain|what does|what is|how does|how it works|walk me|walkthrough|step by step|understand|describe)\b/.test(userQuery);
+  const isConceptualExplain = wantsExplain && !hasCodeContext && !refersToCurrentCode;
+  const wantsCodeGen = /\b(suggest|generate|create|write|implement|build|make|show|give|sample|snippet|program)\b/.test(userQuery) ||
+    (/\bcode\b/.test(userQuery) && !wantsExplain);
+  const wantsRefactor = /\b(refactor|improve|rewrite|clean up|review|optimi[sz]e)\b/.test(userQuery);
+  const wantsDocs = /\b(doc|docs|document|documents|documentation|documentations|documenting|comment|comments|docstring|jsdoc|readme)\b/.test(userQuery);
+  const wantsTests = /\b(test|tests|spec|unit test|edge case)\b/.test(userQuery);
+  const wantsDebugIntent = /\b(debug|bug|error|exception|fail|fix|crash|issue|runtime bug|logical error)\b/.test(userQuery) || (/\bedge[- ]case(s)?\b/.test(userQuery) && !wantsTests && action !== 'tests');
+  const wantsAnalyzeIntent = /\b(analyz|parameter|return value|dependencies|execution flow|side effect)\b/.test(userQuery);
+  const wantsAlgorithm = /\b(algorithm|complexity|big o|optimi[sz]e complexity|time complexity|space complexity|efficient approach)\b/.test(userQuery);
+  const explicitAction = ['docs','tests','debug','analyze','function-analysis','algorithm','explain','review','refactor','generate'].includes(action) ? action : null;
+  const refsNote = refs.length
+    ? `\n**Workspace References:** ${refs.map(r => `\`${r.fileName || r.file || 'file'}\`${r.startLine ? `:${r.startLine}${r.endLine && r.endLine !== r.startLine ? `-${r.endLine}` : ''}` : ''}`).slice(0, 8).join(', ')}`
+    : '';
 
   let response = '';
 
-  // 1. DEBUGGING ASSISTANT MODE
-  if (
-    actionType === 'debug' ||
-    userQuery.includes('debug') ||
-    userQuery.includes('error') ||
-    userQuery.includes('exception') ||
-    userQuery.includes('fail') ||
-    userQuery.includes('fix')
-  ) {
-    const errorMatch = content.match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError)[^\n]*/i) ||
-                       message.match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError)[^\n]*/i);
-    const errText = errorMatch ? errorMatch[0] : 'Potential runtime or syntax discrepancy';
+  if (attached && !hasCodeContext && refersToCurrentCode) {
+    response = `The attached file \`${fileName || 'file'}\` is empty, so there’s no code to read.\n\nAdd some code, or click **+** to attach a different file, then try again.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'docs' || wantsDocs) && refersToCurrentCode) {
+    response = `I can write documentation, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code you want documented.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'tests' || wantsTests) && refersToCurrentCode) {
+    response = `I can write tests, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code\n- Tell me what the code should do.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'debug' || wantsDebugIntent) && refersToCurrentCode) {
+    response = `I can help find the problem, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code\n- Share the error message if you have one.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'analyze' || action === 'function-analysis' || wantsAnalyzeIntent) && refersToCurrentCode) {
+    response = `I can explain how this code works, but no file is attached yet.\n\n- Click **+** to add the open file, or paste/select the code.${refsNote}`;
+  } else if ((action === 'explain' || wantsExplain) && !hasCodeContext && refersToCurrentCode) {
+    response = `I can explain the code, but no file is attached yet.\n\n- Click **+** to add the open file\n- Or select/paste the code, then ask me to explain it.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'review' || action === 'refactor' || wantsRefactor) && refersToCurrentCode && !wantsBeginner) {
+    response = `I can suggest improvements, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code you want improved.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'algorithm' || wantsAlgorithm) && /\b(this code|the code|attached|current file|open file)\b/.test(userQuery)) {
+    response = `I can suggest a better approach, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code/problem.${refsNote}`;
+  } else if ((explicitAction === 'debug') || (action !== 'tests' && action !== 'docs' && action !== 'algorithm' && wantsDebugIntent && explicitAction !== 'analyze' && explicitAction !== 'function-analysis' && explicitAction !== 'explain' && explicitAction !== 'review' && explicitAction !== 'refactor')) {
+    const errorMatch = baseCode.match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError|ReferenceError)[^\n]*/i) ||
+      String(message || '').match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError|ReferenceError)[^\n]*/i);
+    const errText = errorMatch ? errorMatch[0] : 'Something may be going wrong in this code';
+    const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
+    response = `### Debugging help
 
-    response = `### AI DEBUGGING ANALYSIS
-
-**Problem:**
-${errText} detected in \`${fileName}\`.
+**Problem:** ${errText} in \`${fileName || 'attached code'}\`.
 
 **Possible Cause:**
-1. A variable or reference was accessed prior to initialization or outside of its lexical scope.
-2. An asynchronous promise or event handler may be rejecting without an enclosing \`try...catch\` or error boundary.
-3. Parameter types or payload properties do not match the expected function signature.
+- A value might be missing, undefined, or the wrong type.
+- The logic may be off (a condition, loop, or return).
+- Edge cases (empty input, 0, null, or unexpected values) may not be handled.
 
 **Suggested Correction:**
-Verify variable declarations and add safety guards or null checks:
+1. Check inputs and handle empty/invalid values.
+2. Add simple error handling if needed.
+3. Test with normal and edge-case values.
 
-\`\`\`${language}
-// Recommended robust implementation pattern
-try {
-  // Ensure prerequisites and parameters are defined
-  if (typeof payload === 'undefined' || payload === null) {
-    throw new Error('Invalid parameter: expected defined input');
-  }
-  // Safe execution block
-  console.log('Execution proceeded safely.');
-} catch (err) {
-  console.error('Handled execution error:', err.message);
-}
+**Simple fix example:**
+\`\`\`${isPy ? 'python' : language}
+${isPy
+  ? `try:\n    # check inputs first\n    result = value\n    print(result)\nexcept Exception as err:\n    print("Error:", err)`
+  : `try {\n  // check inputs first\n  const result = value;\n  console.log(result);\n} catch (err) {\n  console.error('Error:', err);\n}`}
 \`\`\`
 
-Would you like me to generate a tailored fix for a specific line of code?`;
-  } else if (actionType === 'review' || userQuery.includes('review') || userQuery.includes('audit')) {
-    // 2. CODE REVIEW MODE
-    response = `### AI CODE REVIEW REPORT: \`${fileName}\`
-
-**Summary:** Evaluated syntax structure, error resilience, and algorithm efficiency.
-
-- **[MEDIUM] Missing Defensive Guards:** Ensure all function parameters are validated against \`null\` / \`undefined\` before property access.
-- **[LOW] Asynchronous Handling:** Consistently use \`async/await\` rather than unchained callbacks to preserve error stack traces.
-- **[LOW] Magic Literals:** Extract repeated constants, configuration timeouts, or magic numbers into dedicated top-level constants.
-- **[POSITIVE] Clean Modularity:** Separation of concerns and naming conventions align well with modern ${language} standards.
-
-**Refactoring Recommendation:**
+**Code to check:**
 \`\`\`${language}
-// Extracted constants and clean defensive boundary
-const DEFAULT_TIMEOUT_MS = 5000;
+${preview}
+\`\`\`
 
-function executeSafeOperation(options = {}) {
-  const timeout = options.timeout || DEFAULT_TIMEOUT_MS;
-  // Encapsulated safe routine
-  return { success: true, timestamp: Date.now() };
-}
-\`\`\``;
-  } else if (actionType === 'tests' || userQuery.includes('test') || userQuery.includes('spec')) {
-    // 3. TEST CASE GENERATION MODE
+Share the exact error or what you expected, and I can give a more specific fix.${refsNote}`;
+  } else if (explicitAction === 'tests' || wantsTests) {
     response = `### AI-GENERATED TEST SUITE: \`${fileName}\`
 
-\`\`\`${language}
-// Comprehensive test suite covering standard and boundary edge cases
-describe('CodeTrail Module Test Suite', () => {
-  // Test Case 1: Standard Positive Input
-  it('should handle normal expected inputs cleanly', () => {
-    const result = true;
-    expect(result).toBe(true);
-  });
-
-  // Test Case 2: Boundary & Zero Values
-  it('should handle zero or boundary thresholds without crashing', () => {
-    const zeroValue = 0;
-    expect(zeroValue).toBe(0);
-  });
-
-  // Test Case 3: Empty / Null / Undefined Values
-  it('should safely reject or fallback on empty inputs', () => {
-    const emptyInput = '';
-    expect(emptyInput.length).toBe(0);
-  });
-
-  // Test Case 4: Exception Handling
-  it('should throw meaningful error on invalid input structure', () => {
-    expect(() => {
-      // simulate invocation
-    }).not.toThrow();
-  });
-});
+\`\`\`${isPy ? 'python' : language}
+${isPy
+  ? `def test_normal_case():\n    assert True\n\ndef test_edge_case_empty_or_zero():\n    assert 0 == 0\n    assert "" == ""\n\ndef test_invalid_input_handling():\n    try:\n        # call target function with invalid input\n        pass\n        assert True\n    except Exception:\n        assert True`
+  : `describe('${fileName} tests', () => {\n  it('handles normal input', () => { expect(true).toBe(true); });\n  it('handles edge cases', () => { expect(0).toBe(0); expect('').toBe(''); });\n  it('handles invalid input safely', () => { expect(() => {}).not.toThrow(); });\n});`}
 \`\`\`
 
-You can copy and execute these test cases directly inside CodeTrail!`;
-  } else if (actionType === 'docs' || userQuery.includes('doc') || userQuery.includes('comment') || userQuery.includes('readme')) {
-    // 4. DOCUMENTATION GENERATION MODE
-    response = `### AI-GENERATED DOCUMENTATION
+Tell me the function name and expected behavior for runnable, specific tests.${refsNote}`;
+  } else if (explicitAction === 'docs' || wantsDocs) {
+    const target = fnMatches[0] || (isPy ? 'main' : 'module');
+    const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
+    response = `### Documentation: \`${fileName || 'attached code'}\`
 
-\`\`\`${language}
-/**
- * Module / Function Specification
- *
- * @description Provides core processing logic for ${fileName}.
- * @param {Object} context - Execution context and workspace state.
- * @param {string} context.fileName - Target source file identifier.
- * @returns {Promise<Object>} Formatted result payload with status indicators.
- * @throws {Error} When required parameters are missing or invalid.
- *
- * @example
- * const result = await processTask({ fileName: '${fileName}' });
- * console.log(result.status);
- */
+**AI-GENERATED DOCUMENTATION**
+
+**What this code does**
+- **Purpose:** Explain what \`${fileName || 'this file'}\` is for.
+- **Main parts:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'Read the code from top to bottom.'}
+- **Inputs:** ${params ? `\`${params}\`` : 'Any inputs, settings, or data it uses.'}
+- **Outputs:** What it returns, prints, or changes.
+- **Notes:** Any important requirements or possible errors.
+
+**Example doc comment**
+\`\`\`${isPy ? 'python' : language}
+${isPy
+  ? `"""${fileName || 'Module'}\n\nWhat it does:\n    Briefly explain this file.\n\nHow to use:\n    Explain how to run or import it.\n"""\n\n${fnMatches.includes('main') || /def\s+main\s*\(/.test(baseCode) ? `def main():\n    """Start the program."""\n    # ...\n` : ''}`
+  : `/**\n * ${target}\n * @description What it does: Briefly explain this code.\n * @param {*} input - Describe inputs.\n * @returns {*} Describe output.\n */`}
 \`\`\`
 
-**Summary:** Added JSDoc-compliant documentation and typed parameters ready to paste into your codebase.`;
+**Code**
+\`\`\`${language}
+${preview}
+\`\`\`${refsNote}`;
+  } else if (explicitAction === 'algorithm' || (wantsAlgorithm && !wantsExplain && !wantsDocs && !wantsTests && explicitAction !== 'review' && explicitAction !== 'refactor' && explicitAction !== 'analyze' && explicitAction !== 'function-analysis' && explicitAction !== 'debug')) {
+    const snippet = hasCodeContext ? baseCode.split('\n').slice(0, 60).join('\n') : '# Provide the specific problem/code for a concrete optimized solution';
+    response = `### ALGORITHM SUGGESTIONS & COMPLEXITY
+
+**Approach:** Reduce repeated scans/nested loops using better data structures (hash map/set), sorting, memoization, or divide-and-conquer as appropriate.
+
+**Typical comparison:**
+- Naive: **Time O(n^2)**, **Space O(1)**
+- Improved: **Time O(n)** or **O(n log n)**, **Space O(n)**
+
+\`\`\`${isPy ? 'python' : language}
+${snippet}
+\`\`\`
+
+${hasCodeContext ? 'If you want, I can propose an optimized version of the attached code.' : 'Attach the code with **+** or paste the problem for a concrete optimized implementation.'}${refsNote}`;
+  } else if (explicitAction === 'analyze' || explicitAction === 'function-analysis' || wantsAnalyzeIntent) {
+    const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no code context)';
+    response = `### FUNCTION / CODE ANALYSIS: \`${fileName || 'attached code'}\`
+
+**Request:** ${message || 'Analyze this code'}
+**Detected symbols:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'No explicit function/class declarations detected'}
+**Parameters:** ${params ? `\`${params}\`` : 'Not explicitly detected'}
+**Return values:** Check \`return\` statements and outputs
+**Dependencies:** Imports, globals, external calls, referenced symbols
+**Execution flow:** Entry -> input handling -> logic/branches/loops -> side effects -> return/exit
+**Risks to review:** runtime errors (null/undefined/type/index/zero division), logic/condition issues, and edge cases (empty/invalid/boundary inputs).
+
+\`\`\`${language}
+${preview}
+\`\`\`${refsNote}`;
+  } else if (explicitAction === 'explain' || (wantsExplain && refersToCurrentCode && !wantsDocs && !wantsTests && !wantsDebugIntent && !wantsAlgorithm && !wantsAnalyzeIntent && explicitAction !== 'generate' && explicitAction !== 'review' && explicitAction !== 'refactor')) {
+    const nonEmpty = linesArr.filter(l => l.trim()).length;
+    const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
+    response = `### Code explanation: \`${fileName || 'attached code'}\`
+
+**Language:** ${language} | **Lines with code:** ${nonEmpty}
+**Main parts:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'None named'}
+
+**Step by step:**
+1. **What it does:** This code in \`${fileName || 'this file'}\` runs its instructions.
+2. **How it runs:** It goes from top to bottom. Functions run when they are called${isPy ? ' (like `main()` at the bottom)' : ''}.
+3. **Inputs and outputs:** Check values passed in, values returned, and anything printed or saved.
+4. **Important parts:** Look at any if/else checks, loops, and error handling.
+5. **Things to watch for:** Empty or unexpected inputs can cause problems.
+
+\`\`\`${language}
+${preview}
+\`\`\`
+
+If you want, select a specific part and I’ll explain it in more detail.${refsNote}`;
+  } else if (explicitAction === 'review' || explicitAction === 'refactor' || (wantsRefactor && !wantsBeginner && !wantsExplain && !wantsDocs && !wantsTests)) {
+    const codeToShow = content ? `# Improved version of ${fileName}\n${baseCode}\n` : baseCode;
+    const isReview = action === 'review' || /\breview\b/.test(userQuery);
+    response = `### ${isReview ? 'AI CODE REVIEW REPORT' : 'Improved Code Suggestion'}: \`${fileName}\`
+
+**Request:** ${message || 'Review/refactor this code'}
+${isReview ? '\n- **[MEDIUM] Readability:** Improve naming and structure where needed.\n- **[MEDIUM] Safety:** Add input validation and error handling.\n- **[LOW] Maintainability:** Keep logic modular and document key behavior.\n' : ''}
+
+\`\`\`${isPy ? 'python' : isJs ? 'javascript' : language}
+${codeToShow}
+\`\`\`
+
+Review the changes and use Preview/Insert/Apply in the editor if you want to adopt them.${refsNote}`;
+  } else if (explicitAction === 'generate' || wantsBeginner || (wantsCodeGen && !wantsExplain && !wantsRefactor && !wantsDocs && !wantsTests && !wantsAlgorithm)) {
+    const beginnerPy = `# Beginner Python examples\n\n# 1) Print a message\nprint("Hello, CodeTrail!")\n\n# 2) Input and output\nname = input("Enter your name: ")\nprint("Welcome,", name)\n\n# 3) Function\n\ndef add(a, b):\n    return a + b\n\nprint("2 + 3 =", add(2, 3))\n\n# 4) Loop and condition\nfor i in range(1, 6):\n    if i % 2 == 0:\n        print(i, "is even")\n    else:\n        print(i, "is odd")\n\n# 5) List example\nnumbers = [1, 2, 3, 4, 5]\nprint("Sum:", sum(numbers))\n`;
+    const beginnerJs = `// Beginner JavaScript examples\n\nconsole.log("Hello, CodeTrail!");\n\nfunction add(a, b) {\n  return a + b;\n}\nconsole.log("2 + 3 =", add(2, 3));\n\nfor (let i = 1; i <= 5; i++) {\n  if (i % 2 === 0) console.log(i, "is even");\n  else console.log(i, "is odd");\n}\n\nconst numbers = [1, 2, 3, 4, 5];\nconsole.log("Sum:", numbers.reduce((s, n) => s + n, 0));\n`;
+    const codeToShow = isPy ? beginnerPy : isJs ? beginnerJs : beginnerPy;
+    response = `### Code Suggestion
+
+**Request:** ${message || 'Provide a helpful code example'}
+
+\`\`\`${isPy ? 'python' : isJs ? 'javascript' : language}
+${codeToShow}
+\`\`\`
+
+Copy or insert this into the editor and run it. Ask for a specific topic (loops, functions, lists/arrays, files, classes, OOP) for a targeted example.${refsNote}`;
+
   } else {
-    // 5. CODE EXPLANATION & GENERAL CODING ASSISTANT
-    const lines = content ? content.split('\n').length : 0;
-    response = `### CodeTrail AI Assistant
+    // Prompt-only/general: understand and respond without forcing file-based explanations.
+    const prompt = String(message || '').trim();
+    const pyLoop = /python/.test(userQuery) && /\bloop\b/.test(userQuery);
+    const jsLoop = /(javascript|js|node)/.test(userQuery) && /\bloop\b/.test(userQuery);
+    if (pyLoop) {
+      response = `**${prompt || 'Loops in Python'}**\n\nLoops repeat code.\n\n- **\`for\` loop**: iterate over a sequence (list, range, string).\n- **\`while\` loop**: repeat while a condition is true.\n\n\`\`\`python\n# for loop with range\nfor i in range(1, 6):\n    print(i)\n\n# for loop over a list\nfruits = ["apple", "banana", "cherry"]\nfor fruit in fruits:\n    print(fruit)\n\n# while loop\ncount = 1\nwhile count <= 5:\n    print(count)\n    count += 1\n\`\`\`\n\nUse \`break\` to stop early and \`continue\` to skip to the next iteration.${refsNote}`;
+    } else if (jsLoop) {
+      response = `**${prompt || 'Loops in JavaScript'}**\n\n\`\`\`javascript\nfor (let i = 1; i <= 5; i++) console.log(i);\n\nconst items = [1,2,3];\nfor (const item of items) console.log(item);\n\nlet n = 1;\nwhile (n <= 5) { console.log(n); n++; }\n\`\`\`${refsNote}`;
+    } else if (hasCodeContext) {
+      // Attached code present but prompt was ambiguous: provide a helpful summary/explanation by default.
+      const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no code)';
+      const nonEmpty = linesArr.filter(l => l.trim()).length;
+      response = `### Attached Code: \`${fileName || 'file'}\`
 
-I analyzed **\`${fileName}\`** (${lines} lines, language: **${language}**).
+**Request:** ${prompt || 'How can I help with this code?'}
+**Language:** ${language} | **Non-empty lines:** ${nonEmpty}
+**Detected symbols:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'No named functions/classes detected'}
 
-**Key Architectural Points:**
-1. **Purpose:** Implements logic and routines for the ${language} workspace environment.
-2. **Data Flow:** Coordinates input payloads, validates states, and returns structured data to the caller.
-3. **Best Practice:** Keep logic modular and leverage real-time CodeTrail collaboration telemetry.
+I can work on this attached file based on your prompt: explain, generate documentation, refactor/review, debug, analyze, generate tests, or suggest algorithms.
 
 \`\`\`${language}
-// CodeTrail AI helper suggestion for ${language}
-function performOptimizedTask() {
-  console.log("Ready for real-time collaboration on ${fileName}");
-  return { status: "ready", timestamp: Date.now() };
-}
+${preview}
 \`\`\`
 
-Feel free to ask me to **refactor**, **debug an error**, **generate test cases**, or **write documentation** for any part of this file!`;
-  }
-
-  // Append workspace references if present
-  if (workspaceContext && Array.isArray(workspaceContext.references) && workspaceContext.references.length > 0) {
-    const refLines = workspaceContext.references
-      .map(ref => `- \`${ref.file}:${ref.startLine}-${ref.endLine}\``)
-      .join('\n');
-    response += `\n\n### 📚 Workspace References\n${refLines}`;
+Tell me what you need (e.g. "document this", "explain this", "find bugs", "refactor this").${refsNote}`;
+    } else {
+      response = `**Request:** ${prompt || 'How can I help?'}\n\nI can help with coding questions, concepts, debugging, and code generation.\n\n- **General prompt:** ask directly (e.g. “what is a loop in Python?”, “show an example of recursion in JS”).\n- **File-specific help:** click **+** to attach the currently open file (or select/paste code), then ask to explain/refactor/debug/analyze it.\n\nTell me the language/topic and what you need, and I’ll answer.${refsNote}`;
+    }
   }
 
   return response;
 }
 
 /**
- * Call Google Gemini API (gemini-1.5-flash / gemini-2.0-flash / gemini-1.5-pro)
+ * Call Google Gemini API
  */
-async function callGeminiApi({ prompt, conversation = [], apiKey }) {
-  const model = DEFAULT_CONFIG.geminiModel;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+async function callGeminiApi({ prompt, conversation = [], apiKey, model }) {
+  const selectedModel = model || DEFAULT_CONFIG.geminiModel;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${apiKey}`;
   const payload = buildGeminiPayload({ prompt, conversation });
 
   const response = await axios.post(url, payload, {
@@ -317,7 +471,28 @@ async function callGeminiApi({ prompt, conversation = [], apiKey }) {
     throw new Error('No text generated by Gemini.');
   }
 
-  return textPart.trim();
+  return { text: textPart.trim(), model: selectedModel };
+}
+
+async function callGeminiApiWithFallback({ prompt, conversation = [], apiKey }) {
+  const models = getGeminiModelCandidates();
+  let lastErr = null;
+  let lastNonModelErr = null;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      return await callGeminiApi({ prompt, conversation, apiKey, model });
+    } catch (err) {
+      lastErr = err;
+      if (isGeminiModelNotFound(err)) {
+        if (i < models.length - 1) continue;
+        throw lastNonModelErr || err;
+      }
+      lastNonModelErr = err;
+      throw err;
+    }
+  }
+  throw lastNonModelErr || lastErr || new Error('Gemini API request failed.');
 }
 
 function buildGeminiPayload({ prompt, conversation = [] }) {
@@ -411,24 +586,49 @@ async function* callOpenAiApiStream({ prompt, conversation = [], apiKey, baseUrl
   }
 }
 
-async function* callGeminiApiStream({ prompt, conversation = [], apiKey }) {
-  const model = DEFAULT_CONFIG.geminiModel;
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+async function* callGeminiApiStream({ prompt, conversation = [], apiKey, model }) {
+  const selectedModel = model || DEFAULT_CONFIG.geminiModel;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
   const payload = buildGeminiPayload({ prompt, conversation });
   const response = await axios.post(url, payload, {
     headers: { 'Content-Type': 'application/json' },
     timeout: DEFAULT_CONFIG.requestTimeoutMs,
     responseType: 'stream'
   });
-  for await (const data of parseSseDataStream(response.data)) {
-    if (data === '[DONE]') break;
-    let json;
-    try { json = JSON.parse(data); } catch { continue; }
-    const parts = json?.candidates?.[0]?.content?.parts || [];
-    for (const part of parts) {
-      if (typeof part?.text === 'string' && part.text) yield part.text;
+  for await (const event of readSseEvents(response.data)) {
+    if (!event.data || event.data === '[DONE]') continue;
+    try {
+      const parsed = JSON.parse(event.data);
+      const text = parsed?.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('');
+      if (text) yield text;
+    } catch {
+      // Ignore malformed SSE events.
     }
   }
+}
+
+async function* callGeminiApiStreamWithFallback({ prompt, conversation = [], apiKey }) {
+  const models = getGeminiModelCandidates();
+  let lastErr = null;
+  let lastNonModelErr = null;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      for await (const delta of callGeminiApiStream({ prompt, conversation, apiKey, model })) {
+        yield { model, delta };
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (isGeminiModelNotFound(err)) {
+        if (i < models.length - 1) continue;
+        throw lastNonModelErr || err;
+      }
+      lastNonModelErr = err;
+      throw err;
+    }
+  }
+  throw lastNonModelErr || lastErr || new Error('Gemini stream request failed.');
 }
 
 async function resolveWorkspaceContextSafe({ message, context, files, user, workspaceId }) {
@@ -458,8 +658,8 @@ exports.streamAIResponse = async function* ({
   workspaceId = null,
   files = null
 }) {
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
-  const openAiKey = process.env.OPENAI_API_KEY;
+  const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
+  const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
   const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL;
   const workspaceContext = await resolveWorkspaceContextSafe({ message, context, files, user, workspaceId });
   const fullPrompt = buildFullPrompt({ message, context, attachments, actionType, workspaceContext });
@@ -473,27 +673,34 @@ exports.streamAIResponse = async function* ({
     }
   };
 
-  if (geminiKey && geminiKey.trim()) {
+  if (geminiKey && !providerUnavailable(PROVIDERS.GEMINI)) {
     try {
-      yield { type: 'meta', provider: PROVIDERS.GEMINI, model: DEFAULT_CONFIG.geminiModel, ...baseMeta };
-      for await (const delta of callGeminiApiStream({ prompt: fullPrompt, conversation, apiKey: geminiKey.trim() })) {
-        yield { type: 'delta', delta };
+      let metaSent = false;
+      for await (const chunk of callGeminiApiStreamWithFallback({ prompt: fullPrompt, conversation, apiKey: geminiKey })) {
+        if (!metaSent) {
+          yield { type: 'meta', provider: PROVIDERS.GEMINI, model: chunk.model || DEFAULT_CONFIG.geminiModel, ...baseMeta };
+          metaSent = true;
+        }
+        if (chunk.delta) yield { type: 'delta', delta: chunk.delta };
       }
-      return;
+      if (metaSent) return;
     } catch (err) {
-      console.warn(`[CodeTrail AI] Gemini stream failed (${err.message}). Checking fallbacks...`);
+      // If we fell back across Gemini models, mark using the actual root cause (e.g. auth/rate limit), not "model unavailable".
+      markProviderFailure(PROVIDERS.GEMINI, err);
+      logProviderFailure(PROVIDERS.GEMINI, err, 'stream');
     }
   }
 
-  if (openAiKey && openAiKey.trim()) {
+  if (openAiKey && !providerUnavailable(PROVIDERS.OPENAI)) {
     try {
       yield { type: 'meta', provider: PROVIDERS.OPENAI, model: DEFAULT_CONFIG.openaiModel, ...baseMeta };
-      for await (const delta of callOpenAiApiStream({ prompt: fullPrompt, conversation, apiKey: openAiKey.trim(), baseUrl: customBaseUrl })) {
+      for await (const delta of callOpenAiApiStream({ prompt: fullPrompt, conversation, apiKey: openAiKey, baseUrl: customBaseUrl })) {
         yield { type: 'delta', delta };
       }
       return;
     } catch (err) {
-      console.warn(`[CodeTrail AI] OpenAI stream failed (${err.message}). Falling back to local engine...`);
+      markProviderFailure(PROVIDERS.OPENAI, err);
+      logProviderFailure(PROVIDERS.OPENAI, err, 'stream');
     }
   }
 
@@ -550,8 +757,8 @@ exports.generateAIResponse = async ({
   workspaceId = null,
   files = null
 }) => {
-  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
-  const openAiKey = process.env.OPENAI_API_KEY;
+  const geminiKey = (process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || '').trim();
+  const openAiKey = (process.env.OPENAI_API_KEY || '').trim();
   const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL;
 
   const workspaceContext = await resolveWorkspaceContextSafe({ message, context, files, user, workspaceId });
@@ -563,36 +770,37 @@ exports.generateAIResponse = async ({
     embeddingModel: workspaceContext?.embeddingModel || null
   };
 
-  // 1. Attempt Google Gemini if API Key is available
-  if (geminiKey && geminiKey.trim()) {
+  // 1. Attempt Google Gemini if configured and not in cooldown/disabled
+  if (geminiKey && !providerUnavailable(PROVIDERS.GEMINI)) {
     try {
-      const response = await callGeminiApi({
+      const result = await callGeminiApiWithFallback({
         prompt: fullPrompt,
         conversation,
-        apiKey: geminiKey.trim()
+        apiKey: geminiKey
       });
       return {
         success: true,
         provider: PROVIDERS.GEMINI,
-        model: DEFAULT_CONFIG.geminiModel,
-        response,
-        message: response,
-        content: response,
+        model: result.model || DEFAULT_CONFIG.geminiModel,
+        response: result.text,
+        message: result.text,
+        content: result.text,
         references: workspaceContext?.references || [],
         workspaceContextSummary: contextSummary
       };
     } catch (err) {
-      console.warn(`[CodeTrail AI] Gemini API attempt failed (${err.message}). Checking fallbacks...`);
+      markProviderFailure(PROVIDERS.GEMINI, err);
+      logProviderFailure(PROVIDERS.GEMINI, err, 'API');
     }
   }
 
-  // 2. Attempt OpenAI or OpenAI-Compatible API if Key is available
-  if (openAiKey && openAiKey.trim()) {
+  // 2. Attempt OpenAI or OpenAI-Compatible API if configured and not in cooldown/disabled
+  if (openAiKey && !providerUnavailable(PROVIDERS.OPENAI)) {
     try {
       const response = await callOpenAiApi({
         prompt: fullPrompt,
         conversation,
-        apiKey: openAiKey.trim(),
+        apiKey: openAiKey,
         baseUrl: customBaseUrl
       });
       return {
@@ -606,11 +814,12 @@ exports.generateAIResponse = async ({
         workspaceContextSummary: contextSummary
       };
     } catch (err) {
-      console.warn(`[CodeTrail AI] OpenAI API attempt failed (${err.message}). Checking local engine fallback...`);
+      markProviderFailure(PROVIDERS.OPENAI, err);
+      logProviderFailure(PROVIDERS.OPENAI, err, 'API');
     }
   }
 
-  // 3. Resilient Local Engine Fallback (guarantees offline demo & zero-cost testing functionality)
+  // 3. Resilient Local Engine Fallback
   const localResponse = generateLocalHeuristicResponse({ message, context, actionType, workspaceContext });
   return {
     success: true,
@@ -632,13 +841,17 @@ exports.getAIStatus = () => {
   const openAiKey = Boolean(process.env.OPENAI_API_KEY);
   const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL || null;
 
+  const now = Date.now();
+  const geminiBlockedReason = providerUnavailable(PROVIDERS.GEMINI);
+  const openAiBlockedReason = providerUnavailable(PROVIDERS.OPENAI);
+
   let activeProvider = PROVIDERS.FALLBACK;
   let activeModel = 'codetrail-heuristic-v1';
 
-  if (geminiKey) {
+  if (geminiKey && !geminiBlockedReason) {
     activeProvider = PROVIDERS.GEMINI;
     activeModel = DEFAULT_CONFIG.geminiModel;
-  } else if (openAiKey) {
+  } else if (openAiKey && !openAiBlockedReason) {
     activeProvider = PROVIDERS.OPENAI;
     activeModel = DEFAULT_CONFIG.openaiModel;
   }
@@ -648,8 +861,23 @@ exports.getAIStatus = () => {
     activeProvider,
     activeModel,
     providers: {
-      gemini: { configured: geminiKey, model: DEFAULT_CONFIG.geminiModel },
-      openai: { configured: openAiKey, model: DEFAULT_CONFIG.openaiModel, customBaseUrl },
+      gemini: {
+        configured: geminiKey,
+        model: DEFAULT_CONFIG.geminiModel,
+        available: geminiKey && !geminiBlockedReason,
+        cooldownUntil: providerState.gemini.cooldownUntil > now ? new Date(providerState.gemini.cooldownUntil).toISOString() : null,
+        disabledUntil: providerState.gemini.disabledUntil > now ? new Date(providerState.gemini.disabledUntil).toISOString() : null,
+        reason: geminiBlockedReason
+      },
+      openai: {
+        configured: openAiKey,
+        model: DEFAULT_CONFIG.openaiModel,
+        customBaseUrl,
+        available: openAiKey && !openAiBlockedReason,
+        cooldownUntil: providerState.openai.cooldownUntil > now ? new Date(providerState.openai.cooldownUntil).toISOString() : null,
+        disabledUntil: providerState.openai.disabledUntil > now ? new Date(providerState.openai.disabledUntil).toISOString() : null,
+        reason: openAiBlockedReason
+      },
       localFallback: { available: true, model: 'codetrail-heuristic-v1' }
     },
     capabilities: [
@@ -659,6 +887,9 @@ exports.getAIStatus = () => {
       'code_review',
       'test_case_generation',
       'documentation_generation',
+      'code_refactoring',
+      'algorithm_suggestions',
+      'function_analysis',
       'streaming',
       'semantic_workspace_context'
     ]

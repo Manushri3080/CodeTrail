@@ -95,7 +95,13 @@ const resolveIcon = (icon) => {
 
 const formatRelativeTime = (dateInput) => getRelativeTime(dateInput);
 
-export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavigateToAllWorkspaces }) => {
+export const HomePage = ({ 
+  currentUser, 
+  onJumpToWorkspace, 
+  onOpenProfile,
+  onNavigateToAllWorkspaces,
+  onAuthError
+}) => {
   const [timelineFilter, setTimelineFilter] = useState('all'); // 'all' | 'workspace' | 'code_execution' | 'tasks'
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historyWorkspaceFilter, setHistoryWorkspaceFilter] = useState('all');
@@ -122,8 +128,10 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     const token = localStorage.getItem('ct-auth-token');
     if (!token) {
       setWorkspaces([]);
+      setUserActivities([]);
       setLoadingWorkspaces(false);
       setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
+      setLoadingHistory(false);
       return;
     }
 
@@ -131,12 +139,30 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     setLoadingHistory(true);
     setDbError('');
 
+    const handleAuthFailure = (err) => {
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message || '';
+      const isAuthError =
+        status === 401 ||
+        /token|session expired|sign in again|user account not found|unauthorized/i.test(message);
+      if (!isAuthError) return false;
+      localStorage.removeItem('ct-auth-token');
+      localStorage.removeItem('ct-auth-user');
+      localStorage.removeItem('ct-active-workspace-session');
+      setWorkspaces([]);
+      setUserActivities([]);
+      setDbOffline(false);
+      setDbError(message || 'Session expired. Please sign in again.');
+      if (typeof onAuthError === 'function') onAuthError();
+      return true;
+    };
+
+    let loadedWorkspaces = [];
     try {
       const res = await axios.get(`${API_BASE}/workspaces`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
-      let loadedWorkspaces = [];
       if (res.data && Array.isArray(res.data.workspaces)) {
         loadedWorkspaces = res.data.workspaces;
         setWorkspaces(loadedWorkspaces);
@@ -147,6 +173,12 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
     } catch (err) {
       console.error('Backend offline or workspace fetch failed:', err);
       setWorkspaces([]);
+      if (handleAuthFailure(err)) {
+        setLoadingWorkspaces(false);
+        setLoadingHistory(false);
+        setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
+        return;
+      }
       const msg = err.response?.data?.message || 'Database connection is currently offline or unreachable. Please ensure MongoDB is running.';
       setDbError(msg);
       setDbOffline(true);
@@ -166,20 +198,20 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
         }
         setDbOffline(false);
       } catch (e) {
+        if (handleAuthFailure(e)) {
+          setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
+          return;
+        }
         console.warn('CT-233 user history API fallback to embedded workspace logs:', e.message);
-        setDbOffline(true);
+        // keep dbOffline state as set by workspaces fetch unless this indicates connectivity issue
       }
 
       // Merge workspace activityLogs & local cache (matching Profile RecentActivity)
       const combined = [...historyList];
       const existingIds = new Set(combined.map(item => item.id || item._id));
 
-      // Scan all user workspaces for execution & activity logs
-      const workspacesRes = await axios.get(`${API_BASE}/workspaces`, {
-        headers: { Authorization: `Bearer ${token}` }
-      }).catch(() => null);
-
-      const allWs = workspacesRes?.data?.workspaces || [];
+      // Reuse loaded workspaces (avoid duplicate 401-prone request)
+      const allWs = Array.isArray(loadedWorkspaces) ? loadedWorkspaces : [];
       allWs.forEach(ws => {
         const wsId = ws._id || ws.id;
         const wsLogs = Array.isArray(ws.activityLogs) ? ws.activityLogs : [];
@@ -229,14 +261,17 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
         loading: false
       });
     } catch (err) {
+      if (handleAuthFailure(err)) {
+        setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
+        return;
+      }
       console.error('Failed to fetch user workspace history stats:', err);
       setUserActivities([]);
       setHistoryStats(prev => ({ ...prev, loading: false }));
-      setDbOffline(true);
     } finally {
       setLoadingHistory(false);
     }
-  }, [currentUser]);
+  }, [currentUser, onAuthError]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -856,11 +891,24 @@ export const HomePage = ({ currentUser, onJumpToWorkspace, onOpenProfile, onNavi
         
         {/* DB Offline Error Alert Banner */}
         {dbError && (
-          <div className="p-4 mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-xs flex items-center gap-3 shadow-lg">
-            <AlertCircle size={20} className="shrink-0 text-rose-400" />
-            <div>
-              <p className="font-bold text-sm text-white">Database Offline / Connection Error</p>
-              <p className="text-xs text-rose-200/80 mt-0.5">{dbError}</p>
+          <div
+            className="mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-sm flex items-start gap-4 shadow-lg"
+            style={{ padding: "20px 24px" }}
+            role="alert"
+          >
+            <AlertCircle size={22} className="shrink-0 text-rose-400 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold text-base text-white leading-relaxed">
+                {/token|session expired|sign in again|user account not found|unauthorized/i.test(dbError)
+                  ? "Session / Authentication Error"
+                  : "Database Offline / Connection Error"}
+              </p>
+              <p
+                className="text-sm text-rose-200/90 mt-2 break-words whitespace-pre-line"
+                style={{ lineHeight: "1.7" }}
+              >
+                {dbError}
+              </p>
             </div>
           </div>
         )}

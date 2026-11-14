@@ -28,6 +28,10 @@ const {
   reviewCode,
   generateTests,
   generateDocs,
+  generateCode,
+  refactorCode,
+  suggestAlgorithm,
+  analyzeFunction,
   getStatus
 } = require('../controllers/aiController');
 
@@ -45,6 +49,10 @@ router.post('/debug', optionalAuth, aiGeneralLimiter, debugError);
 router.post('/review', optionalAuth, aiGeneralLimiter, reviewCode);
 router.post('/tests', optionalAuth, aiGeneralLimiter, generateTests);
 router.post('/docs', optionalAuth, aiGeneralLimiter, generateDocs);
+router.post('/generate', optionalAuth, aiGeneralLimiter, generateCode);
+router.post('/refactor', optionalAuth, aiGeneralLimiter, refactorCode);
+router.post('/algorithm', optionalAuth, aiGeneralLimiter, suggestAlgorithm);
+router.post('/analyze', optionalAuth, aiGeneralLimiter, analyzeFunction);
 
 module.exports = router;
 

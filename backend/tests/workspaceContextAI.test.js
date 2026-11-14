@@ -176,7 +176,7 @@ async function runTests() {
   assert(aiResponse.success === true, 'AI response should succeed');
   assert(Array.isArray(aiResponse.references), 'AI response should return references array');
   assert(aiResponse.references.length > 0, 'Should return at least 1 file reference');
-  assert(aiResponse.response.includes('Workspace References') || aiResponse.response.includes('activityController'), 'Response should cite files');
+  assert(aiResponse.references.some((r) => String(r?.fileName || '').toLowerCase().includes('activitycontroller')) || aiResponse.response.includes('activityController'), 'Response/references should cite relevant files');
   console.log('  ✔ AI response successfully synthesized answer with source citations.\n');
 
   console.log('======================================================================');

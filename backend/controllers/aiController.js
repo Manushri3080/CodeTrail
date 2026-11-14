@@ -283,7 +283,119 @@ exports.generateDocs = async (req, res) => {
 };
 
 /**
- * 8. Status & Capability Query
+ * 8. Generate Code from Natural Language
+ */
+exports.generateCode = async (req, res) => {
+  try {
+    const { prompt, message, code, context, workspaceId, files } = req.body || {};
+    const promptMessage = message || prompt || 'Generate code based on the provided request and context.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'generate',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Generate code failed', error: err.message });
+  }
+};
+
+/**
+ * 9. Refactor / Improve Code
+ */
+exports.refactorCode = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Refactor and improve this code for readability, maintainability, performance, and correctness. Provide an improved version.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'refactor',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Refactor code failed', error: err.message });
+  }
+};
+
+/**
+ * 10. Algorithm Suggestions & Complexity Analysis
+ */
+exports.suggestAlgorithm = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Suggest a more efficient algorithm or approach for this code/problem and explain time/space complexity trade-offs.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'algorithm',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Algorithm suggestion failed', error: err.message });
+  }
+};
+
+/**
+ * 11. Function / Code Analysis
+ */
+exports.analyzeFunction = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Analyze this function/code: explain parameters, return values, dependencies, side effects, and execution flow.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'analyze',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Function analysis failed', error: err.message });
+  }
+};
+
+/**
+ * 12. Status & Capability Query
  */
 exports.getStatus = (req, res) => {
   return res.json({

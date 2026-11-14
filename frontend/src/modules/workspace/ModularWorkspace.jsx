@@ -349,12 +349,21 @@ class AssistantErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <aside className="ai-assistant-panel p-6 text-center text-gray-300 flex flex-col items-center justify-center gap-3">
-          <p className="text-sm font-semibold text-red-400">AI Assistant encountered an issue.</p>
+        <aside
+          className="ai-assistant-panel text-gray-300 flex flex-col items-center justify-center gap-4"
+          style={{ padding: "28px 24px" }}
+        >
+          <p
+            className="text-sm font-semibold text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl text-center break-words whitespace-pre-line"
+            style={{ padding: "16px 20px", lineHeight: "1.6", width: "100%" }}
+          >
+            AI Assistant encountered an issue.
+          </p>
           <button
             type="button"
             onClick={() => this.setState({ hasError: false, error: null })}
-            className="px-3 py-1.5 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded text-xs font-semibold cursor-pointer"
+            className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-lg text-xs font-semibold cursor-pointer"
+            style={{ padding: "10px 16px" }}
           >
             Reload Assistant
           </button>
@@ -4084,26 +4093,76 @@ export const ModularWorkspace = ({
   };
 
   const handleInsertAssistantCode = (code) => {
-    if (!editorRef.current || !code) return;
+    handleApplyAssistantCode(
+      typeof code === "string"
+        ? { code, mode: selectedCode ? "replaceSelection" : "insert" }
+        : code,
+    );
+  };
+
+  const handleApplyAssistantCode = (payloadOrCode) => {
+    if (!editorRef.current) return;
+    const payload =
+      typeof payloadOrCode === "string"
+        ? { code: payloadOrCode, mode: "insert" }
+        : payloadOrCode || {};
+    const code = String(payload.code ?? payload.modified ?? "");
+    if (!code) return;
     const editor = editorRef.current;
-    const selection = editor.getSelection();
-    let range;
-    if (selection && !selection.isEmpty()) {
-      range = selection;
-    } else {
-      const pos = editor.getPosition() || { lineNumber: 1, column: 1 };
-      range = {
-        startLineNumber: pos.lineNumber,
-        startColumn: pos.column,
-        endLineNumber: pos.lineNumber,
-        endColumn: pos.column,
+    const model = editor.getModel();
+    if (!model) return;
+
+    const hasSelection = Boolean(
+      editor.getSelection() && !editor.getSelection().isEmpty(),
+    );
+    let mode = payload.mode || (hasSelection ? "replaceSelection" : "insert");
+    if (mode === "replaceSelection" && !hasSelection) mode = "insert";
+
+    try {
+      if (mode === "replaceFile") {
+        const fullRange = model.getFullModelRange();
+        editor.pushUndoStop();
+        editor.executeEdits("ai-assistant-apply", [
+          { range: fullRange, text: code, forceMoveMarkers: true },
+        ]);
+        editor.pushUndoStop();
+        showToast(`Applied AI changes to ${activeFile}.`, "success", 3000);
+      } else if (mode === "replaceSelection") {
+        const selection = editor.getSelection();
+        editor.pushUndoStop();
+        editor.executeEdits("ai-assistant-apply", [
+          { range: selection, text: code, forceMoveMarkers: true },
+        ]);
+        editor.pushUndoStop();
+        showToast("Replaced selected code with AI suggestion.", "success", 3000);
+      } else {
+        const pos = editor.getPosition() || { lineNumber: 1, column: 1 };
+        const range = {
+          startLineNumber: pos.lineNumber,
+          startColumn: pos.column,
+          endLineNumber: pos.lineNumber,
+          endColumn: pos.column,
+        };
+        const prefix = model.getValueLength() > 0 && !code.startsWith("\n") ? "\n" : "";
+        editor.pushUndoStop();
+        editor.executeEdits("ai-assistant-insert", [
+          { range, text: `${prefix}${code}`, forceMoveMarkers: true },
+        ]);
+        editor.pushUndoStop();
+        showToast("Inserted AI code into editor.", "success", 3000);
+      }
+      editor.focus();
+      const updated = model.getValue();
+      setFilesContent((prev) => ({ ...prev, [activeFile]: updated }));
+      filesContentRef.current = {
+        ...filesContentRef.current,
+        [activeFile]: updated,
       };
+      setAutoSaveStatus("Unsaved changes");
+    } catch (err) {
+      console.error("[AI Apply] Failed to apply code:", err);
+      showToast("Failed to apply AI code change.", "error", 3500);
     }
-    editor.executeEdits("ai-assistant", [
-      { range, text: code, forceMoveMarkers: true },
-    ]);
-    editor.focus();
-    showToast("Inserted code from AI Assistant.", "success", 3000);
   };
 
   const wsTitle =
@@ -7723,21 +7782,22 @@ export const ModularWorkspace = ({
             </div>
           )}
         </div>
-        <AssistantErrorBoundary>
-          <AssistantPanel
-            isOpen={isAIAssistantOpen}
-            onClose={() => setIsAIAssistantOpen(false)}
-            activeFile={activeFile}
-            activeLanguage={getMonacoLanguage(activeFile)}
-            fileContent={getActiveFileContent()}
-            selectedCode={selectedCode}
-            onInsertCode={handleInsertAssistantCode}
-            triggerAction={aiAssistantTrigger}
-            workspaceId={currentWorkspace?._id || currentWorkspace?.id || workspaceId}
-            files={customFiles}
-            activeWorkspace={currentWorkspace}
-          />
-        </AssistantErrorBoundary>
+          <AssistantErrorBoundary>
+            <AssistantPanel
+              isOpen={isAIAssistantOpen}
+              onClose={() => setIsAIAssistantOpen(false)}
+              activeFile={activeFile}
+              activeLanguage={getMonacoLanguage(activeFile)}
+              fileContent={getActiveFileContent()}
+              selectedCode={selectedCode}
+              onInsertCode={handleInsertAssistantCode}
+              onApplyCode={handleApplyAssistantCode}
+              triggerAction={aiAssistantTrigger}
+              workspaceId={currentWorkspace?._id || currentWorkspace?.id || workspaceId}
+              files={customFiles}
+              activeWorkspace={currentWorkspace}
+            />
+          </AssistantErrorBoundary>
       </section>
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
@@ -7773,18 +7833,18 @@ export const ModularWorkspace = ({
           };
           const icons = {
             success: (
-              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0 mt-0.5" />
             ),
             error: (
-              <AlertTriangle size={16} className="text-red-400 shrink-0" />
+              <AlertTriangle size={16} className="text-red-400 shrink-0 mt-0.5" />
             ),
             warning: (
-              <AlertTriangle size={16} className="text-amber-400 shrink-0" />
+              <AlertTriangle size={16} className="text-amber-400 shrink-0 mt-0.5" />
             ),
             info: (
               <Loader2
                 size={16}
-                className="text-indigo-400 shrink-0 animate-spin"
+                className="text-indigo-400 shrink-0 animate-spin mt-0.5"
               />
             ),
           };
@@ -7793,13 +7853,13 @@ export const ModularWorkspace = ({
               key={toast.id}
               className={`flex items-start gap-4 rounded-xl border backdrop-blur-xl text-xs font-mono font-semibold pointer-events-auto animate-slideUp ${styles[toast.type] || styles.info}`}
               style={{
-                padding: "14px 16px",
-                lineHeight: "1.5",
-                minHeight: "52px",
+                padding: "18px 22px",
+                lineHeight: "1.7",
+                minHeight: "60px",
               }}
             >
               {icons[toast.type] || icons.info}
-              <span className="flex-1 min-w-0 break-words leading-relaxed">
+              <span className="flex-1 min-w-0 break-words whitespace-pre-line leading-relaxed pr-1">
                 {toast.message}
               </span>
               <button
@@ -7809,7 +7869,7 @@ export const ModularWorkspace = ({
                 }
                 className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 mt-0.5 cursor-pointer shrink-0"
               >
-                <X size={13} />
+                ×
               </button>
             </div>
           );
