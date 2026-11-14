@@ -54,6 +54,7 @@ import {
 import Editor from "@monaco-editor/react";
 import { WORKSPACE_FILES } from "../../constants/workspace.constants";
 import WorkspaceSettingsModal from "../../components/workspace/WorkspaceSettingsModal";
+import TestCaseRunnerModal from "../../components/workspace/TestCaseRunnerModal";
 import NotificationCenter from "../../components/workspace/NotificationCenter";
 import AssistantPanel from "../../components/workspace/AssistantPanel";
 import { exportAuditJson, exportAuditMarkdown } from "../../utils/auditExport";
@@ -436,6 +437,10 @@ export const ModularWorkspace = ({
   // Project Scaffolding Modal Open State
   const [isScaffoldModalOpen, setIsScaffoldModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isTestCaseModalOpen, setIsTestCaseModalOpen] = useState(false);
+  const handleOpenTestCases = useCallback(() => {
+    setIsTestCaseModalOpen(true);
+  }, []);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [aiAssistantTrigger, setAiAssistantTrigger] = useState(null);
   const [isExplorerOpen, setIsExplorerOpen] = useState(() => {
@@ -5802,6 +5807,15 @@ export const ModularWorkspace = ({
                 </button>
                 <button
                   type="button"
+                  onClick={handleOpenTestCases}
+                  className="ct-editor-action-btn flex items-center gap-1.5 text-emerald-300 hover:text-emerald-200 border-emerald-500/30 hover:border-emerald-500/50 hover:bg-emerald-500/10"
+                  title="Generate and run AI test cases for target function (Ctrl+Alt+T)"
+                >
+                  <Sparkles size={13} className="text-emerald-400" />
+                  <span>{selectedCode ? "Tests on Selection" : "Generate Tests"}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleFormatDocument}
                   disabled={isViewer}
                   className="ct-editor-action-btn"
@@ -5931,6 +5945,26 @@ export const ModularWorkspace = ({
                         actionType: "review",
                         timestamp: Date.now(),
                       });
+                    },
+                  });
+
+                  // Context menu action: Generate Test Cases (Meet Sheth - Test Case Integration)
+                  editor.addAction({
+                    id: "codetrail-ai-generate-tests",
+                    label: "🧪 CodeTrail AI: Generate Test Cases",
+                    keybindings: [
+                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyT,
+                    ],
+                    contextMenuGroupId: "1_modification",
+                    contextMenuOrder: 1.3,
+                    run: (ed) => {
+                      const sel = ed.getSelection();
+                      const codeText =
+                        sel && !sel.isEmpty()
+                          ? ed.getModel()?.getValueInRange(sel) || ""
+                          : "";
+                      if (codeText) setSelectedCode(codeText);
+                      setIsTestCaseModalOpen(true);
                     },
                   });
                 }}
@@ -7799,6 +7833,19 @@ export const ModularWorkspace = ({
             />
           </AssistantErrorBoundary>
       </section>
+
+      {/* TEST CASE RUNNER MODAL (Meet Sheth - Test Case Integration) */}
+      <TestCaseRunnerModal
+        isOpen={isTestCaseModalOpen}
+        onClose={() => setIsTestCaseModalOpen(false)}
+        activeFile={activeFile}
+        activeLanguage={getMonacoLanguage(activeFile)}
+        selectedCode={selectedCode}
+        fullFileContent={getActiveFileContent()}
+        workspaceId={wsId !== "demo-workspace" ? wsId : null}
+        authToken={token}
+      />
+
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}
       <WorkspaceSettingsModal
         isOpen={isSettingsModalOpen}
