@@ -718,31 +718,55 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
       if (apiUrl) {
         try {
           const token = localStorage.getItem("ct-auth-token");
-          const response = await fetch(apiUrl, {
+
+          // Route test generation with code to the specialized /api/ai/tests endpoint
+          const isTestAction = customActionType === "tests" || /\b(test|tests|spec|unit test)\b/i.test(question);
+          const hasCode = Boolean(effectiveContent && effectiveContent.trim());
+          const testApiUrl = apiUrl.replace(/\/ai\/chat.*$/, "/ai/tests");
+          const requestUrl = (isTestAction && hasCode) ? testApiUrl : apiUrl;
+
+          const requestBody = (isTestAction && hasCode)
+            ? JSON.stringify({
+                code: effectiveContent,
+                language: activeLanguage,
+                message: question,
+                workspaceId: resolvedWorkspaceId,
+                context: {
+                  fileName: activeFile,
+                  language: activeLanguage,
+                  content: effectiveContent,
+                  source: effectiveSource,
+                  attached: true,
+                  mode: effectiveMode,
+                },
+              })
+            : JSON.stringify({
+                message: question,
+                conversation: messages,
+                actionType: customActionType,
+                workspaceId: resolvedWorkspaceId,
+                files: workspaceFiles,
+                context: {
+                  fileName: activeFile,
+                  language: activeLanguage,
+                  content: effectiveContent,
+                  source: effectiveSource,
+                  attached: Boolean(effectiveContent.trim()),
+                  mode: effectiveMode,
+                },
+                attachments: uploadedFiles.map(({ name, content }) => ({
+                  name,
+                  content,
+                })),
+              });
+
+          const response = await fetch(requestUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               ...(token ? { Authorization: `Bearer ${token}` } : {}),
             },
-            body: JSON.stringify({
-              message: question,
-              conversation: messages,
-              actionType: customActionType,
-              workspaceId: resolvedWorkspaceId,
-              files: workspaceFiles,
-              context: {
-                fileName: activeFile,
-                language: activeLanguage,
-                content: effectiveContent,
-                source: effectiveSource,
-                attached: Boolean(effectiveContent.trim()),
-                mode: effectiveMode,
-              },
-              attachments: uploadedFiles.map(({ name, content }) => ({
-                name,
-                content,
-              })),
-            }),
+            body: requestBody,
           });
           if (!response.ok)
             throw new Error(`Assistant request failed (${response.status})`);
