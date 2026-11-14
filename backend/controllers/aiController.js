@@ -254,44 +254,60 @@ exports.reviewCode = async (req, res) => {
  */
 exports.generateTests = async (req, res) => {
   try {
-    const { code, context, message, workspaceId, files, language } = req.body || {};
+    const { code, context, language } = req.body || {};
     const targetCode = (code || context?.content || '').trim();
 
-    // If code/function is provided, run specialized AI test case generator & function analysis
-    if (targetCode) {
-      const langHint = language || context?.language || '';
-      const testResult = await aiTestCaseService.generateTestCasesForFunction({
-        code: targetCode,
-        language: langHint,
-        context: typeof context === 'object' && context !== null ? context : {},
-        user: req.user || null
-      });
-
-      return res.json({
-        ...testResult,
-        references: []
+    // Requirement 3: If targetCode is missing, return a meaningful validation error instead of falling back to generic Markdown generation
+    if (!targetCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid function code string is required for test case generation.',
+        functionAnalysis: null,
+        testCases: [],
+        totalCases: 0
       });
     }
 
-    // Fallback if no specific code provided
-    const promptMessage = message || 'Generate unit and edge-case test cases for this code.';
-    const mergedContext = {
-      ...(typeof context === 'object' && context !== null ? context : {}),
-      content: ''
-    };
-
-    const result = await aiService.generateAIResponse({
-      message: promptMessage,
-      context: mergedContext,
-      actionType: 'tests',
-      user: req.user || null,
-      workspaceId: workspaceId || null,
-      files: Array.isArray(files) ? files : null
+    const langHint = language || context?.language || '';
+    const testResult = await aiTestCaseService.generateTestCasesForFunction({
+      code: targetCode,
+      language: langHint,
+      context: typeof context === 'object' && context !== null ? context : {},
+      user: req.user || null
     });
 
-    return res.json(result);
+    // Requirement 2: Do not fabricate test cases merely to guarantee a non-empty array. If generation or parsing fails, return an explicit, actionable error.
+    if (!testResult || !Array.isArray(testResult.testCases) || testResult.testCases.length === 0) {
+      return res.status(422).json({
+        success: false,
+        message: 'Failed to generate test cases for the provided function code. Please verify the function syntax and retry.',
+        functionAnalysis: testResult?.functionAnalysis || null,
+        testCases: [],
+        totalCases: 0
+      });
+    }
+
+    // Requirement 1: The backend must always return a consistent structured test-generation response containing success, functionAnalysis, testCases, and totalCases
+    return res.json({
+      success: true,
+      functionAnalysis: testResult.functionAnalysis,
+      testCases: testResult.testCases,
+      totalCases: testResult.totalCases || testResult.testCases.length,
+      provider: testResult.provider || 'local-engine',
+      model: testResult.model || 'codetrail-test-generator-v1',
+      response: testResult.response || '',
+      message: testResult.message || testResult.response || '',
+      references: []
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Generate tests failed', error: err.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Generate tests failed: ' + err.message,
+      functionAnalysis: null,
+      testCases: [],
+      totalCases: 0,
+      error: err.message
+    });
   }
 };
 

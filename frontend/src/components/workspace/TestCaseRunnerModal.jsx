@@ -18,6 +18,118 @@ import { generateTestHarness } from '../../utils/testHarnessGenerator';
 import { evaluateTestCase } from '../../utils/testComparator';
 import { resolveTargetFunction } from '../../utils/testFunctionExtractor';
 
+/**
+ * Defensive Client-Side Parser for Test Cases (Handles direct array, markdown tables, and JSON fences)
+ */
+export function extractTestCasesFromResponse(responseData) {
+  if (!responseData) return [];
+
+  // 1. Direct structured array
+  if (Array.isArray(responseData.testCases) && responseData.testCases.length > 0) {
+    return responseData.testCases;
+  }
+
+  // 2. Check for text fields containing Markdown or JSON
+  const rawText = responseData.response || responseData.message || responseData.content;
+  if (!rawText || typeof rawText !== 'string') return [];
+
+  // Try extracting embedded JSON
+  const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[1].trim());
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+  }
+
+  const arrayMatch = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (arrayMatch) {
+    try {
+      const parsed = JSON.parse(arrayMatch[0].trim());
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch {}
+  }
+
+  // Parse Markdown Table
+  const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  let headerFound = false;
+  let colIdx = { num: 0, input: 1, output: 2, category: 3, scenario: 4 };
+  const extracted = [];
+
+  for (const line of lines) {
+    if (!line.startsWith('|') || !line.endsWith('|')) continue;
+    const cells = line.split('|').slice(1, -1).map(c => c.trim());
+    if (cells.length < 3) continue;
+
+    const lower = line.toLowerCase();
+    if (lower.includes('input') && (lower.includes('output') || lower.includes('expected'))) {
+      headerFound = true;
+      cells.forEach((header, idx) => {
+        const h = header.toLowerCase();
+        if (h.includes('#') || h.includes('case')) colIdx.num = idx;
+        else if (h.includes('input')) colIdx.input = idx;
+        else if (h.includes('output') || h.includes('expected')) colIdx.output = idx;
+        else if (h.includes('cat') || h.includes('type')) colIdx.category = idx;
+        else if (h.includes('scen') || h.includes('desc')) colIdx.scenario = idx;
+      });
+      continue;
+    }
+
+    if (/^[:\-\|\s]+$/.test(line.replace(/\|/g, ''))) continue;
+
+    if (headerFound || cells.length >= 3) {
+      let rawIn = cells[colIdx.input] !== undefined ? cells[colIdx.input] : cells[1];
+      let rawOut = cells[colIdx.output] !== undefined ? cells[colIdx.output] : cells[2];
+      const rawCat = cells[colIdx.category] !== undefined ? cells[colIdx.category] : (cells[3] || 'normal');
+      const rawDesc = cells[colIdx.scenario] !== undefined ? cells[colIdx.scenario] : (cells[4] || `Case ${extracted.length + 1}`);
+
+      // Strip ticks
+      if (rawIn.startsWith('`') && rawIn.endsWith('`') && rawIn.length >= 2) rawIn = rawIn.slice(1, -1).trim();
+      if (rawOut.startsWith('`') && rawOut.endsWith('`') && rawOut.length >= 2) rawOut = rawOut.slice(1, -1).trim();
+
+      let input = [];
+      try {
+        const p = JSON.parse(rawIn);
+        input = Array.isArray(p) ? p : [p];
+      } catch {
+        if (rawIn && !/^(?:empty|none|null|void)$/i.test(rawIn)) {
+          if (!rawIn.startsWith('[') && rawIn.includes(',')) {
+            try {
+              const wrapped = JSON.parse(`[${rawIn}]`);
+              if (Array.isArray(wrapped)) input = wrapped;
+            } catch {
+              input = [rawIn];
+            }
+          } else {
+            input = [rawIn];
+          }
+        }
+      }
+
+      let expectedOutput = null;
+      if (!/^(?:indeterminate|null|none|undefined|n\/a)$/i.test(rawOut) && rawOut !== '') {
+        try {
+          expectedOutput = JSON.parse(rawOut);
+        } catch {
+          if (/^true$/i.test(rawOut)) expectedOutput = true;
+          else if (/^false$/i.test(rawOut)) expectedOutput = false;
+          else if (/^-?\d+(?:\.\d+)?$/.test(rawOut)) expectedOutput = Number(rawOut);
+          else expectedOutput = rawOut;
+        }
+      }
+
+      extracted.push({
+        input,
+        expectedOutput,
+        description: rawDesc.replace(/[*_]/g, '').trim() || `Case ${extracted.length + 1}`,
+        category: rawCat.replace(/[*_`]/g, '').trim().toLowerCase() || 'normal'
+      });
+    }
+  }
+
+  return extracted;
+}
+
 export const TestCaseRunnerModal = ({
   isOpen,
   onClose,
@@ -92,7 +204,18 @@ export const TestCaseRunnerModal = ({
         }
       );
 
-      const rawCases = Array.isArray(response.data?.testCases) ? response.data.testCases : [];
+      const rawCases = extractTestCasesFromResponse(response.data);
+
+      if (rawCases.length === 0) {
+        setGenerationError(
+          response.data?.message ||
+          'The AI test service returned no structured test cases for this function. Click Retry or edit the function.'
+        );
+        if (!isRegenerating || !preserveEditsOnRegen) {
+          setTestCases([]);
+        }
+        return;
+      }
 
       const formattedCases = rawCases.map((tc, idx) => ({
         id: `tc-${idx}-${Date.now()}`,

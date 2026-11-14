@@ -9,7 +9,6 @@ import assert from 'node:assert/strict';
 import {
   compareValues,
   parseExecutionOutput,
-  formatDiff,
   evaluateTestCase,
   DELIMITERS
 } from './testComparator.js';
@@ -159,4 +158,104 @@ test('evaluateTestCase: explicit exception structure correctly marks PASSED when
   const evaluated = evaluateTestCase(executionResult, testCaseWithExplicitException);
   assert.strictEqual(evaluated.status, 'PASSED');
   assert.ok(evaluated.actualOutput.includes('[Expected Exception Caught]'));
+});
+
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { parseTestCasesFromMarkdown, parseAIResponseJSON } = require('../../../backend/services/aiTestCaseService.js');
+
+test('parseTestCasesFromMarkdown: parses standard Markdown scenario table into structured test cases', () => {
+  const markdownTable = `
+### 🧪 AI-GENERATED TEST SUITE: \`isEven(number)\`
+
+#### Test Scenarios Breakdown
+
+| # | Input | Expected Output | Category | Scenario |
+|---|---|---|---|---|
+| 1 | \`[4]\` | \`true\` | **normal** | Positive even number |
+| 2 | \`[5]\` | \`false\` | **normal** | Positive odd number |
+| 3 | \`[0]\` | \`true\` | **boundary** | Zero input |
+| 4 | \`[-2]\` | \`true\` | **negative** | Negative even number |
+| 5 | \`[2.5]\` | \`false\` | **decimal** | Decimal value input |
+| 6 | \`["abc"]\` | \`false\` | **invalid** | Invalid string input |
+| 7 | \`[null]\` | \`false\` | **null** | Null value input |
+| 8 | \`[""]\` | \`false\` | **empty** | Empty value input |
+`;
+
+  const parsed = parseTestCasesFromMarkdown(markdownTable);
+  assert.ok(Array.isArray(parsed), 'Should return an array');
+  assert.strictEqual(parsed.length, 8);
+
+  // Check types and values of parsed cases
+  assert.deepStrictEqual(parsed[0].input, [4]);
+  assert.strictEqual(parsed[0].expectedOutput, true);
+  assert.strictEqual(parsed[0].category, 'normal');
+  assert.strictEqual(parsed[0].description, 'Positive even number');
+
+  assert.deepStrictEqual(parsed[1].input, [5]);
+  assert.strictEqual(parsed[1].expectedOutput, false);
+  assert.strictEqual(parsed[1].category, 'normal');
+
+  assert.deepStrictEqual(parsed[2].input, [0]);
+  assert.strictEqual(parsed[2].expectedOutput, true);
+  assert.strictEqual(parsed[2].category, 'boundary');
+
+  assert.deepStrictEqual(parsed[3].input, [-2]);
+  assert.strictEqual(parsed[3].expectedOutput, true);
+  assert.strictEqual(parsed[3].category, 'negative');
+
+  assert.deepStrictEqual(parsed[4].input, [2.5]);
+  assert.strictEqual(parsed[4].expectedOutput, false);
+  assert.strictEqual(parsed[4].category, 'decimal');
+
+  assert.deepStrictEqual(parsed[5].input, ['abc']);
+  assert.strictEqual(parsed[5].expectedOutput, false);
+  assert.strictEqual(parsed[5].category, 'invalid');
+
+  assert.deepStrictEqual(parsed[6].input, [null]);
+  assert.strictEqual(parsed[6].expectedOutput, false);
+  assert.strictEqual(parsed[6].category, 'null');
+
+  assert.deepStrictEqual(parsed[7].input, ['']);
+  assert.strictEqual(parsed[7].expectedOutput, false);
+  assert.strictEqual(parsed[7].category, 'empty');
+});
+
+test('parseAIResponseJSON: parses simulated production response payload from local-engine', () => {
+  // Exact production response structure reported from Chrome Network:
+  // success: true, provider: 'local-engine', model: 'codetrail-heuristic-v1', response: Markdown, message: Markdown, content: Markdown
+  const simulatedProdResponse = {
+    success: true,
+    provider: 'local-engine',
+    model: 'codetrail-heuristic-v1',
+    response: `### 🧪 AI-GENERATED TEST SUITE: \`add(a, b)\`
+
+| # | Input | Expected Output | Category | Scenario |
+|---|---|---|---|---|
+| 1 | \`[10, 20]\` | \`30\` | **normal** | Normal positive integers |
+| 2 | \`[0, 0]\` | \`0\` | **boundary** | Zero boundary inputs |
+| 3 | \`[-5, 15]\` | \`10\` | **negative** | Negative and positive combination |
+| 4 | \`[3.14, 2.86]\` | \`6\` | **decimal** | Decimal floating point values |
+`,
+    message: '...',
+    content: '...'
+  };
+
+  const parsed = parseAIResponseJSON(simulatedProdResponse.response);
+  assert.ok(Array.isArray(parsed), 'parseAIResponseJSON should parse Markdown tables seamlessly');
+  assert.strictEqual(parsed.length, 4);
+  assert.deepStrictEqual(parsed[0].input, [10, 20]);
+  assert.strictEqual(parsed[0].expectedOutput, 30);
+  assert.deepStrictEqual(parsed[1].input, [0, 0]);
+  assert.strictEqual(parsed[1].expectedOutput, 0);
+  assert.deepStrictEqual(parsed[2].input, [-5, 15]);
+  assert.strictEqual(parsed[2].expectedOutput, 10);
+  assert.deepStrictEqual(parsed[3].input, [3.14, 2.86]);
+  assert.strictEqual(parsed[3].expectedOutput, 6);
+});
+
+test('parseTestCasesFromMarkdown: gracefully handles malformed or empty text without throwing', () => {
+  assert.strictEqual(parseTestCasesFromMarkdown(null), null);
+  assert.strictEqual(parseTestCasesFromMarkdown(''), null);
+  assert.strictEqual(parseTestCasesFromMarkdown('Random text with no table or json'), null);
 });

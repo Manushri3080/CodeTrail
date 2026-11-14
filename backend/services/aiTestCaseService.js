@@ -552,6 +552,152 @@ function validateAndCleanTestCases(rawCases, fallbackCases = []) {
 }
 
 /**
+ * Safely parse a value string from a Markdown table cell
+ */
+function parseCellValue(rawCell) {
+  if (rawCell === undefined || rawCell === null) return null;
+  let cell = String(rawCell).trim();
+  // Strip code ticks: `[4]` -> [4], `true` -> true
+  if (cell.startsWith('`') && cell.endsWith('`') && cell.length >= 2) {
+    cell = cell.slice(1, -1).trim();
+  }
+  // Check for indeterminate / null / empty
+  if (/^(?:indeterminate|null|none|undefined|n\/a)$/i.test(cell) || cell === '') {
+    return null;
+  }
+  // Try direct JSON.parse
+  try {
+    return JSON.parse(cell);
+  } catch (e) {
+    // Check for boolean literals
+    if (/^true$/i.test(cell)) return true;
+    if (/^false$/i.test(cell)) return false;
+    // Check for numeric literals
+    if (/^-?\d+(?:\.\d+)?$/.test(cell)) return Number(cell);
+    // Return as string
+    return cell;
+  }
+}
+
+/**
+ * Safely parse input arguments from Markdown table cell into an array
+ */
+function parseInputCell(rawCell) {
+  if (rawCell === undefined || rawCell === null) return [];
+  let cell = String(rawCell).trim();
+  if (cell.startsWith('`') && cell.endsWith('`') && cell.length >= 2) {
+    cell = cell.slice(1, -1).trim();
+  }
+  if (!cell || /^(?:empty|none|void|null)$/i.test(cell)) return [];
+
+  // Try direct JSON parsing
+  try {
+    const parsed = JSON.parse(cell);
+    if (Array.isArray(parsed)) return parsed;
+    return [parsed];
+  } catch (e) {
+    // If wrapped in brackets e.g. "[4, 5]" or "4, 5"
+    if (!cell.startsWith('[') && cell.includes(',')) {
+      try {
+        const wrapped = JSON.parse(`[${cell}]`);
+        if (Array.isArray(wrapped)) return wrapped;
+      } catch (inner) {}
+    }
+    return [cell];
+  }
+}
+
+/**
+ * Parse test cases from Markdown tables or embedded JSON code blocks
+ */
+function parseTestCasesFromMarkdown(markdownText) {
+  if (!markdownText || typeof markdownText !== 'string') return null;
+
+  // 1. First check if there is an embedded JSON code block or array
+  const jsonBlockMatch = markdownText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch) {
+    try {
+      const parsed = JSON.parse(jsonBlockMatch[1].trim());
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {}
+  }
+
+  // 2. Check for bracket array in markdown
+  const arrayMatch = markdownText.match(/\[\s*\{[\s\S]*\}\s*\]/);
+  if (arrayMatch) {
+    try {
+      const parsed = JSON.parse(arrayMatch[0].trim());
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    } catch (e) {}
+  }
+
+  // 3. Parse Markdown Scenario Table
+  // Looks for rows with pipes | # | Input | Expected Output | Category | Scenario |
+  const lines = markdownText.split('\n').map(l => l.trim()).filter(Boolean);
+  let headerFound = false;
+  let colIdx = { num: 0, input: 1, output: 2, category: 3, scenario: 4 };
+  const extractedCases = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!line.startsWith('|') || !line.endsWith('|')) continue;
+
+    const cells = line
+      .split('|')
+      .slice(1, -1)
+      .map(c => c.trim());
+
+    if (cells.length < 3) continue;
+
+    // Detect header row
+    const lowerLine = line.toLowerCase();
+    if (lowerLine.includes('input') && (lowerLine.includes('output') || lowerLine.includes('expected'))) {
+      headerFound = true;
+      cells.forEach((header, idx) => {
+        const h = header.toLowerCase();
+        if (h.includes('#') || h.includes('case') || h.includes('idx')) colIdx.num = idx;
+        else if (h.includes('input')) colIdx.input = idx;
+        else if (h.includes('output') || h.includes('expected')) colIdx.output = idx;
+        else if (h.includes('cat') || h.includes('type')) colIdx.category = idx;
+        else if (h.includes('scen') || h.includes('desc')) colIdx.scenario = idx;
+      });
+      continue;
+    }
+
+    // Skip separator row (|---|---|...)
+    if (/^[:\-\|\s]+$/.test(line.replace(/\|/g, ''))) continue;
+
+    // Must be a data row
+    if (headerFound || cells.length >= 3) {
+      const rawInput = cells[colIdx.input] !== undefined ? cells[colIdx.input] : cells[1];
+      const rawOutput = cells[colIdx.output] !== undefined ? cells[colIdx.output] : cells[2];
+      const rawCategory = cells[colIdx.category] !== undefined ? cells[colIdx.category] : (cells[3] || 'normal');
+      const rawScenario = cells[colIdx.scenario] !== undefined ? cells[colIdx.scenario] : (cells[4] || `Case ${extractedCases.length + 1}`);
+
+      // Strip markdown bold/italics from category and scenario
+      const category = rawCategory.replace(/[*_`]/g, '').trim().toLowerCase() || 'normal';
+      const description = rawScenario.replace(/[*_]/g, '').trim() || `Case ${extractedCases.length + 1}`;
+
+      const input = parseInputCell(rawInput);
+      const expectedOutput = parseCellValue(rawOutput);
+
+      extractedCases.push({
+        input,
+        expectedOutput,
+        description,
+        category
+      });
+    }
+  }
+
+  if (extractedCases.length > 0) {
+    return extractedCases;
+  }
+
+  return null;
+}
+
+/**
  * 7. Parse AI JSON Response Safely (Task 11)
  */
 function parseAIResponseJSON(aiText) {
@@ -565,7 +711,8 @@ function parseAIResponseJSON(aiText) {
     const jsonBlockMatch = aiText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonBlockMatch) {
       try {
-        return JSON.parse(jsonBlockMatch[1].trim());
+        const parsed = JSON.parse(jsonBlockMatch[1].trim());
+        if (parsed) return parsed;
       } catch (innerErr) {}
     }
 
@@ -573,9 +720,14 @@ function parseAIResponseJSON(aiText) {
     const arrayMatch = aiText.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (arrayMatch) {
       try {
-        return JSON.parse(arrayMatch[0].trim());
+        const parsed = JSON.parse(arrayMatch[0].trim());
+        if (parsed) return parsed;
       } catch (innerErr) {}
     }
+
+    // 4. Extract from Markdown scenario tables
+    const tableCases = parseTestCasesFromMarkdown(aiText);
+    if (tableCases) return tableCases;
   }
 
   return null;
@@ -609,8 +761,9 @@ async function generateTestCasesForFunction({ code, language = '', context = {},
       user
     });
 
-    if (aiResult && aiResult.response) {
-      const parsed = parseAIResponseJSON(aiResult.response);
+    if (aiResult && (aiResult.response || aiResult.message || aiResult.content)) {
+      const rawAiText = aiResult.response || aiResult.message || aiResult.content;
+      const parsed = parseAIResponseJSON(rawAiText);
       if (Array.isArray(parsed) && parsed.length > 0) {
         finalTestCases = validateAndCleanTestCases(parsed, heuristicCases);
         providerUsed = aiResult.provider || 'gemini';
@@ -717,6 +870,7 @@ module.exports = {
   generateHeuristicTestCases,
   validateAndCleanTestCases,
   parseAIResponseJSON,
+  parseTestCasesFromMarkdown,
   generateTestCasesForFunction,
   formatTestCasesMarkdown
 };
