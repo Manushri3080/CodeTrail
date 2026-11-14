@@ -48,6 +48,7 @@ router.post('/explain', optionalAuth, aiGeneralLimiter, explainCode);
 router.post('/debug', optionalAuth, aiGeneralLimiter, debugError);
 router.post('/review', optionalAuth, aiGeneralLimiter, reviewCode);
 router.post('/tests', optionalAuth, aiGeneralLimiter, generateTests);
+router.post('/test-cases', optionalAuth, aiGeneralLimiter, generateTests);
 router.post('/docs', optionalAuth, aiGeneralLimiter, generateDocs);
 router.post('/generate', optionalAuth, aiGeneralLimiter, generateCode);
 router.post('/refactor', optionalAuth, aiGeneralLimiter, refactorCode);

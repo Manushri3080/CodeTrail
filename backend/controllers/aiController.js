@@ -15,6 +15,7 @@
  */
 
 const aiService = require('../services/aiService');
+const aiTestCaseService = require('../services/aiTestCaseService');
 
 /**
  * 1. Primary AI Chat Endpoint
@@ -227,16 +228,34 @@ exports.reviewCode = async (req, res) => {
 };
 
 /**
- * 6. Generate Tests Endpoint
+ * 6. Generate Tests Endpoint (CT-238: AI Test Case Generation & Function Analysis - Mahi)
  */
 exports.generateTests = async (req, res) => {
   try {
-    const { code, context, message, workspaceId, files } = req.body;
-    const promptMessage = message || 'Generate unit and edge-case test cases for this code.';
+    const { code, context, message, workspaceId, files, language } = req.body || {};
+    const targetCode = (code || context?.content || '').trim();
 
+    // If code/function is provided, run specialized AI test case generator & function analysis
+    if (targetCode) {
+      const langHint = language || context?.language || '';
+      const testResult = await aiTestCaseService.generateTestCasesForFunction({
+        code: targetCode,
+        language: langHint,
+        context: typeof context === 'object' && context !== null ? context : {},
+        user: req.user || null
+      });
+
+      return res.json({
+        ...testResult,
+        references: []
+      });
+    }
+
+    // Fallback if no specific code provided
+    const promptMessage = message || 'Generate unit and edge-case test cases for this code.';
     const mergedContext = {
       ...(typeof context === 'object' && context !== null ? context : {}),
-      content: code || context?.content || ''
+      content: ''
     };
 
     const result = await aiService.generateAIResponse({
@@ -367,16 +386,24 @@ exports.suggestAlgorithm = async (req, res) => {
 };
 
 /**
- * 11. Function / Code Analysis
+ * 11. Function / Code Analysis (CT-238: Function Analysis Logic - Mahi)
  */
 exports.analyzeFunction = async (req, res) => {
   try {
-    const { code, context, message, workspaceId, files } = req.body || {};
+    const { code, context, message, workspaceId, files, language } = req.body || {};
+    const targetCode = (code || context?.content || '').trim();
     const promptMessage = message || 'Analyze this function/code: explain parameters, return values, dependencies, side effects, and execution flow.';
+
+    let functionAnalysis = null;
+    if (targetCode) {
+      try {
+        functionAnalysis = aiTestCaseService.analyzeFunction(targetCode, language || context?.language || '');
+      } catch (e) {}
+    }
 
     const mergedContext = {
       ...(typeof context === 'object' && context !== null ? context : {}),
-      content: code || context?.content || ''
+      content: targetCode
     };
 
     const result = await aiService.generateAIResponse({
@@ -388,11 +415,21 @@ exports.analyzeFunction = async (req, res) => {
       files: Array.isArray(files) ? files : null
     });
 
-    return res.json(result);
+    return res.json({
+      ...result,
+      functionAnalysis: functionAnalysis || {
+        name: 'unknown',
+        parameters: [],
+        language: language || 'code',
+        expectedBehavior: 'Code logic analysis'
+      }
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Function analysis failed', error: err.message });
   }
 };
+
+exports.generateTestCases = exports.generateTests;
 
 /**
  * 12. Status & Capability Query
