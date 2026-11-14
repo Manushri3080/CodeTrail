@@ -90,12 +90,12 @@ const NotificationCenter = ({ notifications, isOpen, onToggle, onDismiss, onClea
                   : (ICON_COLORS[notification.type] || 'text-cyan-300');
 
                 return (
-                  <div key={notification.id} className="flex gap-3 border-b border-white/5 px-4 py-3 last:border-0">
+                  <div key={notification.id} className="flex gap-3 border-b border-white/5 px-5 py-4 last:border-0">
                     <Icon size={16} className={`mt-0.5 shrink-0 ${iconColor}`} />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-gray-100">{notification.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-gray-400">{notification.message}</p>
-                      <time className="mt-1 block text-[10px] text-gray-500">
+                      <p className="text-xs font-medium text-gray-100 leading-relaxed">{notification.title}</p>
+                      <p className="mt-2 text-xs leading-6 text-gray-300 break-words whitespace-pre-line">{notification.message}</p>
+                      <time className="mt-2 block text-[10px] text-gray-500">
                         {notification.createdAt
                           ? new Date(notification.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                           : "Just now"}
@@ -104,7 +104,7 @@ const NotificationCenter = ({ notifications, isOpen, onToggle, onDismiss, onClea
                     <button
                       type="button"
                       onClick={() => onDismiss(notification.id)}
-                      className="h-fit rounded p-1 text-gray-500 hover:bg-white/10 hover:text-white"
+                      className="h-fit rounded p-1.5 text-gray-500 hover:bg-white/10 hover:text-white shrink-0"
                       aria-label="Dismiss notification"
                     >
                       <X size={14} />

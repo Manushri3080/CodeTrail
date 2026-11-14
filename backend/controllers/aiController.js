@@ -59,8 +59,10 @@ exports.chat = async (req, res) => {
 
 /**
  * 2. Streaming Chat Endpoint (Server-Sent Events - SSE)
+ * Uses provider-native streaming when available (Gemini/OpenAI-compatible), with chunk fallback.
  */
 exports.chatStream = async (req, res) => {
+  let streamStarted = false;
   try {
     const { message, conversation, context, attachments, actionType, workspaceId, files } = req.body || {};
 
@@ -71,49 +73,72 @@ exports.chatStream = async (req, res) => {
       });
     }
 
-    // Configure SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+    streamStarted = true;
 
-    // 1. Initial connection payload
     const status = aiService.getAIStatus();
     res.write(`data: ${JSON.stringify({ type: 'start', model: status.activeModel, provider: status.activeProvider })}\n\n`);
 
-    // 2. Generate complete response payload
-    const result = await aiService.generateAIResponse({
-      message: message.trim(),
-      conversation: Array.isArray(conversation) ? conversation : [],
-      context: typeof context === 'object' && context !== null ? context : {},
-      attachments: Array.isArray(attachments) ? attachments : [],
-      actionType: actionType || 'general',
-      user: req.user || null,
-      workspaceId: workspaceId || null,
-      files: Array.isArray(files) ? files : null
-    });
+    let fullText = '';
+    let meta = { provider: status.activeProvider, model: status.activeModel, references: [], workspaceContextSummary: null };
 
-    const fullText = result.response || result.message || '';
-
-    // 3. Stream text chunks progressively to emulate real-time generation
-    const chunkSize = 25;
-    for (let i = 0; i < fullText.length; i += chunkSize) {
-      const slice = fullText.slice(i, i + chunkSize);
-      res.write(`data: ${JSON.stringify({ type: 'chunk', delta: slice })}\n\n`);
-      // Brief micro-pause for smooth streaming illusion
-      await new Promise(resolve => setTimeout(resolve, 15));
+    if (typeof aiService.streamAIResponse === 'function') {
+      for await (const event of aiService.streamAIResponse({
+        message: message.trim(),
+        conversation: Array.isArray(conversation) ? conversation : [],
+        context: typeof context === 'object' && context !== null ? context : {},
+        attachments: Array.isArray(attachments) ? attachments : [],
+        actionType: actionType || 'general',
+        user: req.user || null,
+        workspaceId: workspaceId || null,
+        files: Array.isArray(files) ? files : null
+      })) {
+        if (!event) continue;
+        if (event.type === 'meta') {
+          meta = { ...meta, ...event };
+          if (event.provider || event.model) {
+            res.write(`data: ${JSON.stringify({ type: 'meta', provider: event.provider, model: event.model, references: event.references || [], workspaceContextSummary: event.workspaceContextSummary || null })}\n\n`);
+          }
+          continue;
+        }
+        if (event.type === 'delta' && typeof event.delta === 'string' && event.delta) {
+          fullText += event.delta;
+          res.write(`data: ${JSON.stringify({ type: 'chunk', delta: event.delta })}\n\n`);
+        }
+      }
+    } else {
+      const result = await aiService.generateAIResponse({
+        message: message.trim(),
+        conversation: Array.isArray(conversation) ? conversation : [],
+        context: typeof context === 'object' && context !== null ? context : {},
+        attachments: Array.isArray(attachments) ? attachments : [],
+        actionType: actionType || 'general',
+        user: req.user || null,
+        workspaceId: workspaceId || null,
+        files: Array.isArray(files) ? files : null
+      });
+      fullText = result.response || result.message || '';
+      meta = { ...meta, provider: result.provider, model: result.model, references: result.references || [], workspaceContextSummary: result.workspaceContextSummary || null };
+      const chunkSize = 25;
+      for (let i = 0; i < fullText.length; i += chunkSize) {
+        const slice = fullText.slice(i, i + chunkSize);
+        res.write(`data: ${JSON.stringify({ type: 'chunk', delta: slice })}\n\n`);
+      }
     }
 
-    // 4. Send completion marker
-    res.write(`data: ${JSON.stringify({ type: 'done', fullResponse: fullText })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done', fullResponse: fullText, references: meta.references || [], provider: meta.provider, model: meta.model, workspaceContextSummary: meta.workspaceContextSummary || null })}\n\n`);
     res.end();
   } catch (err) {
     console.error('[CodeTrail AI Streaming Error]:', err);
-    if (!res.headersSent) {
+    if (!streamStarted) {
       return res.status(500).json({ success: false, message: 'Streaming failed', error: err.message });
     }
-    res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
-    res.end();
+    try { res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`); } catch {}
+    try { res.end(); } catch {}
   }
 };
 
@@ -258,7 +283,119 @@ exports.generateDocs = async (req, res) => {
 };
 
 /**
- * 8. Status & Capability Query
+ * 8. Generate Code from Natural Language
+ */
+exports.generateCode = async (req, res) => {
+  try {
+    const { prompt, message, code, context, workspaceId, files } = req.body || {};
+    const promptMessage = message || prompt || 'Generate code based on the provided request and context.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'generate',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Generate code failed', error: err.message });
+  }
+};
+
+/**
+ * 9. Refactor / Improve Code
+ */
+exports.refactorCode = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Refactor and improve this code for readability, maintainability, performance, and correctness. Provide an improved version.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'refactor',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Refactor code failed', error: err.message });
+  }
+};
+
+/**
+ * 10. Algorithm Suggestions & Complexity Analysis
+ */
+exports.suggestAlgorithm = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Suggest a more efficient algorithm or approach for this code/problem and explain time/space complexity trade-offs.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'algorithm',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Algorithm suggestion failed', error: err.message });
+  }
+};
+
+/**
+ * 11. Function / Code Analysis
+ */
+exports.analyzeFunction = async (req, res) => {
+  try {
+    const { code, context, message, workspaceId, files } = req.body || {};
+    const promptMessage = message || 'Analyze this function/code: explain parameters, return values, dependencies, side effects, and execution flow.';
+
+    const mergedContext = {
+      ...(typeof context === 'object' && context !== null ? context : {}),
+      content: code || context?.content || ''
+    };
+
+    const result = await aiService.generateAIResponse({
+      message: promptMessage,
+      context: mergedContext,
+      actionType: 'analyze',
+      user: req.user || null,
+      workspaceId: workspaceId || null,
+      files: Array.isArray(files) ? files : null
+    });
+
+    return res.json(result);
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Function analysis failed', error: err.message });
+  }
+};
+
+/**
+ * 12. Status & Capability Query
  */
 exports.getStatus = (req, res) => {
   return res.json({

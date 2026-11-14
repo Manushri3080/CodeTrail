@@ -169,6 +169,12 @@ function App({ defaultTab }) {
             onJumpToWorkspace={handleJumpToWorkspace}
             onOpenProfile={() => setActiveTab('profile')}
             onNavigateToAllWorkspaces={() => setActiveTab('workspaces-directory')}
+            onAuthError={() => {
+              handleLogout();
+              setLogoutMessage('Session expired. Please sign in again.');
+              window.setTimeout(() => setLogoutMessage(''), 4000);
+              navigate('/login', { replace: true });
+            }}
           />
         )
       ) : (

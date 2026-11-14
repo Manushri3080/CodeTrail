@@ -262,11 +262,16 @@ export const WorkspacesPage = ({
 
       {/* DB Offline Error Alert Banner */}
       {dbError && (
-        <div className="p-4 mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-xs flex items-center gap-3 shadow-lg">
-          <AlertCircle size={20} className="shrink-0 text-rose-400" />
-          <div>
-            <p className="font-bold text-sm text-white">Database Offline / Connection Error</p>
-            <p className="text-xs text-rose-200/80 mt-0.5">{dbError}</p>
+        <div
+          className="mb-6 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-mono text-sm flex items-start gap-4 shadow-lg"
+          style={{ padding: "20px 24px" }}
+        >
+          <AlertCircle size={22} className="shrink-0 text-rose-400 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="font-bold text-base text-white leading-relaxed">Database Offline / Connection Error</p>
+            <p className="text-sm text-rose-200/90 mt-2 break-words whitespace-pre-line" style={{ lineHeight: "1.7" }}>
+              {dbError}
+            </p>
           </div>
         </div>
       )}

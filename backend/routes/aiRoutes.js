@@ -1,7 +1,7 @@
 /**
  * aiRoutes.js
  * CodeTrail AI Assistant API Routes
- * Lead: Manushri — AI Backend & Model Integration
+ * Lead: Manushri â€” AI Backend & Model Integration
  *
  * Routes:
  *   - POST /api/ai/chat        : Main chat interaction (supports context, history, attachments)
@@ -18,6 +18,7 @@ const express = require('express');
 const router = express.Router();
 const authMiddleware = require('../middleware/auth');
 const optionalAuth = authMiddleware.optionalAuth || ((req, res, next) => next());
+const { aiGeneralLimiter, aiStreamLimiter, aiStatusLimiter } = require('../middleware/rateLimiter');
 
 const {
   chat,
@@ -27,23 +28,32 @@ const {
   reviewCode,
   generateTests,
   generateDocs,
+  generateCode,
+  refactorCode,
+  suggestAlgorithm,
+  analyzeFunction,
   getStatus
 } = require('../controllers/aiController');
 
 // System status and health
-router.get('/status', optionalAuth, getStatus);
+router.get('/status', optionalAuth, aiStatusLimiter, getStatus);
 
 // Core Chat Endpoints
-router.post('/chat', optionalAuth, chat);
-router.post('/chat/stream', optionalAuth, chatStream);
-router.get('/chat/stream', optionalAuth, chatStream);
+router.post('/chat', optionalAuth, aiGeneralLimiter, chat);
+router.post('/chat/stream', optionalAuth, aiStreamLimiter, chatStream);
+router.get('/chat/stream', optionalAuth, aiStreamLimiter, chatStream);
 
 // Specialized AI Capability Endpoints
-router.post('/explain', optionalAuth, explainCode);
-router.post('/debug', optionalAuth, debugError);
-router.post('/review', optionalAuth, reviewCode);
-router.post('/tests', optionalAuth, generateTests);
-router.post('/docs', optionalAuth, generateDocs);
+router.post('/explain', optionalAuth, aiGeneralLimiter, explainCode);
+router.post('/debug', optionalAuth, aiGeneralLimiter, debugError);
+router.post('/review', optionalAuth, aiGeneralLimiter, reviewCode);
+router.post('/tests', optionalAuth, aiGeneralLimiter, generateTests);
+router.post('/docs', optionalAuth, aiGeneralLimiter, generateDocs);
+router.post('/generate', optionalAuth, aiGeneralLimiter, generateCode);
+router.post('/refactor', optionalAuth, aiGeneralLimiter, refactorCode);
+router.post('/algorithm', optionalAuth, aiGeneralLimiter, suggestAlgorithm);
+router.post('/analyze', optionalAuth, aiGeneralLimiter, analyzeFunction);
 
 module.exports = router;
+
 
