@@ -33,12 +33,34 @@ exports.chat = async (req, res) => {
       });
     }
 
+    // Intercept test generation with code — use specialized aiTestCaseService directly
+    const resolvedActionType = actionType || 'general';
+    const isTestRequest = resolvedActionType === 'tests' ||
+      /\b(test cases?|unit tests?|generate tests?|spec)\b/i.test(message);
+    const attachedCode = (context && context.content && context.content.trim())
+      || (Array.isArray(attachments) && attachments.length > 0 && attachments[0].content)
+      || '';
+
+    if (isTestRequest && attachedCode) {
+      try {
+        const testResult = await aiTestCaseService.generateTestCasesForFunction({
+          code: attachedCode,
+          language: (context && context.language) || '',
+          context: typeof context === 'object' && context !== null ? context : {},
+          user: req.user || null
+        });
+        return res.json({ ...testResult, references: [] });
+      } catch (tcErr) {
+        console.warn('[CodeTrail AI] aiTestCaseService error in chat, falling through:', tcErr.message);
+      }
+    }
+
     const aiResult = await aiService.generateAIResponse({
       message: message.trim(),
       conversation: Array.isArray(conversation) ? conversation : [],
       context: typeof context === 'object' && context !== null ? context : {},
       attachments: Array.isArray(attachments) ? attachments : [],
-      actionType: actionType || 'general',
+      actionType: resolvedActionType,
       user: req.user || null,
       workspaceId: workspaceId || null,
       files: Array.isArray(files) ? files : null
