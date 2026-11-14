@@ -300,38 +300,7 @@ Feel free to ask me to **refactor**, **debug an error**, **generate test cases**
 async function callGeminiApi({ prompt, conversation = [], apiKey }) {
   const model = DEFAULT_CONFIG.geminiModel;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  // Map conversation history to Gemini contents schema
-  const contents = [];
-
-  // Filter and map prior messages
-  if (Array.isArray(conversation) && conversation.length > 0) {
-    conversation.slice(-8).forEach(msg => {
-      if (!msg.content || msg.id === 'ai-assistant-welcome') return;
-      contents.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: String(msg.content) }]
-      });
-    });
-  }
-
-  // Append current prompt as the latest user turn
-  contents.push({
-    role: 'user',
-    parts: [{ text: prompt }]
-  });
-
-  const payload = {
-    contents,
-    systemInstruction: {
-      parts: [{ text: SYSTEM_INSTRUCTION }]
-    },
-    generationConfig: {
-      temperature: 0.3,
-      topP: 0.95,
-      maxOutputTokens: 2048
-    }
-  };
+  const payload = buildGeminiPayload({ prompt, conversation });
 
   const response = await axios.post(url, payload, {
     headers: { 'Content-Type': 'application/json' },
@@ -351,17 +320,27 @@ async function callGeminiApi({ prompt, conversation = [], apiKey }) {
   return textPart.trim();
 }
 
-/**
- * Call OpenAI / OpenAI-Compatible API
- */
-async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl }) {
-  const model = DEFAULT_CONFIG.openaiModel;
-  const endpoint = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
+function buildGeminiPayload({ prompt, conversation = [] }) {
+  const contents = [];
+  if (Array.isArray(conversation) && conversation.length > 0) {
+    conversation.slice(-8).forEach(msg => {
+      if (!msg.content || msg.id === 'ai-assistant-welcome') return;
+      contents.push({
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(msg.content) }]
+      });
+    });
+  }
+  contents.push({ role: 'user', parts: [{ text: prompt }] });
+  return {
+    contents,
+    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+    generationConfig: { temperature: 0.3, topP: 0.95, maxOutputTokens: 2048 }
+  };
+}
 
-  const messages = [
-    { role: 'system', content: SYSTEM_INSTRUCTION }
-  ];
-
+function buildOpenAiMessages({ prompt, conversation = [] }) {
+  const messages = [{ role: 'system', content: SYSTEM_INSTRUCTION }];
   if (Array.isArray(conversation) && conversation.length > 0) {
     conversation.slice(-8).forEach(msg => {
       if (!msg.content || msg.id === 'ai-assistant-welcome') return;
@@ -371,8 +350,167 @@ async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl }) {
       });
     });
   }
-
   messages.push({ role: 'user', content: prompt });
+  return messages;
+}
+
+async function* streamTextChunks(text, chunkSize = 28, delayMs = 0) {
+  const s = String(text || '');
+  for (let i = 0; i < s.length; i += chunkSize) {
+    yield s.slice(i, i + chunkSize);
+    if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
+  }
+}
+
+async function* parseSseDataStream(stream) {
+  let buffer = '';
+  for await (const chunk of stream) {
+    buffer += chunk.toString('utf8');
+    let idx;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      const rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      const dataLines = rawEvent
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart());
+      if (!dataLines.length) continue;
+      const data = dataLines.join('\n').trim();
+      if (!data) continue;
+      yield data;
+    }
+  }
+  if (buffer.trim()) {
+    const dataLines = buffer
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart());
+    if (dataLines.length) yield dataLines.join('\n').trim();
+  }
+}
+
+async function* callOpenAiApiStream({ prompt, conversation = [], apiKey, baseUrl }) {
+  const model = DEFAULT_CONFIG.openaiModel;
+  const endpoint = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
+  const messages = buildOpenAiMessages({ prompt, conversation });
+  const response = await axios.post(
+    endpoint,
+    { model, messages, temperature: 0.3, max_tokens: 2048, stream: true },
+    {
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      timeout: DEFAULT_CONFIG.requestTimeoutMs,
+      responseType: 'stream'
+    }
+  );
+  for await (const data of parseSseDataStream(response.data)) {
+    if (data === '[DONE]') break;
+    let json;
+    try { json = JSON.parse(data); } catch { continue; }
+    const delta = json?.choices?.[0]?.delta?.content;
+    if (typeof delta === 'string' && delta) yield delta;
+  }
+}
+
+async function* callGeminiApiStream({ prompt, conversation = [], apiKey }) {
+  const model = DEFAULT_CONFIG.geminiModel;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+  const payload = buildGeminiPayload({ prompt, conversation });
+  const response = await axios.post(url, payload, {
+    headers: { 'Content-Type': 'application/json' },
+    timeout: DEFAULT_CONFIG.requestTimeoutMs,
+    responseType: 'stream'
+  });
+  for await (const data of parseSseDataStream(response.data)) {
+    if (data === '[DONE]') break;
+    let json;
+    try { json = JSON.parse(data); } catch { continue; }
+    const parts = json?.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (typeof part?.text === 'string' && part.text) yield part.text;
+    }
+  }
+}
+
+async function resolveWorkspaceContextSafe({ message, context, files, user, workspaceId }) {
+  if (!(workspaceId || (Array.isArray(files) && files.length > 0))) return null;
+  try {
+    return await workspaceContextService.retrieveWorkspaceContext({
+      workspaceId,
+      query: message,
+      activeFileName: context?.fileName,
+      activeFileContent: context?.content,
+      files,
+      user
+    });
+  } catch (wsErr) {
+    console.warn('[CodeTrail AI] Workspace context retrieval warning:', wsErr.message);
+    return null;
+  }
+}
+
+exports.streamAIResponse = async function* ({
+  message,
+  conversation = [],
+  context = {},
+  attachments = [],
+  actionType = 'general',
+  user = null,
+  workspaceId = null,
+  files = null
+}) {
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+  const openAiKey = process.env.OPENAI_API_KEY;
+  const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL;
+  const workspaceContext = await resolveWorkspaceContextSafe({ message, context, files, user, workspaceId });
+  const fullPrompt = buildFullPrompt({ message, context, attachments, actionType, workspaceContext });
+  const baseMeta = {
+    references: workspaceContext?.references || [],
+    workspaceContextSummary: {
+      totalFiles: workspaceContext?.totalFiles || 0,
+      matchedChunksCount: workspaceContext?.matchedChunksCount || 0,
+      searchMode: workspaceContext?.searchMode || null,
+      embeddingModel: workspaceContext?.embeddingModel || null
+    }
+  };
+
+  if (geminiKey && geminiKey.trim()) {
+    try {
+      yield { type: 'meta', provider: PROVIDERS.GEMINI, model: DEFAULT_CONFIG.geminiModel, ...baseMeta };
+      for await (const delta of callGeminiApiStream({ prompt: fullPrompt, conversation, apiKey: geminiKey.trim() })) {
+        yield { type: 'delta', delta };
+      }
+      return;
+    } catch (err) {
+      console.warn(`[CodeTrail AI] Gemini stream failed (${err.message}). Checking fallbacks...`);
+    }
+  }
+
+  if (openAiKey && openAiKey.trim()) {
+    try {
+      yield { type: 'meta', provider: PROVIDERS.OPENAI, model: DEFAULT_CONFIG.openaiModel, ...baseMeta };
+      for await (const delta of callOpenAiApiStream({ prompt: fullPrompt, conversation, apiKey: openAiKey.trim(), baseUrl: customBaseUrl })) {
+        yield { type: 'delta', delta };
+      }
+      return;
+    } catch (err) {
+      console.warn(`[CodeTrail AI] OpenAI stream failed (${err.message}). Falling back to local engine...`);
+    }
+  }
+
+  const localResponse = generateLocalHeuristicResponse({ message, context, actionType, workspaceContext });
+  yield { type: 'meta', provider: PROVIDERS.FALLBACK, model: 'codetrail-heuristic-v1', ...baseMeta };
+  for await (const delta of streamTextChunks(localResponse, 28, 0)) {
+    yield { type: 'delta', delta };
+  }
+};
+
+/**
+ * Call OpenAI / OpenAI-Compatible API
+ */
+async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl }) {
+  const model = DEFAULT_CONFIG.openaiModel;
+  const endpoint = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
+  const messages = buildOpenAiMessages({ prompt, conversation });
 
   const response = await axios.post(
     endpoint,
@@ -416,22 +554,14 @@ exports.generateAIResponse = async ({
   const openAiKey = process.env.OPENAI_API_KEY;
   const customBaseUrl = process.env.AI_API_BASE_URL || process.env.OPENAI_BASE_URL;
 
-  let workspaceContext = null;
-  if (workspaceId || (files && files.length > 0)) {
-    try {
-      workspaceContext = await workspaceContextService.retrieveWorkspaceContext({
-        workspaceId,
-        query: message,
-        activeFileName: context?.fileName,
-        activeFileContent: context?.content,
-        files
-      });
-    } catch (wsErr) {
-      console.warn('[CodeTrail AI] Workspace context retrieval warning:', wsErr.message);
-    }
-  }
-
+  const workspaceContext = await resolveWorkspaceContextSafe({ message, context, files, user, workspaceId });
   const fullPrompt = buildFullPrompt({ message, context, attachments, actionType, workspaceContext });
+  const contextSummary = {
+    totalFiles: workspaceContext?.totalFiles || 0,
+    matchedChunksCount: workspaceContext?.matchedChunksCount || 0,
+    searchMode: workspaceContext?.searchMode || null,
+    embeddingModel: workspaceContext?.embeddingModel || null
+  };
 
   // 1. Attempt Google Gemini if API Key is available
   if (geminiKey && geminiKey.trim()) {
@@ -449,10 +579,7 @@ exports.generateAIResponse = async ({
         message: response,
         content: response,
         references: workspaceContext?.references || [],
-        workspaceContextSummary: {
-          totalFiles: workspaceContext?.totalFiles || 0,
-          matchedChunksCount: workspaceContext?.matchedChunksCount || 0
-        }
+        workspaceContextSummary: contextSummary
       };
     } catch (err) {
       console.warn(`[CodeTrail AI] Gemini API attempt failed (${err.message}). Checking fallbacks...`);
@@ -476,10 +603,7 @@ exports.generateAIResponse = async ({
         message: response,
         content: response,
         references: workspaceContext?.references || [],
-        workspaceContextSummary: {
-          totalFiles: workspaceContext?.totalFiles || 0,
-          matchedChunksCount: workspaceContext?.matchedChunksCount || 0
-        }
+        workspaceContextSummary: contextSummary
       };
     } catch (err) {
       console.warn(`[CodeTrail AI] OpenAI API attempt failed (${err.message}). Checking local engine fallback...`);
@@ -496,10 +620,7 @@ exports.generateAIResponse = async ({
     message: localResponse,
     content: localResponse,
     references: workspaceContext?.references || [],
-    workspaceContextSummary: {
-      totalFiles: workspaceContext?.totalFiles || 0,
-      matchedChunksCount: workspaceContext?.matchedChunksCount || 0
-    }
+    workspaceContextSummary: contextSummary
   };
 };
 
@@ -538,7 +659,8 @@ exports.getAIStatus = () => {
       'code_review',
       'test_case_generation',
       'documentation_generation',
-      'streaming'
+      'streaming',
+      'semantic_workspace_context'
     ]
   };
 };

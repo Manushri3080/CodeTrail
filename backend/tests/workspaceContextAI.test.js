@@ -158,10 +158,10 @@ async function runTests() {
 
   // Test 6: Cache Invalidation
   console.log('Test 6: Dynamic Cache Invalidation');
-  workspaceContextService.indexWorkspaceFiles('test_inval_ws', mockFiles);
+  await workspaceContextService.indexWorkspaceFiles('test_inval_ws', mockFiles);
   workspaceContextService.invalidateWorkspaceIndex('test_inval_ws');
   // Re-indexing works cleanly after invalidation
-  const reindexed = workspaceContextService.indexWorkspaceFiles('test_inval_ws', mockFiles);
+  const reindexed = await workspaceContextService.indexWorkspaceFiles('test_inval_ws', mockFiles);
   assert(reindexed.length > 0, 'Re-indexing after invalidation should produce valid chunks');
   console.log('  ✔ Index cache invalidation operates cleanly on file updates.\n');
 
