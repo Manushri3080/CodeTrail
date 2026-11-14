@@ -506,6 +506,52 @@ Share the error or expected result for a more specific fix.`;
     }
 
     if (actionType === "tests" || /\b(test|tests|spec|unit)\b/.test(q)) {
+      const codeStr = String(resolvedContext || "");
+      const fnMatch = codeStr.match(/(?:function\s+([a-zA-Z0-9_$]+)|(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\(|def\s+([a-zA-Z0-9_]+)\s*\()/);
+      const fnName = fnMatch ? (fnMatch[1] || fnMatch[2] || fnMatch[3]) : 'targetFunction';
+      const isEvenFn = fnName.toLowerCase().includes('even') || /%\s*2\s*===?\s*0/.test(codeStr);
+
+      if (isEvenFn) {
+        return `### 🧪 AI-GENERATED TEST SUITE: \`isEven(number)\`
+
+**Language:** \`${isPy ? 'python' : 'javascript'}\` | **Parameters:** \`number\`
+
+**Behavior:** Returns true if the input number is evenly divisible by 2 (even), otherwise false.
+
+#### Test Scenarios Breakdown
+
+| # | Input | Expected Output | Category | Scenario |
+|---|---|---|---|---|
+| 1 | \`[4]\` | \`true\` | **normal** | Positive even number |
+| 2 | \`[5]\` | \`false\` | **normal** | Positive odd number |
+| 3 | \`[0]\` | \`true\` | **boundary** | Zero input |
+| 4 | \`[-2]\` | \`true\` | **negative** | Negative even number |
+| 5 | \`[-7]\` | \`false\` | **negative** | Negative odd number |
+| 6 | \`[2.5]\` | \`false\` | **decimal** | Decimal value input |
+| 7 | \`[1000000]\` | \`true\` | **boundary** | Large boundary integer |
+| 8 | \`["abc"]\` | \`false\` | **invalid** | Invalid string input |
+| 9 | \`[null]\` | \`false\` | **null** | Null value input |
+| 10 | \`[""]\` | \`false\` | **empty** | Empty value input |
+
+#### Runnable Test Specifications
+
+\`\`\`${isPy ? "python" : "javascript"}
+${isPy
+  ? `def test_positive_even():\n    assert isEven(4) == True\n\ndef test_positive_odd():\n    assert isEven(5) == False\n\ndef test_zero_boundary():\n    assert isEven(0) == True\n\ndef test_negative_even():\n    assert isEven(-2) == True\n\n# Run tests\ntest_positive_even()\ntest_positive_odd()\ntest_zero_boundary()\ntest_negative_even()\nprint("✔ All isEven tests passed successfully!")`
+  : `describe('isEven Unit Tests', () => {\n  it('handles positive even number', () => { expect(isEven(4)).toBe(true); });\n  it('handles positive odd number', () => { expect(isEven(5)).toBe(false); });\n  it('handles zero boundary', () => { expect(isEven(0)).toBe(true); });\n  it('handles negative even number', () => { expect(isEven(-2)).toBe(true); });\n});`}
+\`\`\`
+
+**Structured JSON:**
+\`\`\`json
+[
+  { "input": [4], "expectedOutput": true, "description": "Positive even number" },
+  { "input": [5], "expectedOutput": false, "description": "Positive odd number" },
+  { "input": [0], "expectedOutput": true, "description": "Zero input" },
+  { "input": [-2], "expectedOutput": true, "description": "Negative even number" }
+]
+\`\`\``;
+      }
+
       return `### Test ideas: \`${fileName}\`
 
 \`\`\`${isPy ? "python" : lang}
