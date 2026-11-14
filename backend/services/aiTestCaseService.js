@@ -679,6 +679,14 @@ function formatTestCasesMarkdown(analysis, testCases) {
         md += `    try:\n        result = ${funcCall}\n        assert result is not None\n    except Exception as e:\n        pass\n\n`;
       }
     });
+
+    // Auto-run invocation for Python tests
+    md += `\n# Run all test cases\n`;
+    testCases.forEach((tc, idx) => {
+      const descClean = (tc.description || `Case ${idx + 1}`).replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase();
+      md += `test_${descClean}_${idx + 1}()\n`;
+    });
+    md += `print("✔ All ${analysis.name} test cases passed successfully!")\n`;
   } else {
     md += `describe('${analysis.name} Unit Tests', () => {\n`;
     testCases.forEach((tc) => {

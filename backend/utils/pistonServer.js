@@ -432,7 +432,45 @@ const server = http.createServer(async (req, res) => {
         } else {
           // JavaScript / Node.js
           const srcFile = path.join(workDir, 'main.js');
-          fs.writeFileSync(srcFile, fileContent, 'utf8');
+          let codeToRun = fileContent;
+          if (/\b(describe|it|test|expect)\s*\(/.test(fileContent)) {
+            const testPolyfill = `// CodeTrail Built-in Test Runner Polyfill
+if (typeof describe === 'undefined') {
+  global.describe = (name, fn) => {
+    console.log('\\n--- ' + name + ' ---');
+    try { fn(); } catch (err) { console.error('  ✘ Suite failed:', err.message); }
+  };
+}
+if (typeof it === 'undefined') {
+  global.it = (name, fn) => {
+    try {
+      fn();
+      console.log('  ✔ ' + name);
+    } catch (err) {
+      console.error('  ✘ ' + name + ' failed:', err.message);
+      process.exitCode = 1;
+    }
+  };
+  global.test = global.it;
+}
+if (typeof expect === 'undefined') {
+  const _assert = require('assert');
+  global.expect = (actual) => ({
+    toBe: (expected) => _assert.strictEqual(actual, expected),
+    toEqual: (expected) => _assert.deepStrictEqual(actual, expected),
+    not: {
+      toThrow: () => {
+        if (typeof actual === 'function') {
+          _assert.doesNotThrow(actual);
+        }
+      }
+    }
+  });
+}
+`;
+            codeToRun = testPolyfill + '\n' + fileContent;
+          }
+          fs.writeFileSync(srcFile, codeToRun, 'utf8');
 
           let child;
           let runStdout = '';
