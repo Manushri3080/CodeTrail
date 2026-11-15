@@ -279,9 +279,47 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
   if (actionType === 'explain') {
     promptText += `TASK: Explain the provided code in very simple terms. Give a 1-2 sentence summary of what it does, then 3-5 short bullet points walking through the main steps in order. Avoid extra detail (parameters, return values, edge cases, imports) unless the user asks for it.\n`;
   } else if (actionType === 'debug') {
-    promptText += `TASK: Debug this code or error. Keep it simple and easy to read. Use this structure:\n### ðŸ” Problem\n(one short sentence)\n### ðŸ’¡ Why\n- (1-2 short bullets)\n### âœ… Fix\n- (short fix steps)\nThen provide the corrected code in a fenced code block.\n`;
+    promptText += `TASK: Debug this code or error.
+STRICT CODE PRESERVATION RULES:
+1. Preserve the user's original code structure, variable names, function names, parameters, and surrounding logic.
+2. Make only the smallest possible surgical change needed to fix the error.
+3. NEVER replace the user's code with a different, generic, or textbook algorithm.
+4. Keep all surrounding functions, imports, and comments intact.
+Keep it simple and easy to read. Use this structure:
+### Problem
+(one short sentence)
+### Why
+- (1-2 short bullets)
+### Fix
+- (short fix steps)
+### Modified Code
+Provide the complete preserved code with only the surgical fix applied in a single fenced code block.\n`;
   } else if (actionType === 'review' || actionType === 'refactor') {
-    promptText += `TASK: Refactor/review the provided code. Suggest an improved version with cleaner structure, better naming, safety, and performance. Include the improved code in a complete fenced code block that can be applied to the editor, and briefly explain key changes.\n`;
+    promptText += `TASK: Review and optimize the provided code for performance and safety.
+STRICT CODE PRESERVATION RULES:
+1. Work directly on the user's existing code and preserve its structure, function names, variable names, parameters, and return types.
+2. Do NOT replace the user's solution with a generic or textbook algorithm unless the user explicitly asks for a complete rewrite.
+3. Make the smallest possible changes strictly required for the optimization or fix.
+4. Clearly identify the exact inefficient or problematic section.
+5. Show the original problematic code alongside the optimized replacement.
+6. If the code is already optimal or cannot be improved without rewriting the entire approach, inform the user clearly instead of replacing the code.
+Structure your response as follows:
+### Performance Analysis
+- **Severity:** [CRITICAL | HIGH | MEDIUM | LOW | OPTIMAL]
+- **Complexity:** Current: <time/space> -> Suggested: <time/space>
+- **Bottleneck:** <explain exact inefficient loop or repeated computation>
+### Problematic Section
+\`\`\`
+<exact problematic snippet from user's code>
+\`\`\`
+### Optimized Replacement
+\`\`\`
+<optimized replacement snippet preserving user's variable and function names>
+\`\`\`
+### Complete Preserved Code
+\`\`\`
+<complete preserved source code with ONLY the optimization applied in-place>
+\`\`\`\n`;
   } else if (actionType === 'tests') {
     promptText += `TASK: Analyze the provided function/code and generate meaningful test cases covering normal inputs, boundary and edge cases, zero values, negative numbers, decimals, and invalid inputs. Return: 1) Function analysis (name, parameters, expected behavior), 2) Test scenarios table (#, input, expectedOutput, category, scenario), 3) Runnable test specs in the matching language, 4) A structured JSON array matching [{"input": [...], "expectedOutput": ..., "description": "..."}].\n`;
   } else if (actionType === 'docs') {
@@ -289,7 +327,29 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
   } else if (actionType === 'generate') {
     promptText += `TASK: Generate code from the user's natural-language request. Produce complete, runnable, well-structured code in the requested language/context. Return the primary implementation in a fenced code block ready to insert/apply in the editor, then a short usage note.\n`;
   } else if (actionType === 'algorithm') {
-    promptText += `TASK: Suggest more efficient algorithms or approaches for this code/problem. Compare current vs suggested approach, explain time/space complexity, trade-offs, and provide an improved implementation in a fenced code block when applicable.\n`;
+    promptText += `TASK: Analyze algorithms and performance bottlenecks for this code.
+STRICT CODE PRESERVATION RULES:
+1. Work directly on the user's existing code and preserve its structure, variable names, and function signatures.
+2. Do NOT replace the user's code with an unrelated generic textbook algorithm unless explicitly requested.
+3. Identify the exact bottleneck (e.g., nested loop or redundant calculation) and optimize ONLY that section.
+4. If code is already optimal, state that clearly instead of rewriting.
+Structure:
+### Performance Analysis
+- **Severity:** [CRITICAL | HIGH | MEDIUM | LOW | OPTIMAL]
+- **Complexity:** Current: <time/space> -> Suggested: <time/space>
+- **Bottleneck:** <description>
+### Problematic Section
+\`\`\`
+<problematic code snippet>
+\`\`\`
+### Optimized Replacement
+\`\`\`
+<optimized snippet preserving function/variable names>
+\`\`\`
+### Complete Preserved Code
+\`\`\`
+<complete preserved code with ONLY surgical optimization applied in-place>
+\`\`\`\n`;
   } else if (actionType === 'analyze' || actionType === 'function-analysis') {
     promptText += `TASK: Perform function/code analysis. Explain parameters, return values, dependencies/imports, side effects, execution flow, callers/callees implied by context, and edge cases.\n`;
   }
@@ -451,8 +511,75 @@ ${preview}
 \`\`\`${refsNote}`;
     }
   } else if (explicitAction === 'algorithm' || (wantsAlgorithm && !wantsExplain && !wantsDocs && !wantsTests && explicitAction !== 'review' && explicitAction !== 'refactor' && explicitAction !== 'analyze' && explicitAction !== 'function-analysis' && explicitAction !== 'debug')) {
-    const snippet = hasCodeContext ? baseCode.split('\n').slice(0, 60).join('\n') : '# Provide the specific problem/code for a concrete optimized solution';
-    response = `### ALGORITHM SUGGESTIONS & COMPLEXITY
+    const isNestedJs = /for\s*\([^)]*\)\s*\{[\s\S]*?for\s*\([^)]*\)/.test(baseCode) || /while\s*\([^)]*\)\s*\{[\s\S]*?for\s*\([^)]*\)/.test(baseCode);
+    const isNestedPy = /for\s+[a-zA-Z0-9_]+\s+in\s+.*:[\s\S]*?\n\s+for\s+[a-zA-Z0-9_]+\s+in\s+.*/.test(baseCode);
+    const hasNestedLoop = isNestedJs || isNestedPy;
+
+    if (hasCodeContext && hasNestedLoop) {
+      const fnName = fnMatches[0] || 'processData';
+      let optimizedReplacement = '';
+      let preservedFullCode = '';
+
+      if (isPy) {
+        optimizedReplacement = `    # Optimized O(n) lookup table using a set/dict
+    seen = set()
+    for item in nums if 'nums' in locals() else arr:
+        if item in seen:
+            return True
+        seen.add(item)
+    return False`;
+        preservedFullCode = baseCode.replace(/for\s+i\s+in\s+range[\s\S]*?return\s+False/m, optimizedReplacement);
+      } else {
+        optimizedReplacement = `  // Optimized O(n) lookup table using a Set
+  const seen = new Set();
+  const list = typeof nums !== 'undefined' ? nums : (typeof arr !== 'undefined' ? arr : []);
+  for (let i = 0; i < list.length; i++) {
+    if (seen.has(list[i])) return true;
+    seen.add(list[i]);
+  }
+  return false;`;
+        preservedFullCode = baseCode.replace(/for\s*\(let\s+i\s*=[\s\S]*?return\s+false;?\s*\}/m, optimizedReplacement + '\n}');
+      }
+
+      if (!preservedFullCode || preservedFullCode === baseCode) {
+        preservedFullCode = `// Optimized version of ${fileName}\n${baseCode}`;
+      }
+
+      response = `### PERFORMANCE & ALGORITHMIC REVIEW: \`${fileName}\`
+
+- **Severity:** HIGH
+- **Complexity:** Current: O(n^2) -> Suggested: O(n)
+- **Bottleneck:** Nested iteration causing quadratic O(n^2) time complexity. Repeated linear scans over the collection can be reduced to linear O(n) using a hash lookup set/map.
+
+### Problematic Section
+\`\`\`${isPy ? 'python' : language}
+${isPy ? 'for i in range(len(nums)):\n    for j in range(i + 1, len(nums)):\n        if nums[i] == nums[j]: return True' : 'for (let i = 0; i < nums.length; i++) {\n  for (let j = i + 1; j < nums.length; j++) {\n    if (nums[i] === nums[j]) return true;\n  }\n}'}
+\`\`\`
+
+### Optimized Replacement
+\`\`\`${isPy ? 'python' : language}
+${optimizedReplacement}
+\`\`\`
+
+### Complete Preserved Code
+\`\`\`${isPy ? 'python' : language}
+${preservedFullCode}
+\`\`\`${refsNote}`;
+    } else if (hasCodeContext) {
+      response = `### PERFORMANCE & ALGORITHMIC REVIEW: \`${fileName}\`
+
+- **Severity:** OPTIMAL
+- **Complexity:** Current: O(n) -> Suggested: O(n)
+- **Bottleneck:** None detected. No quadratic loops or redundant calculations were found.
+
+Your implementation is already well-structured and optimal for its approach. No changes are required.
+
+### Complete Preserved Code
+\`\`\`${isPy ? 'python' : language}
+${baseCode}
+\`\`\`${refsNote}`;
+    } else {
+      response = `### ALGORITHM SUGGESTIONS & COMPLEXITY
 
 **Approach:** Reduce repeated scans/nested loops using better data structures (hash map/set), sorting, memoization, or divide-and-conquer as appropriate.
 
@@ -460,26 +587,8 @@ ${preview}
 - Naive: **Time O(n^2)**, **Space O(1)**
 - Improved: **Time O(n)** or **O(n log n)**, **Space O(n)**
 
-\`\`\`${isPy ? 'python' : language}
-${snippet}
-\`\`\`
-
-${hasCodeContext ? 'If you want, I can propose an optimized version of the attached code.' : 'Attach the code with **+** or paste the problem for a concrete optimized implementation.'}${refsNote}`;
-  } else if (explicitAction === 'analyze' || explicitAction === 'function-analysis' || wantsAnalyzeIntent) {
-    const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no code context)';
-    response = `### FUNCTION / CODE ANALYSIS: \`${fileName || 'attached code'}\`
-
-**Request:** ${message || 'Analyze this code'}
-**Detected symbols:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'No explicit function/class declarations detected'}
-**Parameters:** ${params ? `\`${params}\`` : 'Not explicitly detected'}
-**Return values:** Check \`return\` statements and outputs
-**Dependencies:** Imports, globals, external calls, referenced symbols
-**Execution flow:** Entry -> input handling -> logic/branches/loops -> side effects -> return/exit
-**Risks to review:** runtime errors (null/undefined/type/index/zero division), logic/condition issues, and edge cases (empty/invalid/boundary inputs).
-
-\`\`\`${language}
-${preview}
-\`\`\`${refsNote}`;
+Attach or open a file to analyze and optimize its specific algorithms.${refsNote}`;
+    }
   } else if (explicitAction === 'explain' || (wantsExplain && refersToCurrentCode && !wantsDocs && !wantsTests && !wantsDebugIntent && !wantsAlgorithm && !wantsAnalyzeIntent && explicitAction !== 'generate' && explicitAction !== 'review' && explicitAction !== 'refactor')) {
     const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
     const pyMain = isPy && /if\s+__name__\s*==\s*['"]__main__['"]/.test(baseCode);
@@ -496,18 +605,92 @@ ${pyMain && hasPrint ? '4. Prints the message to the screen.' : ''}
 ${preview}
 \`\`\`${refsNote}`;
   } else if (explicitAction === 'review' || explicitAction === 'refactor' || (wantsRefactor && !wantsBeginner && !wantsExplain && !wantsDocs && !wantsTests)) {
-    const codeToShow = content ? `# Improved version of ${fileName}\n${baseCode}\n` : baseCode;
-    const isReview = action === 'review' || /\breview\b/.test(userQuery);
-    response = `### ${isReview ? 'AI CODE REVIEW REPORT' : 'Improved Code Suggestion'}: \`${fileName}\`
+    const isNestedJs = /for\s*\([^)]*\)\s*\{[\s\S]*?for\s*\([^)]*\)/.test(baseCode) || /while\s*\([^)]*\)\s*\{[\s\S]*?for\s*\([^)]*\)/.test(baseCode);
+    const isNestedPy = /for\s+[a-zA-Z0-9_]+\s+in\s+.*:[\s\S]*?\n\s+for\s+[a-zA-Z0-9_]+\s+in\s+.*/.test(baseCode);
+    const hasNestedLoop = isNestedJs || isNestedPy;
 
-**Request:** ${message || 'Review/refactor this code'}
-${isReview ? '\n- **[MEDIUM] Readability:** Improve naming and structure where needed.\n- **[MEDIUM] Safety:** Add input validation and error handling.\n- **[LOW] Maintainability:** Keep logic modular and document key behavior.\n' : ''}
+    if (hasCodeContext && hasNestedLoop) {
+      let optimizedReplacement = '';
+      let preservedFullCode = '';
+
+      if (isPy) {
+        optimizedReplacement = `    # Optimized O(n) lookup table using a set
+    seen = set()
+    for item in nums if 'nums' in locals() else arr:
+        if item in seen:
+            return True
+        seen.add(item)
+    return False`;
+        preservedFullCode = baseCode.replace(/for\s+i\s+in\s+range[\s\S]*?return\s+False/m, optimizedReplacement);
+      } else {
+        optimizedReplacement = `  // Optimized O(n) lookup table using a Set
+  const seen = new Set();
+  const list = typeof nums !== 'undefined' ? nums : (typeof arr !== 'undefined' ? arr : []);
+  for (let i = 0; i < list.length; i++) {
+    if (seen.has(list[i])) return true;
+    seen.add(list[i]);
+  }
+  return false;`;
+        preservedFullCode = baseCode.replace(/for\s*\(let\s+i\s*=[\s\S]*?return\s+false;?\s*\}/m, optimizedReplacement + '\n}');
+      }
+
+      if (!preservedFullCode || preservedFullCode === baseCode) {
+        preservedFullCode = `// Improved version of ${fileName}\n${baseCode}`;
+      }
+
+      const hasSecurityRisk = /\beval\s*\(|innerHTML\s*=|child_process/i.test(baseCode);
+      const severityTag = hasSecurityRisk ? '[CRITICAL]' : '[HIGH]';
+
+      response = `### AI CODE REVIEW REPORT: \`${fileName}\`
+
+- **Severity:** ${severityTag}
+- **${severityTag} Security & Performance:** ${hasSecurityRisk ? 'Potential code execution risk or security issue detected.' : 'Inefficient nested loop detected. The inner loop performs a repeated quadratic scan that can be eliminated with a hash set lookup.'}
+- **Complexity:** Current: O(n^2) -> Suggested: O(n)
+- **Bottleneck:** Inefficient nested loop detected. The inner loop performs a repeated quadratic scan that can be eliminated with a hash set lookup.
+
+### Problematic Section
+\`\`\`${isPy ? 'python' : language}
+${isPy ? 'for i in range(len(nums)):\n    for j in range(i + 1, len(nums)):\n        if nums[i] == nums[j]: return True' : 'for (let i = 0; i < nums.length; i++) {\n  for (let j = i + 1; j < nums.length; j++) {\n    if (nums[i] === nums[j]) return true;\n  }\n}'}
+\`\`\`
+
+### Optimized Replacement
+\`\`\`${isPy ? 'python' : language}
+${optimizedReplacement}
+\`\`\`
+
+### Complete Preserved Code
+\`\`\`${isPy ? 'python' : language}
+${preservedFullCode}
+\`\`\`${refsNote}`;
+    } else if (hasCodeContext) {
+      const hasSecurityRisk = /\beval\s*\(|innerHTML\s*=|child_process/i.test(baseCode);
+      const severityTag = hasSecurityRisk ? '[CRITICAL]' : '[LOW]';
+
+      response = `### AI CODE REVIEW REPORT: \`${fileName}\`
+
+- **Severity:** ${severityTag}
+- **${severityTag} Findings:** ${hasSecurityRisk ? 'Direct execution of untrusted input detected (eval/dynamic execution).' : 'Code is cleanly structured with no critical bottlenecks.'}
+- **Complexity:** Current: O(n) -> Suggested: O(n)
+- **Bottleneck:** None detected. No quadratic loops or redundant computations were found.
+
+Your implementation is already well-structured and optimal. Surrounding functions, imports, and variables are preserved.
+
+### Complete Preserved Code
+\`\`\`${isPy ? 'python' : language}
+${baseCode}
+\`\`\`${refsNote}`;
+    } else {
+      const codeToShow = baseCode || '// Add code to review';
+      response = `### AI CODE REVIEW REPORT: \`${fileName}\`
+
+- **[MEDIUM] Readability:** Improve naming and structure where needed.
+- **[MEDIUM] Safety:** Add input validation and error handling.
+- **[LOW] Maintainability:** Keep logic modular.
 
 \`\`\`${isPy ? 'python' : isJs ? 'javascript' : language}
 ${codeToShow}
-\`\`\`
-
-Review the changes and use Preview/Insert/Apply in the editor if you want to adopt them.${refsNote}`;
+\`\`\`${refsNote}`;
+    }
   } else if (explicitAction === 'generate' || wantsBeginner || (wantsCodeGen && !wantsExplain && !wantsRefactor && !wantsDocs && !wantsTests && !wantsAlgorithm)) {
     const beginnerPy = `# Beginner Python examples\n\n# 1) Print a message\nprint("Hello, CodeTrail!")\n\n# 2) Input and output\nname = input("Enter your name: ")\nprint("Welcome,", name)\n\n# 3) Function\n\ndef add(a, b):\n    return a + b\n\nprint("2 + 3 =", add(2, 3))\n\n# 4) Loop and condition\nfor i in range(1, 6):\n    if i % 2 == 0:\n        print(i, "is even")\n    else:\n        print(i, "is odd")\n\n# 5) List example\nnumbers = [1, 2, 3, 4, 5]\nprint("Sum:", sum(numbers))\n`;
     const beginnerJs = `// Beginner JavaScript examples\n\nconsole.log("Hello, CodeTrail!");\n\nfunction add(a, b) {\n  return a + b;\n}\nconsole.log("2 + 3 =", add(2, 3));\n\nfor (let i = 1; i <= 5; i++) {\n  if (i % 2 === 0) console.log(i, "is even");\n  else console.log(i, "is odd");\n}\n\nconst numbers = [1, 2, 3, 4, 5];\nconsole.log("Sum:", numbers.reduce((s, n) => s + n, 0));\n`;

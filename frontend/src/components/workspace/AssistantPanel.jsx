@@ -23,28 +23,28 @@ import { API_BASE } from "../../config/api";
 const QUICK_ACTIONS = [
   {
     id: "explain",
-    icon: <Sparkles size={12} className="text-amber-400" />,
+    icon: <Sparkles size={16} className="text-amber-400 shrink-0" />,
     label: "Explain Code",
     prompt: "Explain this code and walk me through its logic step-by-step.",
     actionType: "explain",
   },
   {
     id: "suggest",
-    icon: <Code2 size={12} className="text-cyan-400" />,
+    icon: <Code2 size={16} className="text-cyan-400 shrink-0" />,
     label: "Suggest Improvements",
     prompt: "Review this code and suggest performance, quality, and structural improvements with code examples.",
     actionType: "review",
   },
   {
     id: "debug",
-    icon: <Bot size={12} className="text-red-400" />,
+    icon: <Bot size={16} className="text-rose-400 shrink-0" />,
     label: "Find & Fix Bugs",
     prompt: "Analyze this code for potential runtime bugs, logical errors, or edge-case failures, and suggest fixes.",
     actionType: "debug",
   },
   {
     id: "tests",
-    icon: <Check size={12} className="text-emerald-400" />,
+    icon: <Check size={16} className="text-emerald-400 shrink-0 stroke-[2.5]" />,
     label: "Generate Tests",
     prompt: "Generate comprehensive unit tests covering standard cases and edge cases for this code.",
     actionType: "tests",
@@ -1041,23 +1041,22 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
           </div>
         ))}
         {messages.length === 1 && (
-          <div className="ai-assistant-quick-actions-card" style={{ padding: "16px 18px", margin: "8px 0 12px" }}>
-            <div className="text-xs font-semibold text-gray-200 mb-7 flex items-center gap-2" style={{ marginBottom: "20px" }}>
-              <Sparkles size={14} className="text-fuchsia-400 shrink-0" />
+          <div className="rounded-2xl border border-[#262C42] bg-[#0E101D] p-4 sm:p-5 space-y-3.5 shadow-lg my-3">
+            <div className="flex items-center gap-2 text-[13.5px] font-semibold text-white">
+              <Sparkles size={16} className="text-fuchsia-400 shrink-0" />
               <span className="leading-relaxed break-words">Quick AI Actions for {activeFile || "Editor"}:</span>
             </div>
-            <div className="flex flex-col gap-2.5">
+            <div className="space-y-2.5">
               {QUICK_ACTIONS.map((action) => (
                 <button
                   key={action.id}
                   type="button"
                   onClick={() => sendMessage(null, action.prompt, action.actionType)}
                   disabled={isLoading}
-                  className="flex items-center gap-3 w-full bg-[#252833] hover:bg-[#2d313e] border border-[#3b4050] hover:border-fuchsia-400/50 rounded-lg text-[13px] text-gray-200 hover:text-white transition-all cursor-pointer text-left"
-                  style={{ padding: "12px 14px", minHeight: "44px", lineHeight: "1.4" }}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl bg-[#1D2235] hover:bg-[#252C45] border border-[#2B324D] hover:border-purple-500/50 text-white text-[13.5px] font-semibold text-left transition-all cursor-pointer shadow-sm group"
                 >
-                  <span className="shrink-0 flex items-center justify-center">{action.icon}</span>
-                  <span className="font-medium whitespace-normal break-words">{action.label}</span>
+                  <span className="shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform">{action.icon}</span>
+                  <span className="font-semibold whitespace-normal break-words">{action.label}</span>
                 </button>
               ))}
             </div>

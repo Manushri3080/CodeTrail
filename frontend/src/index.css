@@ -9667,3 +9667,18 @@ input:-webkit-autofill:active {
 .ai-preview-btn.primary { background: rgba(168,85,247,.22); border-color: rgba(168,85,247,.45); color: #f3e8ff; }
 .ai-preview-btn.primary:hover:not(:disabled) { background: rgba(168,85,247,.32); }
 .ai-preview-btn.secondary { background: transparent; }
+
+/* AI Debugger Error Line Highlighting & Gutter Marker (Rishika - Frontend / Integration Lead) */
+.ct-debug-error-line {
+  background-color: rgba(239, 68, 68, 0.22) !important;
+  border-left: 3px solid #ef4444 !important;
+}
+.ct-debug-glyph-marker {
+  background: #ef4444 !important;
+  border-radius: 50% !important;
+  margin-left: 4px !important;
+  width: 8px !important;
+  height: 8px !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.9) !important;
+}
+

@@ -50,6 +50,9 @@ require('./workspaceRegression.test');
   // Execution Error Analysis & AI Debugging Integration Tests (Anistina Dsouza)
   await require('./aiErrorAnalysis.test');
 
+  // AI Debugging Interface & Advanced Analysis Tests (Rishika Shah)
+  await require('./aiDebuggingInterfaceIntegration.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);

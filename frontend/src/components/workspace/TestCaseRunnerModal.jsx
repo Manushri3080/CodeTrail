@@ -138,7 +138,8 @@ export const TestCaseRunnerModal = ({
   selectedCode = '',
   fullFileContent = '',
   workspaceId = null,
-  authToken = null
+  authToken = null,
+  onDebugFailure = null
 }) => {
   // Target Function Resolution State
   const [resolvedState, setResolvedState] = useState(null);
@@ -913,6 +914,29 @@ export const TestCaseRunnerModal = ({
                           {tc.errorDetails && (
                             <div className="p-2.5 bg-black/40 border border-amber-500/20 rounded-lg text-xs font-mono text-amber-300 whitespace-pre-wrap">
                               {tc.errorDetails}
+                            </div>
+                          )}
+
+                          {/* Explain Failure with AI Button (Rishika) */}
+                          {(tc.status === 'FAILED' || tc.status === 'ERROR') && onDebugFailure && (
+                            <div className="flex justify-end pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onDebugFailure({
+                                    testCase: tc,
+                                    targetFunction,
+                                    code: fullFileContent,
+                                    language: activeLanguage,
+                                    filename: activeFile
+                                  });
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 border border-rose-500/40 transition-colors cursor-pointer"
+                                title="Diagnose this failure and suggest a fix with AI Debugger"
+                              >
+                                <Sparkles size={12} className="text-rose-400" />
+                                <span>Explain Failure with AI</span>
+                              </button>
                             </div>
                           )}
 

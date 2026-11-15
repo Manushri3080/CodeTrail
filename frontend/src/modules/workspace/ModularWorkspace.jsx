@@ -48,6 +48,7 @@ import {
   Radio,
   Bell,
   Sparkles,
+  Bug,
   GripVertical,
   GripHorizontal,
 } from "lucide-react";
@@ -57,6 +58,7 @@ import WorkspaceSettingsModal from "../../components/workspace/WorkspaceSettings
 import TestCaseRunnerModal from "../../components/workspace/TestCaseRunnerModal";
 import NotificationCenter from "../../components/workspace/NotificationCenter";
 import AssistantPanel from "../../components/workspace/AssistantPanel";
+import AIDebuggingPanel from "../../components/workspace/AIDebuggingPanel";
 import { exportAuditJson, exportAuditMarkdown } from "../../utils/auditExport";
 import {
   createTelemetryEnvelope,
@@ -441,6 +443,21 @@ export const ModularWorkspace = ({
   const handleOpenTestCases = useCallback(() => {
     setIsTestCaseModalOpen(true);
   }, []);
+  // AI Debugger Interface State (Rishika - Frontend / Integration Lead)
+  const [isAIDebuggerOpen, setIsAIDebuggerOpen] = useState(false);
+  const [aiDebuggerInitialData, setAiDebuggerInitialData] = useState(null);
+  const debugDecorationIdsRef = useRef([]);
+
+  // Ribbon More Dropdown Menu State
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const moreMenuRef = useRef(null);
+
+  const closeMoreMenu = useCallback(() => {
+    setIsMoreMenuOpen(false);
+    if (moreMenuRef.current) {
+      moreMenuRef.current.removeAttribute("open");
+    }
+  }, []);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [aiAssistantTrigger, setAiAssistantTrigger] = useState(null);
   const [isExplorerOpen, setIsExplorerOpen] = useState(() => {
@@ -485,11 +502,38 @@ export const ModularWorkspace = ({
       if ((e.ctrlKey || e.metaKey) && (e.altKey || e.shiftKey) && (e.key === 'a' || e.key === 'A')) {
         e.preventDefault();
         setIsAIAssistantOpen((prev) => !prev);
+      } else if ((e.ctrlKey || e.metaKey) && (e.altKey || e.shiftKey) && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setIsAIDebuggerOpen((prev) => !prev);
       }
     };
     window.addEventListener("keydown", handleGlobalAIAssistantKey);
     return () => window.removeEventListener("keydown", handleGlobalAIAssistantKey);
   }, []);
+
+  // Close Ribbon More dropdown on click outside or Escape key
+  useEffect(() => {
+    if (!isMoreMenuOpen) return;
+
+    const handleClickOutside = (event) => {
+      if (moreMenuRef.current && !moreMenuRef.current.contains(event.target)) {
+        closeMoreMenu();
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeMoreMenu();
+      }
+    };
+
+    document.addEventListener("pointerdown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMoreMenuOpen, closeMoreMenu]);
   const [settingsModalInitialTab, setSettingsModalInitialTab] =
     useState("general");
   const [notifications, setNotifications] = useState([]);
@@ -943,6 +987,14 @@ export const ModularWorkspace = ({
 
   useEffect(() => {
     activeFileRef.current = activeFile;
+    if (editorRef.current && debugDecorationIdsRef.current?.length > 0) {
+      try {
+        debugDecorationIdsRef.current = editorRef.current.deltaDecorations(
+          debugDecorationIdsRef.current,
+          [],
+        );
+      } catch {}
+    }
   }, [activeFile]);
 
   // Update Monaco decorations for multiplayer peer cursors & selections (CT-86)
@@ -4230,6 +4282,76 @@ export const ModularWorkspace = ({
     }
   };
 
+  // AI Debugger Line Highlighting & Interface Actions (Rishika - Frontend / Integration Lead)
+  const handleHighlightErrorLine = useCallback((lineNumber, message = "") => {
+    if (!editorRef.current || !monacoRef.current) return;
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const num = Number(lineNumber);
+    if (!num || isNaN(num) || num < 1 || num > model.getLineCount()) {
+      console.warn("[AI Debugger] Line number out of range:", lineNumber);
+      return;
+    }
+
+    try {
+      const range = new monaco.Range(num, 1, num, 1);
+      const decorations = [
+        {
+          range,
+          options: {
+            isWholeLine: true,
+            className: "ct-debug-error-line",
+            glyphMarginClassName: "ct-debug-glyph-marker",
+            hoverMessage: {
+              value: `### ⚠️ CodeTrail AI Debugger: Error on Line ${num}\n${message || "Problematic code line detected."}`,
+            },
+          },
+        },
+      ];
+      debugDecorationIdsRef.current = editor.deltaDecorations(
+        debugDecorationIdsRef.current || [],
+        decorations,
+      );
+      editor.revealLineInCenter(num);
+    } catch (err) {
+      console.warn("[AI Debugger] Failed to apply line decoration:", err);
+    }
+  }, []);
+
+  const handleClearErrorHighlight = useCallback(() => {
+    if (!editorRef.current) return;
+    try {
+      debugDecorationIdsRef.current = editorRef.current.deltaDecorations(
+        debugDecorationIdsRef.current || [],
+        [],
+      );
+    } catch (err) {
+      console.warn("[AI Debugger] Failed to clear error decorations:", err);
+    }
+  }, []);
+
+  const handleOpenAIDebugger = useCallback((customData = null) => {
+    if (customData) {
+      setAiDebuggerInitialData(customData);
+    } else {
+      setAiDebuggerInitialData({
+        stderr: executionResult?.stderr || "",
+        compileOutput: executionResult?.compileOutput || "",
+        output: executionResult?.stdout || "",
+        exitCode: executionResult?.exitCode ?? null,
+        isTimeout: executionResult?.isTimeout || false,
+        language: getMonacoLanguage(activeFile),
+        filename: activeFile,
+        code: filesContentRef.current?.[activeFile] ?? filesContent[activeFile] ?? "",
+        initialTab: (executionResult?.stderr || executionResult?.compileOutput) ? "explain" : "assistant",
+      });
+    }
+    setIsAIDebuggerOpen(true);
+  }, [executionResult, activeFile, filesContent]);
+
   const wsTitle =
     currentWorkspace?.title || currentWorkspace?.name || "Project Workspace";
   const wsFiles =
@@ -4460,8 +4582,19 @@ export const ModularWorkspace = ({
             <span>Ask AI</span>
           </button>
 
-          <details className="ct-workspace-ribbon-dropdown">
-            <summary className="ct-workspace-ribbon-dropdown-trigger ct-workspace-ribbon-tools-trigger">
+          <details
+            ref={moreMenuRef}
+            open={isMoreMenuOpen}
+            onToggle={(e) => setIsMoreMenuOpen(e.currentTarget.open)}
+            className="ct-workspace-ribbon-dropdown"
+          >
+            <summary
+              className="ct-workspace-ribbon-dropdown-trigger ct-workspace-ribbon-tools-trigger"
+              onClick={(e) => {
+                e.preventDefault();
+                setIsMoreMenuOpen((prev) => !prev);
+              }}
+            >
               <Settings size={14} className="text-purple-400" />
               <span>More</span>
               <ChevronDown size={13} />
@@ -4469,7 +4602,10 @@ export const ModularWorkspace = ({
             <div className="ct-workspace-ribbon-dropdown-menu ct-workspace-ribbon-tools-menu">
               <button
                 type="button"
-                onClick={handleResetSession}
+                onClick={() => {
+                  closeMoreMenu();
+                  handleResetSession();
+                }}
                 className="ct-workspace-ribbon-menu-item"
                 title="Reset the session timer without changing workspace files"
               >
@@ -4479,7 +4615,10 @@ export const ModularWorkspace = ({
 
               <button
                 type="button"
-                onClick={() => setIsScaffoldModalOpen(true)}
+                onClick={() => {
+                  closeMoreMenu();
+                  setIsScaffoldModalOpen(true);
+                }}
                 className="ct-workspace-ribbon-menu-item ct-workspace-ribbon-menu-item-cyan"
                 title="Scaffold React, FastAPI, Django, or Express Project Framework"
               >
@@ -4489,7 +4628,10 @@ export const ModularWorkspace = ({
 
               <button
                 type="button"
-                onClick={() => setIsAIAssistantOpen(true)}
+                onClick={() => {
+                  closeMoreMenu();
+                  setIsAIAssistantOpen(true);
+                }}
                 className="ct-workspace-ribbon-menu-item text-fuchsia-300 hover:text-fuchsia-200"
                 title="Open CodeTrail AI Assistant (Ctrl+Alt+A)"
               >
@@ -4500,6 +4642,20 @@ export const ModularWorkspace = ({
               <button
                 type="button"
                 onClick={() => {
+                  closeMoreMenu();
+                  handleOpenAIDebugger();
+                }}
+                className="ct-workspace-ribbon-menu-item text-purple-300 hover:text-purple-200"
+                title="Open CodeTrail AI Debugger (Ctrl+Alt+D)"
+              >
+                <Bug size={14} className="text-purple-400" />
+                <span>AI Debugger & Fix</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  closeMoreMenu();
                   setSettingsModalInitialTab("general");
                   setIsSettingsModalOpen(true);
                 }}
@@ -5876,6 +6032,19 @@ export const ModularWorkspace = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleOpenAIDebugger()}
+                  className={`ct-editor-action-btn flex items-center gap-1.5 ${
+                    executionResult?.stderr || executionResult?.compileOutput
+                      ? "text-rose-300 hover:text-rose-100 border-rose-500/40 hover:border-rose-400 hover:bg-rose-500/10"
+                      : "text-purple-300 hover:text-purple-100 border-purple-500/30 hover:border-purple-400 hover:bg-purple-500/10"
+                  }`}
+                  title="Open CodeTrail AI Debugging & Analysis Interface (Ctrl+Alt+D)"
+                >
+                  <Bug size={13} className={executionResult?.stderr || executionResult?.compileOutput ? "text-rose-400 animate-pulse" : "text-purple-400"} />
+                  <span>AI Debugger</span>
+                </button>
+                <button
+                  type="button"
                   onClick={handleFormatDocument}
                   disabled={isViewer}
                   className="ct-editor-action-btn"
@@ -6027,8 +6196,32 @@ export const ModularWorkspace = ({
                       setIsTestCaseModalOpen(true);
                     },
                   });
+
+                  // Context menu action: Debug & Fix with AI (Rishika)
+                  editor.addAction({
+                    id: "codetrail-ai-debug-action",
+                    label: "✨ CodeTrail AI: Debug & Fix Error",
+                    keybindings: [
+                      monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyD,
+                    ],
+                    contextMenuGroupId: "1_modification",
+                    contextMenuOrder: 1.25,
+                    run: (ed) => {
+                      handleOpenAIDebugger({
+                        code: ed.getValue(),
+                        language: getMonacoLanguage(activeFile),
+                        filename: activeFile,
+                        stderr: executionResult?.stderr || "",
+                        compileOutput: executionResult?.compileOutput || "",
+                        output: executionResult?.stdout || "",
+                        exitCode: executionResult?.exitCode ?? null,
+                        initialTab: "explain",
+                      });
+                    },
+                  });
                 }}
                 options={{
+                  glyphMargin: true,
                   fontSize: 14,
                   fontFamily:
                     "'Fira Code', 'Cascadia Code', Consolas, monospace",
@@ -6382,9 +6575,29 @@ export const ModularWorkspace = ({
                               {/* Compiler Diagnostic Output */}
                               {executionResult.compileOutput && (
                                 <div className="p-6 md:p-7 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
-                                  <div className="font-bold text-amber-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
-                                    <AlertTriangle size={16} />
-                                    <span>Compiler Error:</span>
+                                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                                    <div className="font-bold text-amber-200 flex items-center gap-2 text-xs sm:text-sm">
+                                      <AlertTriangle size={16} />
+                                      <span>Compiler Error:</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAIDebugger({
+                                        compileOutput: executionResult.compileOutput,
+                                        stderr: executionResult.stderr,
+                                        output: executionResult.stdout,
+                                        exitCode: executionResult.exitCode,
+                                        isTimeout: executionResult.isTimeout,
+                                        language,
+                                        filename: activeFile,
+                                        code: getActiveFileContent(),
+                                        initialTab: "explain"
+                                      })}
+                                      className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/25 hover:bg-amber-500/40 border border-amber-500/50 text-amber-100 hover:text-white font-mono text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                    >
+                                      <Bug size={13} className="text-amber-300" />
+                                      <span>Debug Error with AI</span>
+                                    </button>
                                   </div>
                                   {executionResult.compileOutput}
                                 </div>
@@ -6403,9 +6616,29 @@ export const ModularWorkspace = ({
                               {/* Standard Error (stderr) */}
                               {executionResult.stderr && (
                                 <div className="p-6 md:p-7 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-300 whitespace-pre-wrap font-mono leading-[2.2] my-4">
-                                  <div className="font-bold text-red-200 mb-3 flex items-center gap-2 text-xs sm:text-sm">
-                                    <AlertTriangle size={16} />
-                                    <span>Runtime Error / Stderr:</span>
+                                  <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                                    <div className="font-bold text-red-200 flex items-center gap-2 text-xs sm:text-sm">
+                                      <AlertTriangle size={16} />
+                                      <span>Runtime Error / Stderr:</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAIDebugger({
+                                        stderr: executionResult.stderr,
+                                        compileOutput: executionResult.compileOutput,
+                                        output: executionResult.stdout,
+                                        exitCode: executionResult.exitCode,
+                                        isTimeout: executionResult.isTimeout,
+                                        language,
+                                        filename: activeFile,
+                                        code: getActiveFileContent(),
+                                        initialTab: "explain"
+                                      })}
+                                      className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-red-500/25 hover:bg-red-500/40 border border-red-500/50 text-red-100 hover:text-white font-mono text-xs font-bold transition-all shadow-sm cursor-pointer"
+                                    >
+                                      <Bug size={13} className="text-red-300" />
+                                      <span>Debug Error with AI</span>
+                                    </button>
                                   </div>
                                   {executionResult.stderr}
                                 </div>
@@ -6459,6 +6692,18 @@ export const ModularWorkspace = ({
                                     </span>
                                   )}
                                 </div>
+
+                                {executionResult.exitCode !== 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenAIDebugger()}
+                                    className="flex items-center rounded-full bg-purple-500/20 hover:bg-purple-500/35 border border-purple-500/50 text-purple-200 hover:text-white text-xs font-mono font-bold transition-all cursor-pointer"
+                                    style={{ padding: "8px 20px", gap: "8px" }}
+                                  >
+                                    <Bug size={14} className="text-purple-300" />
+                                    <span>Debug with AI</span>
+                                  </button>
+                                )}
 
                                 <button
                                   type="button"
@@ -7910,6 +8155,31 @@ export const ModularWorkspace = ({
         fullFileContent={getActiveFileContent()}
         workspaceId={wsId !== "demo-workspace" ? wsId : null}
         authToken={token}
+        onDebugFailure={(failContext) => {
+          handleOpenAIDebugger({
+            ...failContext,
+            initialTab: "test_failure",
+          });
+        }}
+      />
+
+      {/* AI DEBUGGING & ADVANCED ANALYSIS INTERFACE (Rishika - Frontend / Integration Lead) */}
+      <AIDebuggingPanel
+        isOpen={isAIDebuggerOpen}
+        onClose={() => {
+          setIsAIDebuggerOpen(false);
+          handleClearErrorHighlight();
+        }}
+        activeFile={activeFile}
+        activeLanguage={getMonacoLanguage(activeFile)}
+        fileContent={getActiveFileContent()}
+        executionResult={executionResult}
+        initialData={aiDebuggerInitialData}
+        onHighlightLine={handleHighlightErrorLine}
+        onClearHighlight={handleClearErrorHighlight}
+        onApplyCode={handleApplyAssistantCode}
+        authToken={token}
+        showToast={showToast}
       />
 
       {/* WORKSPACE SETTINGS & HISTORY MODAL */}

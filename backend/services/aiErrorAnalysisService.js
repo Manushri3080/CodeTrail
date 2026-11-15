@@ -494,7 +494,18 @@ function buildErrorAnalysisPrompts(errorInfo, userMessage = '') {
   const langUpper = (errorInfo.programmingLanguage || 'UNKNOWN').toUpperCase();
 
   const systemPrompt = `You are the CodeTrail Senior AI Debugging & Error Analysis Engine.
-Your task is to analyze programming compilation and runtime errors with precision, pinpoint the root causes, explain the issue clearly for developers, and generate production-ready fixes.
+Your task is to analyze programming compilation and runtime errors with precision, pinpoint the root causes, explain the issue clearly for developers, and generate safe, production-ready fixes.
+
+STRICT CODE PRESERVATION RULES:
+1. Preserve the user's original code structure, functions, classes, and overall implementation.
+2. Preserve existing function names, variable names, parameters, and return types.
+3. Preserve existing comments, helper functions, and surrounding code.
+4. Make the SMALLEST POSSIBLE surgical changes strictly required for the fix.
+5. Do NOT replace the user's solution with a generic or textbook algorithm unless explicitly requested.
+6. Identify the exact problematic section.
+7. Show original problematic code alongside the corrected replacement.
+8. Maintain identical functional behavior for all valid inputs.
+9. In the fenced code block, output the COMPLETE preserved code with ONLY the fix applied.
 
 Your response MUST strictly adhere to the following Markdown format:
 ### Problem:
@@ -507,8 +518,19 @@ Your response MUST strictly adhere to the following Markdown format:
 ### Suggested Correction:
 <Concise explanation of the fix and best practice>
 
+### Problematic Section
 \`\`\`${errorInfo.programmingLanguage || 'text'}
-<Corrected full or replacement code snippet>
+<problematic line or lines from the user's code>
+\`\`\`
+
+### Corrected Section
+\`\`\`${errorInfo.programmingLanguage || 'text'}
+<corrected replacement line or lines>
+\`\`\`
+
+### Complete Preserved Code
+\`\`\`${errorInfo.programmingLanguage || 'text'}
+<Complete preserved source code with ONLY the surgical fix applied>
 \`\`\`
 `;
 
@@ -531,7 +553,7 @@ ${errorInfo.sourceCode || errorInfo.errorLineCode || 'No source code available'}
 
 ${errorInfo.rawError ? `--- RAW COMPILER / RUNTIME STDOUT & STDERR ---\n${errorInfo.rawError}\n` : ''}
 ${userMessage ? `Developer Request/Notes: ${userMessage}\n` : ''}
-Analyze this failure, pinpoint the exact root causes, explain it clearly, and output the corrected code.`;
+Analyze this failure, pinpoint the exact root causes, explain it clearly, and output the complete preserved code with only the surgical fix applied.`;
 
   return { systemPrompt, userPrompt };
 }
@@ -588,13 +610,16 @@ function generateHeuristicErrorAnalysis(errorInfo) {
       'Provide a fallback default value (such as 0 or null) when the denominator is 0'
     ];
     preventionTips = ['Use defensive guards: return a / b if b != 0 else 0'];
-    if (sourceCode.includes('def divide(a, b):')) {
-      correctedCode = `def divide(a, b):\n    if b == 0:\n        return 0  # Defensive check against division by zero\n    return a / b`;
-    } else {
-      correctedCode = sourceCode.replace(/([a-zA-Z0-9_]+)\s*\/\s*([a-zA-Z0-9_]+)/g, '($2 != 0 ? $1 / $2 : 0)');
-      if (correctedCode === sourceCode) {
-        correctedCode = `def safe_divide(a, b):\n    if b != 0:\n        return a / b\n    return 0`;
+    if (sourceCode) {
+      if (sourceCode.includes('return a / b')) {
+        correctedCode = sourceCode.replace('return a / b', 'if b == 0:\n        return 0  # Defensive check against division by zero\n    return a / b');
+      } else if (lineCode && sourceCode.includes(lineCode)) {
+        correctedCode = sourceCode.replace(lineCode, `# Guard against division by zero\n    ${lineCode.replace(/([a-zA-Z0-9_]+)\s*\/\s*([a-zA-Z0-9_]+)/g, '($1 / $2 if $2 != 0 else 0)')}`);
+      } else {
+        correctedCode = sourceCode.replace(/([a-zA-Z0-9_]+)\s*\/\s*([a-zA-Z0-9_]+)/g, '($1 / $2 if $2 != 0 else 0)');
       }
+    } else {
+      correctedCode = `def divide(a, b):\n    if b == 0:\n        return 0  # Defensive check against division by zero\n    return a / b`;
     }
   }
   // 3. JavaScript TypeError (Cannot read properties of null/undefined)
@@ -631,7 +656,15 @@ function generateHeuristicErrorAnalysis(errorInfo) {
       'Use java.util.Optional to express nullable return types cleanly'
     ];
     preventionTips = ['Favor Java 8+ Optional and Objects.requireNonNull().'];
-    correctedCode = `if (name != null) {\n    return name.length();\n}\nreturn 0;`;
+    if (sourceCode && sourceCode.includes('return name.length()')) {
+      correctedCode = sourceCode.replace('return name.length()', 'if (name != null) {\n      return name.length();\n    }\n    return 0;');
+    } else if (sourceCode && lineCode && sourceCode.includes(lineCode)) {
+      correctedCode = sourceCode.replace(lineCode, `// Defensive null check\n    if (${lineCode.split('.')[0] || 'obj'} != null) { ${lineCode} }`);
+    } else if (sourceCode) {
+      correctedCode = sourceCode.replace(/([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\(\)/g, '($1 != null ? $1.$2() : null)');
+    } else {
+      correctedCode = `if (name != null) {\n    return name.length();\n}\nreturn 0;`;
+    }
   }
   // 5. Python NameError (Undefined variable / LEGB)
   else if (type === 'NameError' || /name '([^']+)' is not defined/i.test(msg)) {
@@ -652,12 +685,18 @@ function generateHeuristicErrorAnalysis(errorInfo) {
       `Always initialize accumulator variables before loops: ${varName} = 0`,
       `Use a linter (like flake8 or ruff) to catch undeclared variables before runtime.`
     ];
-    if (sourceCode.includes('total += price')) {
-      correctedCode = `def add(price):\n    total = 0  # Initialized total before accumulation\n    total += price\n    return total\n\nadd(50)`;
-    } else if (sourceCode.includes('total +=')) {
-      correctedCode = `total = 0\n` + sourceCode;
+    if (sourceCode) {
+      if (sourceCode.includes('total += price')) {
+        correctedCode = sourceCode.replace(/([ \t]*)(total\s*\+=\s*price)/, '$1total = 0  # Initialized total before accumulation\n$1$2');
+      } else if (sourceCode.includes('total +=')) {
+        correctedCode = sourceCode.replace(/([ \t]*)(total\s*\+=)/, '$1total = 0  # Initialize variable\n$1$2');
+      } else if (lineCode && sourceCode.includes(lineCode)) {
+        correctedCode = sourceCode.replace(lineCode, `${varName} = 0  # Initialized variable\n    ${lineCode}`);
+      } else {
+        correctedCode = `${varName} = 0\n` + sourceCode;
+      }
     } else {
-      correctedCode = `${varName} = 0\n` + sourceCode;
+      correctedCode = `${varName} = 0`;
     }
   }
   // 6. C++ Missing Semicolon or Undeclared Identifier
