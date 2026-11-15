@@ -55,7 +55,7 @@ const createWelcomeMessage = () => ({
   id: "ai-assistant-welcome",
   role: "assistant",
   content:
-    "Hi! I’m your CodeTrail AI assistant. I can explain code, fix bugs, suggest changes, or write tests/docs. Click **+** to add the open file if you want help with it.",
+    "Hi! I'm your CodeTrail AI assistant. I can explain code, fix bugs, suggest changes, or write tests/docs. Click **+** to add the open file if you want help with it.",
 });
 
 const getCodeLanguage = (language = "") =>
@@ -80,6 +80,7 @@ const renderTextBlock = (text, baseKey) => {
   const lines = normalized.split("\n");
   const nodes = [];
   let listItems = [];
+  let orderedItems = [];
   let paraLines = [];
 
   const flushPara = () => {
@@ -87,7 +88,7 @@ const renderTextBlock = (text, baseKey) => {
     const content = paraLines.join("\n").trim();
     if (content) {
       nodes.push(
-        <p key={`${baseKey}-p-${nodes.length}`} className="text-gray-200 leading-7 break-words whitespace-pre-wrap">
+        <p key={`${baseKey}-p-${nodes.length}`} className="text-gray-200/95 leading-7 break-words whitespace-pre-wrap my-1.5">
           {renderInlineMarkdown(content, `${baseKey}-p-${nodes.length}`)}
         </p>
       );
@@ -97,13 +98,29 @@ const renderTextBlock = (text, baseKey) => {
   const flushList = () => {
     if (!listItems.length) return;
     nodes.push(
-      <ul key={`${baseKey}-ul-${nodes.length}`} className="list-disc pl-5 space-y-1.5 text-gray-200 leading-7">
+      <ul key={`${baseKey}-ul-${nodes.length}`} className="ct-ai-list ct-ai-ul">
         {listItems.map((item, i) => (
-          <li key={`${baseKey}-li-${i}`} className="break-words">{renderInlineMarkdown(item, `${baseKey}-li-${i}`)}</li>
+          <li key={`${baseKey}-li-${i}`} className="ct-ai-li">
+            <span className="ct-ai-li-content">{renderInlineMarkdown(item, `${baseKey}-li-${i}`)}</span>
+          </li>
         ))}
       </ul>
     );
     listItems = [];
+  };
+  const flushOrderedList = () => {
+    if (!orderedItems.length) return;
+    nodes.push(
+      <ol key={`${baseKey}-ol-${nodes.length}`} className="ct-ai-list ct-ai-ol">
+        {orderedItems.map((item, i) => (
+          <li key={`${baseKey}-oli-${i}`} className="ct-ai-li ct-ai-oli">
+            <span className="ct-ai-ol-marker">{i + 1}</span>
+            <span className="ct-ai-li-content">{renderInlineMarkdown(item, `${baseKey}-oli-${i}`)}</span>
+          </li>
+        ))}
+      </ol>
+    );
+    orderedItems = [];
   };
 
   lines.forEach((rawLine) => {
@@ -112,16 +129,35 @@ const renderTextBlock = (text, baseKey) => {
     if (!trimmed) {
       flushPara();
       flushList();
+      flushOrderedList();
       return;
     }
     if (/^#{1,6}\s+/.test(trimmed)) {
       flushPara();
       flushList();
-      const level = (trimmed.match(/^#+/) || ["###"])[0].length;
+      flushOrderedList();
+      const level = (trimmed.match(/^#+/) || ["#"])[0].length;
       const content = trimmed.replace(/^#{1,6}\s+/, "");
-      const cls = level <= 3 ? "text-sm font-semibold text-gray-100 mt-1" : "text-xs font-semibold text-gray-200 mt-1";
+      let cls = "text-[13px] font-semibold text-gray-100 mt-3 mb-1.5 leading-6 break-words";
+      const isCallout =
+        level <= 3 && /^(Problem|Why\b|Cause\b|Fix\b|Correction\b|Solution\b|What it does\b|Summary\b|Step)/i.test(content);
+      if (isCallout) {
+        if (/^Problem\b/i.test(content)) cls = "text-[13px] font-semibold text-rose-100 mt-4 mb-2 px-3 py-2 rounded-lg bg-rose-500/10 border-l-2 border-rose-400/70 leading-6 break-words";
+        else if (/^Why\b|^Cause\b/i.test(content)) cls = "text-[13px] font-semibold text-sky-100 mt-4 mb-2 px-3 py-2 rounded-lg bg-sky-500/10 border-l-2 border-sky-400/70 leading-6 break-words";
+        else if (/^Fix\b|^Correction\b|^Solution\b/i.test(content)) cls = "text-[13px] font-semibold text-emerald-100 mt-4 mb-2 px-3 py-2 rounded-lg bg-emerald-500/10 border-l-2 border-emerald-400/70 leading-6 break-words";
+        else if (/^What it does\b|^Summary\b/i.test(content)) cls = "text-[13px] font-semibold text-violet-100 mt-3 mb-2 px-3 py-2 rounded-lg bg-violet-500/10 border-l-2 border-violet-400/70 leading-6 break-words";
+        else if (/^Step/i.test(content)) cls = "text-[13px] font-semibold text-slate-100 mt-4 mb-2 px-3 py-2 rounded-lg bg-slate-500/10 border-l-2 border-slate-400/70 leading-6 break-words";
+      } else if (level === 1) {
+        cls = "text-[16px] font-semibold tracking-tight text-gray-50 mt-1 mb-2.5 pb-2 border-b border-white/10 leading-7 break-words";
+      } else if (level === 2) {
+        cls = "text-[14px] font-semibold text-gray-100 mt-4 mb-1.5 leading-6 break-words";
+      } else if (level === 3) {
+        cls = "text-[13px] font-semibold text-gray-100 mt-3 mb-1 leading-6 break-words";
+      } else {
+        cls = "text-[12px] font-semibold text-gray-200/90 mt-2.5 mb-1 leading-6 break-words";
+      }
       nodes.push(
-        <div key={`${baseKey}-h-${nodes.length}`} className={`${cls} leading-7 break-words`}>
+        <div key={`${baseKey}-h-${nodes.length}`} className={cls}>
           {renderInlineMarkdown(content, `${baseKey}-h-${nodes.length}`)}
         </div>
       );
@@ -129,37 +165,89 @@ const renderTextBlock = (text, baseKey) => {
     }
     if (/^[-*]\s+/.test(trimmed)) {
       flushPara();
+      flushOrderedList();
       listItems.push(trimmed.replace(/^[-*]\s+/, ""));
       return;
     }
     if (/^\d+\.\s+/.test(trimmed)) {
       flushPara();
       flushList();
-      nodes.push(
-        <div key={`${baseKey}-n-${nodes.length}`} className="text-gray-200 leading-7 break-words">
-          {renderInlineMarkdown(trimmed, `${baseKey}-n-${nodes.length}`)}
-        </div>
-      );
+      orderedItems.push(trimmed.replace(/^\d+\.\s+/, ""));
       return;
     }
     flushList();
+    flushOrderedList();
     paraLines.push(trimmed);
   });
   flushPara();
   flushList();
+  flushOrderedList();
   return nodes;
 };
 
-const renderMessageContent = (
-  content,
-  onCopyCode,
-  onInsertCode,
-  onPreviewCode,
-  insertedKey,
-  wrappedCodeBlocks = {},
-  onToggleWrap,
-  messageId = "msg",
-) => {
+  const inferFileNameFromCode = (code, lang = "", messageText = "") => {
+    const l = String(lang || "").toLowerCase();
+    const text = String(messageText || "").toLowerCase();
+    const c = String(code || "");
+    if (l === "markdown" || l === "md" || /^\s*#\s+/m.test(c) || /\breadme\b/.test(text)) return "README.md";
+    const m = c.match(/^\s*(?:\/\/|#|<!--)\s*(?:file(?:name)?|path)\s*[:=]\s*([A-Za-z0-9._\-\/\\]+)/im);
+    if (m?.[1]) return m[1].replace(/\\/g, "/").split("/").pop();
+    if (l === "python" || l === "py") return "main.py";
+    if (l === "javascript" || l === "js") return "index.js";
+    if (l === "typescript" || l === "ts") return "index.ts";
+    if (l === "html") return "index.html";
+    if (l === "css") return "styles.css";
+    if (l === "json") return "file.json";
+    return "file.txt";
+  };
+
+  const requestFilePermissionAndApply = (code, lang, suggestedName, messageText = "") => {
+    const name = inferFileNameFromCode(code, lang, suggestedName || messageText);
+    const exists = Array.isArray(workspaceFiles) && workspaceFiles.some(f => (f?.name || f?.path || f?.id) === name || (f?.path || "").endsWith(`/${name}`));
+    const mode = exists ? "update" : "create";
+    const payload = { name, content: String(code || ""), mode, language: lang };
+    if (!canEditFiles) {
+      setError("You don't have permission to edit or create files in this workspace.");
+      return;
+    }
+    if (autoFilePermissions) {
+      onCreateOrUpdateFile && onCreateOrUpdateFile(payload);
+      return;
+    }
+    setFileActionModal({ code: String(code || ""), language: lang || "", suggestedName: name, mode });
+  };
+
+  const confirmFileAction = () => {
+    if (!fileActionModal) return;
+    if (!canEditFiles) {
+      setError("You don't have permission to edit or create files in this workspace.");
+      setFileActionModal(null);
+      return;
+    }
+    onCreateOrUpdateFile && onCreateOrUpdateFile({
+      name: fileActionModal.suggestedName,
+      content: fileActionModal.code,
+      mode: fileActionModal.mode,
+      language: fileActionModal.language,
+    });
+    setFileActionModal(null);
+  };
+
+  const handleSaveFileFromCode = (code, lang) => {
+    requestFilePermissionAndApply(code, lang, input || "", input || "");
+  };
+
+  const renderMessageContent = (
+    content,
+    onCopyCode,
+    onInsertCode,
+    onPreviewCode,
+    onSaveToFile,
+    insertedKey,
+    wrappedCodeBlocks = {},
+    onToggleWrap,
+    messageId = "msg",
+  ) => {
   const parts = String(content || "").split(/```(\w*)\n([\s\S]*?)```/g);
   const blocks = [];
 
@@ -167,7 +255,7 @@ const renderMessageContent = (
     if (index % 3 === 0) {
       if (parts[index] && parts[index].trim()) {
         blocks.push(
-          <div key={`text-${index}`} className="space-y-3">
+          <div key={`text-${index}`} className="space-y-1.5">
             {renderTextBlock(parts[index], `text-${index}`)}
           </div>
         );
@@ -226,6 +314,16 @@ const renderMessageContent = (
                   </>
                 )}
               </button>
+              {onSaveToFile && (
+                <button
+                  type="button"
+                  onClick={() => onSaveToFile(code, lang, codeKey)}
+                  title="Create or update a workspace file with this code (asks for permission)"
+                >
+                  <FileCode2 size={13} />
+                  Save file
+                </button>
+              )}
             </div>
           </div>
           <pre
@@ -257,13 +355,15 @@ function AIAssistantPanel({
   selectedCode,
   onInsertCode,
   onApplyCode,
+  onCreateOrUpdateFile,
+  canEditFiles = true,
   triggerAction,
   workspaceId,
   files,
   activeWorkspace,
   apiUrl = import.meta.env.VITE_AI_ASSISTANT_API_URL || `${API_BASE}/ai/chat`,
 }) {
-  const resolvedWorkspaceId = workspaceId || activeWorkspace?._id || activeWorkspace?.id;
+          const resolvedWorkspaceId = workspaceId || activeWorkspace?._id || activeWorkspace?.id;
   const workspaceFiles = files || activeWorkspace?.files || [];
   const historyStorageKey = `ct-ai-assistant-history-${resolvedWorkspaceId || "default"}`;
   const [messages, setMessages] = useState([createWelcomeMessage()]);
@@ -279,6 +379,10 @@ function AIAssistantPanel({
   const [wrappedCodeBlocks, setWrappedCodeBlocks] = useState({});
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [previewState, setPreviewState] = useState(null); // { code, language, original, modeSuggestion, fileName }
+  const [fileActionModal, setFileActionModal] = useState(null); // { code, language, suggestedName, mode: 'create'|'update' }
+  const [autoFilePermissions, setAutoFilePermissions] = useState(() => {
+    try { return localStorage.getItem("ct-ai-auto-file-permissions") === "true"; } catch { return false; }
+  });
   const [isCurrentFileAttached, setIsCurrentFileAttached] = useState(
     Boolean(activeFile),
   );
@@ -324,9 +428,13 @@ function AIAssistantPanel({
   }, [selectedCode]);
 
   useEffect(() => {
+    try { localStorage.setItem("ct-ai-auto-file-permissions", String(autoFilePermissions)); } catch {}
+  }, [autoFilePermissions]);
+
+  useEffect(() => {
     // Do not auto-attach the open file; user adds context manually via the + button.
     setIsCurrentFileAttached(false);
-    setContextMode("file");
+    setContextMode("workspace");
   }, [activeFile]);
 
   useEffect(() => {
@@ -388,8 +496,8 @@ function AIAssistantPanel({
     ? "Selected code"
     : hasFileContext
       ? (activeFile || "Open file")
-      : "No file context attached";
-  const canSend = Boolean(input.trim() || uploadedFiles.length > 0 || context.trim());
+      : "Whole workspace";
+  const canSend = Boolean(input.trim() || uploadedFiles.length > 0 || context.trim() || (Array.isArray(workspaceFiles) && workspaceFiles.length > 0) || resolvedWorkspaceId);
 
   const handleInsertCode = (code, codeKey, lang = "") => {
     // Open diff preview and require explicit confirmation before mutating editor content.
@@ -481,12 +589,14 @@ function AIAssistantPanel({
     const wantsBeginner = /\b(beginner|simple|basic|starter|easy|tutorial|sample|example)\b/.test(q);
     const wantsExplain = /\b(explain|what does|what is|how does|how it works|walk me|walkthrough|step by step|understand|describe)\b/.test(q);
     const wantsDocs = /\b(doc|docs|document|documents|documentation|documentations|documenting|comment|comments|docstring|jsdoc|readme)\b/.test(q);
+    const wantsReadme = /\b(readme|whole project|entire project|project structure|project overview)\b/.test(q);
     const wantsCodeGen = /\b(suggest|generate|create|write|implement|build|make|show|give|sample|snippet|program)\b/.test(q) || (/\bcode\b/.test(q) && !wantsExplain && !wantsDocs);
     const wantsRefactor = /\b(refactor|improve|optimi[sz]e|clean|rewrite|review)\b/.test(q);
+    const wsFiles = Array.isArray(ctxOverride?.workspaceFiles) ? ctxOverride.workspaceFiles : (Array.isArray(workspaceFiles) ? workspaceFiles : []);
 
     if (actionType === "debug" || /\b(debug|bug|error|exception|fail|fix|crash)\b/.test(q)) {
       if (!hasContext) {
-        return `I can help find the problem, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code\n- Share the error message if you have one.`;
+        return `Using whole-workspace context. Describe the issue/error, or click **+** to attach a specific file/selection for a targeted fix.`;
       }
       return `### Debugging help: \`${fileName}\`
 
@@ -512,7 +622,7 @@ Share the error or expected result for a more specific fix.`;
       const isEvenFn = fnName.toLowerCase().includes('even') || /%\s*2\s*===?\s*0/.test(codeStr);
 
       if (isEvenFn) {
-        return `### 🧪 AI-GENERATED TEST SUITE: \`isEven(number)\`
+        return `### AI-Generated Test Suite: \`isEven(number)\`
 
 **Language:** \`${isPy ? 'python' : 'javascript'}\` | **Parameters:** \`number\`
 
@@ -537,7 +647,7 @@ Share the error or expected result for a more specific fix.`;
 
 \`\`\`${isPy ? "python" : "javascript"}
 ${isPy
-  ? `def test_positive_even():\n    assert isEven(4) == True\n\ndef test_positive_odd():\n    assert isEven(5) == False\n\ndef test_zero_boundary():\n    assert isEven(0) == True\n\ndef test_negative_even():\n    assert isEven(-2) == True\n\n# Run tests\ntest_positive_even()\ntest_positive_odd()\ntest_zero_boundary()\ntest_negative_even()\nprint("✔ All isEven tests passed successfully!")`
+  ? `def test_positive_even():\n    assert isEven(4) == True\n\ndef test_positive_odd():\n    assert isEven(5) == False\n\ndef test_zero_boundary():\n    assert isEven(0) == True\n\ndef test_negative_even():\n    assert isEven(-2) == True\n\n# Run tests\ntest_positive_even()\ntest_positive_odd()\ntest_zero_boundary()\ntest_negative_even()\nprint("All isEven tests passed successfully!")`
   : `describe('isEven Unit Tests', () => {\n  it('handles positive even number', () => { expect(isEven(4)).toBe(true); });\n  it('handles positive odd number', () => { expect(isEven(5)).toBe(false); });\n  it('handles zero boundary', () => { expect(isEven(0)).toBe(true); });\n  it('handles negative even number', () => { expect(isEven(-2)).toBe(true); });\n});`}
 \`\`\`
 
@@ -564,32 +674,17 @@ Tell me the target function and expected behavior for runnable tests.`;
     }
 
     if (actionType === "docs" || wantsDocs) {
-      const preview = String(resolvedContext || "").split("\n").slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join("\n");
-      if (!hasContext) {
-        return `I can write documentation, but no file is attached yet.\n\nClick **+** to add the open file (${activeFile || "a file"}) or paste the code, then ask again.`;
+      if (wantsReadme || resolvedMode === "workspace" || !hasContext) {
+        const fileNames = (Array.isArray(wsFiles) ? wsFiles : []).map(f => f?.name || f?.fileName || f?.path).filter(Boolean);
+        const mainFile = fileNames.find(n => /(^|\/)(main|index|app)\.(py|js|jsx|ts|tsx)$/i.test(String(n))) || fileNames[0] || "main.py";
+        const runCmd = /\.py$/i.test(String(mainFile)) ? `python ${String(mainFile).split('/').pop()}` : /\.(js|jsx|ts|tsx)$/i.test(String(mainFile)) ? `node ${String(mainFile).split('/').pop()}` : `# run ${String(mainFile).split('/').pop()}`;
+        const structure = fileNames.length ? fileNames.map(n => `- \`${n}\``).join("\n") : "- (no files detected in workspace context)";
+        const readme = `# Project\n\nBrief description of what this project does.\n\n## Features\n- Feature 1\n- Feature 2\n- Feature 3\n\n## Installation\n\`\`\`bash\ngit clone <repo-url>\ncd <project-folder>\n# install dependencies (if needed)\n\`\`\`\n\n## Usage\n\`\`\`bash\n${runCmd}\n\`\`\`\n\n## Project Structure\n${structure}\n\n## Notes\n- Generated from workspace context${fileNames.length ? ` (${fileNames.length} file${fileNames.length === 1 ? "" : "s"} detected)` : ""}.\n- Update this README with real project details and setup steps.`;
+        return `\`\`\`markdown\n${readme}\n\`\`\``;
       }
-      return `### Documentation: \`${fileName}\`
-
-**What this code does**
-- **Purpose:** What \`${fileName}\` is for.
-- **Inputs:** Any inputs or settings it uses.
-- **Outputs:** What it returns, prints, or changes.
-- **How to use:** How to run or use it.
-- **Notes:** Any errors or special cases to know about.
-
-**Example doc comment**
-\`\`\`${isPy ? "python" : lang}
-${isPy
-  ? `"""${fileName}\n\nWhat it does:\n    Briefly explain this file.\n\nHow to use:\n    Explain how to run it.\n"""`
-  : `/**\n * ${fileName}\n * What it does: Briefly explain this code.\n * @param {*} input - Inputs.\n * @returns {*} Output.\n */`}
-\`\`\`
-
-**Code**
-\`\`\`${lang}
-${preview}
-\`\`\``;
+      const preview = String(resolvedContext || "").split("\n").slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join("\n");
+      return `### Documentation: \`${fileName}\`\n\n**What it does**\n- Purpose: describe what this file/module does.\n- Main parts: key functions/classes.\n- Inputs/outputs: parameters, return values, side effects.\n\n**Code (reference)**\n\`\`\`${lang}\n${preview || "(no code)"}\n\`\`\``;
     }
-
     if (actionType === "algorithm" || /\b(algorithm|complexity|big o|time complexity|space complexity)\b/.test(q)) {
       return `### Algorithm & complexity notes
 
@@ -616,7 +711,7 @@ ${preview}
 
     if (actionType === "explain" || (wantsExplain && actionType !== "generate" && actionType !== "refactor" && actionType !== "review" && actionType !== "docs" && actionType !== "tests" && actionType !== "debug" && actionType !== "algorithm" && actionType !== "analyze")) {
       if (!hasContext) {
-        return `I can explain the code, but no file is attached yet.\n\nClick **+** to add the open file (${activeFile || "a file"}), or select/paste the code, then ask again.`;
+        return `I can explain using the whole workspace. Ask about the project or click **+** to attach a specific file/selection for a detailed walkthrough.`;
       }
       const lines = String(resolvedContext || "").split("\n");
       const preview = lines.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join("\n");
@@ -678,31 +773,36 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
     const question = (customQuestion || input).trim();
     if (!question || isLoading) return;
 
-    // Resolve context at send time (avoids stale closure when auto-attaching).
-    const needsFileContext = ["explain", "review", "refactor", "tests", "docs", "debug", "algorithm", "analyze", "function-analysis"].includes(customActionType);
+    // Resolve context at send time. If nothing is explicitly attached, use whole-workspace context.
+    const isWorkspaceDocsRequest = /\b(readme|whole project|entire project|project structure|project overview|documentation for (the )?project|document(ation)? (the )?(whole|entire) project)\b/i.test(question) ||
+      (customActionType === "docs" && !selectedCode?.trim() && !isCurrentFileAttached);
     let effectiveMode = contextMode;
     let effectiveFileAttached = isCurrentFileAttached;
 
     if (effectiveMode === "selection" && !selectedCode?.trim()) {
       effectiveMode = "file";
     }
-    if (needsFileContext) {
-      if (selectedCode?.trim() && (effectiveMode === "selection" || !fileContent?.trim())) {
-        effectiveMode = "selection";
-      } else if (activeFile && fileContent?.trim()) {
-        effectiveFileAttached = true;
-        if (effectiveMode !== "selection" || !selectedCode?.trim()) effectiveMode = "file";
-      }
+    if (!selectedCode?.trim() && !effectiveFileAttached) {
+      effectiveMode = "workspace";
     }
 
     const hasSelectionCtx = effectiveMode === "selection" && Boolean(selectedCode?.trim());
     const hasFileCtx = effectiveMode === "file" && effectiveFileAttached && Boolean(activeFile);
+    const hasWorkspaceCtx = !hasSelectionCtx && !hasFileCtx;
     const effectiveContent = hasSelectionCtx ? selectedCode : hasFileCtx ? (fileContent ?? "") : "";
-    const effectiveSource = hasSelectionCtx ? "Selected code" : hasFileCtx ? (activeFile || "Open file") : "No file context attached";
+    const effectiveSource = hasSelectionCtx
+      ? "Selected code"
+      : hasFileCtx
+        ? (activeFile || "Open file")
+        : "Whole workspace";
 
-    // Reflect auto-attach in UI state.
-    if (effectiveFileAttached !== isCurrentFileAttached) setIsCurrentFileAttached(effectiveFileAttached);
-    if (effectiveMode !== contextMode) setContextMode(effectiveMode);
+    // Reflect resolved mode in UI state (do not auto-attach a specific file).
+    if (!hasSelectionCtx && !hasFileCtx) {
+      if (effectiveFileAttached) setIsCurrentFileAttached(false);
+      if (contextMode !== "workspace" && contextMode !== "file") setContextMode("workspace");
+    } else if (effectiveMode !== contextMode) {
+      setContextMode(effectiveMode);
+    }
 
     setError("");
     setInput("");
@@ -722,8 +822,21 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
           // Route test generation with code to the specialized /api/ai/tests endpoint
           const isTestAction = customActionType === "tests" || /\b(test|tests|spec|unit test)\b/i.test(question);
           const hasCode = Boolean(effectiveContent && effectiveContent.trim());
+          const isDocsAction = customActionType === "docs" || /\b(doc|docs|document|documents|documentation|documenting|readme|project structure|project overview|whole project|entire project)\b/i.test(question);
+          const wantsFullReadme = /\b(readme|whole project|entire project|project structure|project overview)\b/i.test(question);
           const testApiUrl = apiUrl.replace(/\/ai\/chat.*$/, "/ai/tests");
-          const requestUrl = (isTestAction && hasCode) ? testApiUrl : apiUrl;
+          const docsApiUrl = apiUrl.replace(/\/ai\/chat.*$/, "/ai/docs");
+          const requestUrl = (isTestAction && hasCode)
+            ? testApiUrl
+            : (isDocsAction ? docsApiUrl : apiUrl);
+          const workspaceFilesForRequest = (hasWorkspaceCtx || wantsFullReadme || isDocsAction)
+            ? workspaceFiles.map((f) => {
+                const key = f?.path || f?.id || f?.name;
+                const fromState = key ? (filesContent?.[key] ?? filesContent?.[f?.name]) : undefined;
+                const contentVal = (typeof f?.content === "string" && f.content.length > 0) ? f.content : (typeof fromState === "string" ? fromState : (f?.content || ""));
+                return { ...f, content: contentVal };
+              })
+            : workspaceFiles;
 
           const requestBody = (isTestAction && hasCode)
             ? JSON.stringify({
@@ -740,25 +853,38 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
                   mode: effectiveMode,
                 },
               })
-            : JSON.stringify({
+            : (isDocsAction ? JSON.stringify({
                 message: question,
-                conversation: messages,
-                actionType: customActionType,
+                actionType: "docs",
                 workspaceId: resolvedWorkspaceId,
-                files: workspaceFiles,
+                files: workspaceFilesForRequest,
                 context: {
-                  fileName: activeFile,
+                  fileName: hasWorkspaceCtx ? null : activeFile,
                   language: activeLanguage,
                   content: effectiveContent,
                   source: effectiveSource,
                   attached: Boolean(effectiveContent.trim()),
-                  mode: effectiveMode,
+                  mode: hasWorkspaceCtx ? "workspace" : effectiveMode,
+                },
+              }) : JSON.stringify({
+                message: question,
+                conversation: messages,
+                actionType: customActionType,
+                workspaceId: resolvedWorkspaceId,
+                files: workspaceFilesForRequest,
+                context: {
+                  fileName: hasWorkspaceCtx ? null : activeFile,
+                  language: activeLanguage,
+                  content: effectiveContent,
+                  source: effectiveSource,
+                  attached: Boolean(effectiveContent.trim()),
+                  mode: hasWorkspaceCtx ? "workspace" : effectiveMode,
                 },
                 attachments: uploadedFiles.map(({ name, content }) => ({
                   name,
                   content,
                 })),
-              });
+              }));
 
           const response = await fetch(requestUrl, {
             method: "POST",
@@ -779,18 +905,20 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
           console.warn("[CodeTrail AI] Backend API call failed, falling back to local engine:", fetchErr.message);
           answer = requestLocalResponse(question, customActionType, {
             content: effectiveContent,
-            fileName: activeFile,
+            fileName: hasWorkspaceCtx ? null : activeFile,
             language: activeLanguage,
-            mode: effectiveMode,
+            mode: hasWorkspaceCtx ? "workspace" : effectiveMode,
+            workspaceFiles,
           });
         }
       } else {
         await new Promise((resolve) => window.setTimeout(resolve, 650));
         answer = requestLocalResponse(question, customActionType, {
           content: effectiveContent,
-          fileName: activeFile,
+          fileName: hasWorkspaceCtx ? null : activeFile,
           language: activeLanguage,
-          mode: effectiveMode,
+          mode: hasWorkspaceCtx ? "workspace" : effectiveMode,
+          workspaceFiles,
         });
       }
       setMessages((previous) => [
@@ -885,6 +1013,7 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
                   copyCode,
                   handleInsertCode,
                   handlePreviewCode,
+                  (code, lang) => handleSaveFileFromCode(code, lang),
                   insertedKey,
                   wrappedCodeBlocks,
                   toggleCodeWrap,
@@ -1002,6 +1131,48 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
                   Replace selection
                 </button>
                 <button type="button" className="ai-preview-btn primary" onClick={() => confirmApply("replaceFile")} title="Replace the entire file with AI code">Replace file</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fileActionModal && (
+        <div className="ai-preview-overlay" role="dialog" aria-modal="true" aria-label="AI file action permission">
+          <div className="ai-preview-modal" style={{ maxWidth: 560 }}>
+            <div className="ai-preview-header">
+              <div>
+                <strong className="flex items-center gap-2"><FileCode2 size={14} /> {fileActionModal.mode === "create" ? "Create file" : "Update file"}</strong>
+                <div className="text-[11px] text-gray-400 mt-1">
+                  AI wants to {fileActionModal.mode === "create" ? "create" : "update"} a workspace file. Review and confirm.
+                </div>
+              </div>
+              <button type="button" onClick={() => setFileActionModal(null)} title="Cancel" aria-label="Cancel file action"><X size={16} /></button>
+            </div>
+            <div className="ai-preview-body" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ fontSize: 12, color: "#cbd5e1", display: "flex", flexDirection: "column", gap: 6 }}>
+                File name
+                <input
+                  value={fileActionModal.suggestedName}
+                  onChange={(e) => setFileActionModal((p) => p ? { ...p, suggestedName: e.target.value } : p)}
+                  style={{ background: "#151821", border: "1px solid #303646", color: "#e5e7eb", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}
+                />
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#cbd5e1" }}>
+                <input type="checkbox" checked={autoFilePermissions} onChange={(e) => setAutoFilePermissions(e.target.checked)} />
+                Auto-allow AI file create/update actions in this browser (you can turn this off later)
+              </label>
+              <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                {fileActionModal.mode === "create" ? "A new file will be added to the workspace." : "The existing file content will be replaced with the AI suggestion."} {!canEditFiles ? "You currently don’t have edit permission." : ""}
+              </div>
+            </div>
+            <div className="ai-preview-footer">
+              <div />
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <button type="button" className="ai-preview-btn secondary" onClick={() => setFileActionModal(null)}>Cancel</button>
+                <button type="button" className="ai-preview-btn primary" onClick={confirmFileAction} disabled={!canEditFiles || !String(fileActionModal.suggestedName || "").trim()}>
+                  {fileActionModal.mode === "create" ? "Create file" : "Update file"}
+                </button>
               </div>
             </div>
           </div>

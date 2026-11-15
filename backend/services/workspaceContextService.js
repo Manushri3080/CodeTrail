@@ -524,6 +524,8 @@ async function retrieveWorkspaceContext({
 
   // 2. Score chunks based on user query (lexical + semantic)
   const queryTokens = tokenizeQuery(query);
+  const queryText = String(query || '').toLowerCase();
+  const isWholeProjectIntent = /\b(readme|whole project|entire project|project structure|project overview|document(ation)? (the )?(whole|entire )?project|create (a )?readme|generate (a )?readme|all files|workspace overview)\b/.test(queryText);
   let queryEmbedding = null;
   try {
     const embedResult = await embedTexts([String(query || '')]);
@@ -547,6 +549,11 @@ async function retrieveWorkspaceContext({
     if (activeFileName && (chunk.fileName === activeFileName || chunk.path === activeFileName)) {
       score += 4;
     }
+    if (isWholeProjectIntent) {
+      const p = String(chunk.path || chunk.fileName || '').toLowerCase();
+      if (/(^|\/)(readme|package\.json|requirements\.txt|pyproject\.toml|setup\.py|main|index|app)\b/.test(p)) score += 12;
+      if (/(package\.json|requirements\.txt|pyproject\.toml|readme)/.test(p)) score += 6;
+    }
 
     return { ...chunk, score, lexicalScore, semanticScore };
   });
@@ -555,15 +562,34 @@ async function retrieveWorkspaceContext({
   let relevantChunks = scoredChunks
     .filter(c => c.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, CONFIG.MAX_CHUNKS_PER_QUERY);
+    .slice(0, isWholeProjectIntent ? Math.max(CONFIG.MAX_CHUNKS_PER_QUERY, 12) : CONFIG.MAX_CHUNKS_PER_QUERY);
 
   // Semantic fallback: if lexical produced nothing but embeddings exist, use semantic ranking
   if (relevantChunks.length === 0 && hasSemanticIndex) {
     relevantChunks = scoredChunks
       .filter(c => c.semanticScore > 0.05)
       .sort((a, b) => b.semanticScore - a.semanticScore)
-      .slice(0, CONFIG.MAX_CHUNKS_PER_QUERY)
+      .slice(0, isWholeProjectIntent ? Math.max(CONFIG.MAX_CHUNKS_PER_QUERY, 12) : CONFIG.MAX_CHUNKS_PER_QUERY)
       .map((c) => ({ ...c, score: c.semanticScore * 18 }));
+  }
+
+  // Whole-project fallback: include representative chunks/files even when query tokens don't match code content
+  if (isWholeProjectIntent) {
+    const seen = new Set(relevantChunks.map(c => c.id));
+    const byFile = new Map();
+    for (const c of [...scoredChunks].sort((a, b) => (b.score - a.score) || (a.startLine - b.startLine))) {
+      const key = c.path || c.fileName;
+      if (!byFile.has(key)) byFile.set(key, []);
+      if (byFile.get(key).length < 2) byFile.get(key).push(c);
+    }
+    const extras = [];
+    for (const arr of byFile.values()) {
+      for (const c of arr) {
+        if (!seen.has(c.id)) { extras.push(c); seen.add(c.id); }
+      }
+    }
+    extras.sort((a, b) => b.score - a.score || String(a.path||'').localeCompare(String(b.path||'')));
+    relevantChunks = [...relevantChunks, ...extras].slice(0, 14);
   }
 
   // 3. Apply Context Budgeting (Prevent token overflow in large workspaces)
@@ -589,9 +615,19 @@ async function retrieveWorkspaceContext({
 
   // 4. Format structured context block for the AI prompt
   let formattedContext = '';
-  if (budgetedChunks.length > 0) {
-    formattedContext = `\n[WORKSPACE PROJECT CONTEXT - RELEVANT CODE SECTIONS]\n`;
-    formattedContext += `The following relevant code extracts from the workspace project were retrieved for this question:\n\n`;
+  if (isWholeProjectIntent || budgetedChunks.length > 0) {
+    const allPaths = [...new Set((workspaceFiles || []).map(f => f.path || f.filePath || f.name || f.fileName).filter(Boolean))];
+    if (isWholeProjectIntent) {
+      formattedContext = `\n[WORKSPACE PROJECT CONTEXT - WHOLE PROJECT]\n`;
+      formattedContext += `Total files: ${allPaths.length}\n`;
+      formattedContext += `File list:\n${allPaths.map(p => `- ${p}`).join('\n') || '- (none)'}\n\n`;
+      if (budgetedChunks.length > 0) {
+        formattedContext += `Relevant file excerpts:\n\n`;
+      }
+    } else {
+      formattedContext = `\n[WORKSPACE PROJECT CONTEXT - RELEVANT CODE SECTIONS]\n`;
+      formattedContext += `The following relevant code extracts from the workspace project were retrieved for this question:\n\n`;
+    }
 
     budgetedChunks.forEach((c, idx) => {
       formattedContext += `--- Reference ${idx + 1}: ${c.path} (Lines ${c.startLine}-${c.endLine}) ---\n`;

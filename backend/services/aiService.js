@@ -1,7 +1,7 @@
 /**
  * aiService.js
  * CodeTrail Core AI Service & Multi-Model Integration Engine
- * Lead: Manushri — AI Backend & Model Integration
+ * Lead: Manushri â€” AI Backend & Model Integration
  *
  * Capabilities:
  *   1. Multi-Provider Architecture: Google Gemini, OpenAI, or OpenAI-Compatible APIs (Groq, DeepSeek, Ollama, OpenRouter).
@@ -24,9 +24,24 @@ const PROVIDERS = {
   FALLBACK: 'local-engine'
 };
 
+function parseModelList(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map((m) => m.trim())
+    .filter(Boolean);
+}
+
+function getOpenAiModelCandidates() {
+  const primary = parseModelList(process.env.OPENAI_MODEL || process.env.AI_MODEL);
+  const fallbacks = parseModelList(process.env.OPENAI_FALLBACK_MODELS || process.env.OPENAI_MODELS_FALLBACK);
+  const list = [...primary, ...fallbacks, 'gpt-4o-mini'].filter(Boolean);
+  return [...new Set(list)];
+}
+
 const DEFAULT_CONFIG = {
   geminiModel: process.env.GEMINI_MODEL || process.env.GOOGLE_AI_MODEL || process.env.AI_MODEL || 'gemini-2.0-flash',
-  openaiModel: process.env.OPENAI_MODEL || process.env.AI_MODEL || 'gpt-4o-mini',
+  get openaiModel() { return getOpenAiModelCandidates()[0] || 'gpt-4o-mini'; },
+  get openaiModels() { return getOpenAiModelCandidates(); },
   maxContextLines: 1500,
   maxContextCharacters: 40000,
   requestTimeoutMs: 30000
@@ -116,34 +131,111 @@ function getGeminiModelCandidates() {
  */
 const SYSTEM_INSTRUCTION = `You are CodeTrail AI, a helpful coding assistant in the CodeTrail editor.
 
-Use simple, clear language. Avoid jargon when possible. If you must use a technical term, explain it briefly.
-
-What you can do:
-- Explain code step by step in plain words.
-- Write or improve code from the user's request.
-- Help find and fix bugs.
-- Review code and suggest clear improvements.
-- Write tests and documentation.
+Use very simple, plain language. Keep answers short and easy to understand.
 
 How to respond:
-- Answer the user's request directly.
-- Keep explanations short and easy to follow.
+- Give a brief, direct answer first.
+- Prefer short bullet points (3-5 max) over long paragraphs.
+- Explain only what matters; skip obvious or extra detail unless asked.
+- Avoid jargon. If a technical term is needed, explain it in a few words.
 - When code or a file is provided, refer to the actual code.
-- Use fenced code blocks with the language name (e.g. \`\`\`python, \`\`\`javascript).
+- Use fenced code blocks with the language name (e.g. \`\`\`python, \`\`\`javascript) only when helpful.
 
-For debugging, use this structure:
-### Problem:
-[What went wrong]
-### Possible Cause:
-[Why it happened]
-### Suggested Correction:
-[How to fix it, with code if helpful]
+For debugging, use this clear structure:
+### Problem
+[One short sentence: what is wrong]
+
+### Why
+- [1-2 short bullets]
+
+### Fix
+- [Short fix steps]
+Then include the corrected code in a fenced code block.
 
 For code review, include severity tags when useful: [CRITICAL], [HIGH], [MEDIUM], [LOW].`;
 
 /**
  * Format prompt and context into a consolidated user message
  */
+function buildWholeProjectReadmeMarkdown(workspaceContext, fallbackFiles = []) {
+  const chunkFiles = (workspaceContext?.chunks || []).map(c => c?.path || c?.file || c?.fileName).filter(Boolean);
+  const refFiles = (workspaceContext?.references || []).map(r => r?.file || r?.fileName || r?.path).filter(Boolean);
+  const rawFiles = (Array.isArray(fallbackFiles) ? fallbackFiles : []).map(f => f?.path || f?.name || f?.fileName).filter(Boolean);
+  const fileNames = [...new Set([...chunkFiles, ...refFiles, ...rawFiles])].sort((a,b)=>a.localeCompare(b));
+  const lower = fileNames.map(n => n.toLowerCase());
+  const has = (re) => lower.some(n => re.test(n));
+  const mainFile = fileNames.find(n => /(^|\/)(main|index|app)\.(py|js|jsx|ts|tsx|c|cpp|java)$/i.test(n)) || fileNames[0] || 'main.py';
+  const isPy = has(/\.py$/) || /\.py$/i.test(mainFile);
+  const isNode = has(/package\.json$/) || /\.(js|jsx|ts|tsx)$/i.test(mainFile);
+  const title = (workspaceContext?.workspaceTitle || workspaceContext?.title || 'Project').trim() || 'Project';
+  const features = [];
+  if (isNode) features.push('JavaScript/Node.js based project');
+  if (isPy) features.push('Python scripts/components');
+  if (has(/(^|\/)frontend\//)) features.push('Frontend module included');
+  if (has(/(^|\/)backend\//) || has(/(^|\/)server/)) features.push('Backend/server module included');
+  if (has(/test|spec/)) features.push('Test files included');
+  if (!features.length) features.push('Core project files and modules');
+
+  const install = isNode
+    ? `\`\`\`bash
+git clone <repo-url>
+cd <project-folder>
+npm install
+\`\`\``
+    : isPy
+      ? `\`\`\`bash
+git clone <repo-url>
+cd <project-folder>
+# optional: create and activate a virtual environment
+pip install -r requirements.txt
+\`\`\``
+      : `\`\`\`bash
+git clone <repo-url>
+cd <project-folder>
+# install project dependencies if required
+\`\`\``;
+
+  const runCmd = /\.py$/i.test(mainFile)
+    ? `python ${mainFile.split('/').pop()}`
+    : /\.(ts|tsx)$/i.test(mainFile)
+      ? `npx ts-node ${mainFile.split('/').pop()}`
+      : /\.(js|jsx)$/i.test(mainFile)
+        ? `node ${mainFile.split('/').pop()}`
+        : `# run the main entry file: ${mainFile}`;
+
+  const usage = `\`\`\`bash
+${runCmd}
+\`\`\``;
+
+  const structure = fileNames.length ? fileNames.map(n => `- \`${n}\``).join('\n') : '- (no files detected)';
+  const refs = (workspaceContext?.references || []).slice(0, 12).map(r => {
+    const f = r.file || r.fileName || r.path || 'file';
+    const range = r.startLine ? `:${r.startLine}${r.endLine && r.endLine !== r.startLine ? `-${r.endLine}` : ''}` : '';
+    return `- \`${f}${range}\``;
+  });
+
+  return `# ${title}
+
+Brief description of what this project does.
+
+## Features
+${features.map(f => `- ${f}`).join('\n')}
+
+## Installation
+${install}
+
+## Usage
+${usage}
+
+## Project Structure
+${structure}
+
+## Notes
+- Generated from available workspace context (${fileNames.length} file${fileNames.length === 1 ? '' : 's'} detected).
+- Update this README with exact setup steps, environment variables, and feature details.
+${refs.length ? `\n## Key References\n${refs.join('\n')}\n` : ''}`;
+}
+
 function buildFullPrompt({ message, context, attachments, actionType, workspaceContext }) {
   let promptText = '';
 
@@ -185,15 +277,15 @@ function buildFullPrompt({ message, context, attachments, actionType, workspaceC
 
   // Specific Action Framing
   if (actionType === 'explain') {
-    promptText += `TASK: Explain the provided code thoroughly. For selected functions/classes/blocks, describe purpose, parameters, return values, dependencies, execution flow, and key logic step by step.\n`;
+    promptText += `TASK: Explain the provided code in very simple terms. Give a 1-2 sentence summary of what it does, then 3-5 short bullet points walking through the main steps in order. Avoid extra detail (parameters, return values, edge cases, imports) unless the user asks for it.\n`;
   } else if (actionType === 'debug') {
-    promptText += `TASK: Debug this code or error. Provide: Problem, Possible Cause, and Suggested Correction with fixed code.\n`;
+    promptText += `TASK: Debug this code or error. Keep it simple and easy to read. Use this structure:\n### ðŸ” Problem\n(one short sentence)\n### ðŸ’¡ Why\n- (1-2 short bullets)\n### âœ… Fix\n- (short fix steps)\nThen provide the corrected code in a fenced code block.\n`;
   } else if (actionType === 'review' || actionType === 'refactor') {
     promptText += `TASK: Refactor/review the provided code. Suggest an improved version with cleaner structure, better naming, safety, and performance. Include the improved code in a complete fenced code block that can be applied to the editor, and briefly explain key changes.\n`;
   } else if (actionType === 'tests') {
     promptText += `TASK: Analyze the provided function/code and generate meaningful test cases covering normal inputs, boundary and edge cases, zero values, negative numbers, decimals, and invalid inputs. Return: 1) Function analysis (name, parameters, expected behavior), 2) Test scenarios table (#, input, expectedOutput, category, scenario), 3) Runnable test specs in the matching language, 4) A structured JSON array matching [{"input": [...], "expectedOutput": ..., "description": "..."}].\n`;
   } else if (actionType === 'docs') {
-    promptText += `TASK: Generate documentation for the provided code: function/class comments, docstrings/JSDoc, parameter and return-value descriptions, and a short usage/README-style section when useful. Include apply-ready documentation/code in fenced blocks.\n`;
+    promptText += `TASK: Generate documentation using the provided workspace/file context. If asked for a README or whole-project documentation, return a complete, ready-to-save README in a single \`\`\`markdown fenced block (no extra text outside the block). Base it on actual project files/structure/context; include sections like title/description, features (if inferable), installation, usage/run, project structure, and notes. Keep it clear and easy to understand. For single-file docs, return the documentation in an appropriate fenced block with brief explanations.\n`;
   } else if (actionType === 'generate') {
     promptText += `TASK: Generate code from the user's natural-language request. Produce complete, runnable, well-structured code in the requested language/context. Return the primary implementation in a fenced code block ready to insert/apply in the editor, then a short usage note.\n`;
   } else if (actionType === 'algorithm') {
@@ -248,6 +340,9 @@ function generateLocalHeuristicResponse({ message, context, actionType, workspac
   const wantsAnalyzeIntent = /\b(analyz|parameter|return value|dependencies|execution flow|side effect)\b/.test(userQuery);
   const wantsAlgorithm = /\b(algorithm|complexity|big o|optimi[sz]e complexity|time complexity|space complexity|efficient approach)\b/.test(userQuery);
   const explicitAction = ['docs','tests','debug','analyze','function-analysis','algorithm','explain','review','refactor','generate'].includes(action) ? action : null;
+  const wantsWholeProjectDocs = (action === 'docs' || wantsDocs) && /\b(readme|whole project|entire project|project structure|project overview|document(ation)? (the )?(whole|entire )?project|create (a )?readme|generate (a )?readme|all files|workspace overview)\b/.test(userQuery);
+  const hasWorkspaceFiles = Array.isArray(workspaceContext?.chunks) ? workspaceContext.chunks.length > 0 : (workspaceContext?.totalFiles > 0 || (Array.isArray(workspaceContext?.references) && workspaceContext.references.length > 0));
+  const workspaceFileNames = [...new Set((workspaceContext?.chunks || workspaceContext?.references || []).map(c => c?.path || c?.file || c?.fileName).filter(Boolean))];
   const refsNote = refs.length
     ? `\n**Workspace References:** ${refs.map(r => `\`${r.fileName || r.file || 'file'}\`${r.startLine ? `:${r.startLine}${r.endLine && r.endLine !== r.startLine ? `-${r.endLine}` : ''}` : ''}`).slice(0, 8).join(', ')}`
     : '';
@@ -255,8 +350,8 @@ function generateLocalHeuristicResponse({ message, context, actionType, workspac
   let response = '';
 
   if (attached && !hasCodeContext && refersToCurrentCode) {
-    response = `The attached file \`${fileName || 'file'}\` is empty, so there’s no code to read.\n\nAdd some code, or click **+** to attach a different file, then try again.${refsNote}`;
-  } else if (!hasCodeContext && (action === 'docs' || wantsDocs) && refersToCurrentCode) {
+    response = `The attached file \`${fileName || 'file'}\` is empty, so thereâ€™s no code to read.\n\nAdd some code, or click **+** to attach a different file, then try again.${refsNote}`;
+  } else if (!hasCodeContext && (action === 'docs' || wantsDocs) && refersToCurrentCode && !wantsWholeProjectDocs && !hasWorkspaceFiles) {
     response = `I can write documentation, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code you want documented.${refsNote}`;
   } else if (!hasCodeContext && (action === 'tests' || wantsTests) && refersToCurrentCode) {
     response = `I can write tests, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code\n- Tell me what the code should do.${refsNote}`;
@@ -271,37 +366,43 @@ function generateLocalHeuristicResponse({ message, context, actionType, workspac
   } else if (!hasCodeContext && (action === 'algorithm' || wantsAlgorithm) && /\b(this code|the code|attached|current file|open file)\b/.test(userQuery)) {
     response = `I can suggest a better approach, but no file is attached yet.\n\n- Click **+** to add the open file, or paste the code/problem.${refsNote}`;
   } else if ((explicitAction === 'debug') || (action !== 'tests' && action !== 'docs' && action !== 'algorithm' && wantsDebugIntent && explicitAction !== 'analyze' && explicitAction !== 'function-analysis' && explicitAction !== 'explain' && explicitAction !== 'review' && explicitAction !== 'refactor')) {
-    const errorMatch = baseCode.match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError|ReferenceError)[^\n]*/i) ||
-      String(message || '').match(/(Error|Exception|fail|undefined|null|TypeError|SyntaxError|NameError|ReferenceError)[^\n]*/i);
-    const errText = errorMatch ? errorMatch[0] : 'Something may be going wrong in this code';
-    const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
-    response = `### Debugging help
+    const msgText = String(message || '');
+    const errMatch = baseCode.match(/(SyntaxError|TypeError|NameError|ReferenceError|IndentationError|ValueError|ZeroDivisionError|IndexError|KeyError|AttributeError)[^\n]*/i)
+      || msgText.match(/(SyntaxError|TypeError|NameError|ReferenceError|IndentationError|ValueError|ZeroDivisionError|IndexError|KeyError|AttributeError)[^\n]*/i);
+    const errText = errMatch ? errMatch[0].trim() : (baseCode ? 'There is a bug in this code.' : 'Something is not working.');
+    const pyBrokenPrint = isPy && /print\s*\(\s*["'][^"'\n]*$/.test(baseCode);
+    let why = ['A value, quote, bracket, or condition may be incorrect.'];
+    let fixSteps = ['Correct the broken part and run it again.'];
+    let fixedCode = baseCode || (isPy ? 'print("Hello")' : 'console.log("Hello");');
+    if (pyBrokenPrint) {
+      why = ['The text is not closed with a quote.', 'The `print(...)` call is missing a closing `)`.'];
+      fixSteps = ['Close the text with a matching quote.', 'Add `)` at the end of the print line.'];
+      fixedCode = baseCode
+        .replace(/print\s*\(\s*"([^"\n]*)$/m, 'print("$1")')
+        .replace(/print\s*\(\s*'([^'\n]*)$/m, "print('$1')");
+      if (fixedCode === baseCode) fixedCode = baseCode.replace(/\n?$/, '")\n');
+    } else if (/SyntaxError/i.test(errText)) {
+      why = ['There is a typo or a missing symbol (quote, bracket, or colon).'];
+      fixSteps = ['Check the error line and close any missing quotes or brackets.'];
+    } else if (/NameError|ReferenceError/i.test(errText)) {
+      why = ['A name is used before it is defined or is misspelled.'];
+      fixSteps = ['Define it first, or fix the spelling.'];
+    } else if (/IndentationError/i.test(errText)) {
+      why = ['Spaces/tabs are not lined up correctly.'];
+      fixSteps = ['Use the same indentation inside blocks (usually 4 spaces in Python).'];
+    }
+    response = `### Problem
+${errText}
 
-**Problem:** ${errText} in \`${fileName || 'attached code'}\`.
+### Why
+${why.map(w => `- ${w}`).join('\n')}
 
-**Possible Cause:**
-- A value might be missing, undefined, or the wrong type.
-- The logic may be off (a condition, loop, or return).
-- Edge cases (empty input, 0, null, or unexpected values) may not be handled.
+### Fix
+${fixSteps.map(w => `- ${w}`).join('\n')}
 
-**Suggested Correction:**
-1. Check inputs and handle empty/invalid values.
-2. Add simple error handling if needed.
-3. Test with normal and edge-case values.
-
-**Simple fix example:**
-\`\`\`${isPy ? 'python' : language}
-${isPy
-  ? `try:\n    # check inputs first\n    result = value\n    print(result)\nexcept Exception as err:\n    print("Error:", err)`
-  : `try {\n  // check inputs first\n  const result = value;\n  console.log(result);\n} catch (err) {\n  console.error('Error:', err);\n}`}
-\`\`\`
-
-**Code to check:**
-\`\`\`${language}
-${preview}
-\`\`\`
-
-Share the exact error or what you expected, and I can give a more specific fix.${refsNote}`;
+\`\`\`${isPy ? 'python' : language || 'text'}
+${fixedCode}
+\`\`\`${refsNote}`;
   } else if (explicitAction === 'tests' || wantsTests) {
     if (content) {
       try {
@@ -324,30 +425,25 @@ ${isPy
 
 Tell me the function name and expected behavior for runnable, specific tests.${refsNote}`;
   } else if (explicitAction === 'docs' || wantsDocs) {
-    const target = fnMatches[0] || (isPy ? 'main' : 'module');
-    const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
-    response = `### Documentation: \`${fileName || 'attached code'}\`
-
-**AI-GENERATED DOCUMENTATION**
+    if (wantsWholeProjectDocs || (!hasCodeContext && hasWorkspaceFiles)) {
+      const readme = buildWholeProjectReadmeMarkdown(workspaceContext);
+      response = `\`\`\`markdown\n${readme}\n\`\`\``;
+    } else {
+      const target = fnMatches[0] || (isPy ? 'main' : 'module');
+      const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
+      response = `### Documentation: \`${fileName || 'attached code'}\`
 
 **What this code does**
 - **Purpose:** Explain what \`${fileName || 'this file'}\` is for.
 - **Main parts:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'Read the code from top to bottom.'}
 - **Inputs:** ${params ? `\`${params}\`` : 'Any inputs, settings, or data it uses.'}
 - **Outputs:** What it returns, prints, or changes.
-- **Notes:** Any important requirements or possible errors.
-
-**Example doc comment**
-\`\`\`${isPy ? 'python' : language}
-${isPy
-  ? `"""${fileName || 'Module'}\n\nWhat it does:\n    Briefly explain this file.\n\nHow to use:\n    Explain how to run or import it.\n"""\n\n${fnMatches.includes('main') || /def\s+main\s*\(/.test(baseCode) ? `def main():\n    """Start the program."""\n    # ...\n` : ''}`
-  : `/**\n * ${target}\n * @description What it does: Briefly explain this code.\n * @param {*} input - Describe inputs.\n * @returns {*} Describe output.\n */`}
-\`\`\`
 
 **Code**
 \`\`\`${language}
 ${preview}
 \`\`\`${refsNote}`;
+    }
   } else if (explicitAction === 'algorithm' || (wantsAlgorithm && !wantsExplain && !wantsDocs && !wantsTests && explicitAction !== 'review' && explicitAction !== 'refactor' && explicitAction !== 'analyze' && explicitAction !== 'function-analysis' && explicitAction !== 'debug')) {
     const snippet = hasCodeContext ? baseCode.split('\n').slice(0, 60).join('\n') : '# Provide the specific problem/code for a concrete optimized solution';
     response = `### ALGORITHM SUGGESTIONS & COMPLEXITY
@@ -379,25 +475,20 @@ ${hasCodeContext ? 'If you want, I can propose an optimized version of the attac
 ${preview}
 \`\`\`${refsNote}`;
   } else if (explicitAction === 'explain' || (wantsExplain && refersToCurrentCode && !wantsDocs && !wantsTests && !wantsDebugIntent && !wantsAlgorithm && !wantsAnalyzeIntent && explicitAction !== 'generate' && explicitAction !== 'review' && explicitAction !== 'refactor')) {
-    const nonEmpty = linesArr.filter(l => l.trim()).length;
-    const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
-    response = `### Code explanation: \`${fileName || 'attached code'}\`
-
-**Language:** ${language} | **Lines with code:** ${nonEmpty}
-**Main parts:** ${fnMatches.length ? fnMatches.map(s => `\`${s}\``).join(', ') : 'None named'}
+    const preview = linesArr.slice(0, 80).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
+    const pyMain = isPy && /if\s+__name__\s*==\s*['"]__main__['"]/.test(baseCode);
+    const hasPrint = /\bprint\s*\(|console\.log\s*\(/.test(baseCode);
+    response = `**What it does:** ${fnMatches[0] ? `Defines \`${fnMatches[0]}\` and runs it` : 'Runs this code'} in \`${fileName || 'this file'}\`.
 
 **Step by step:**
-1. **What it does:** This code in \`${fileName || 'this file'}\` runs its instructions.
-2. **How it runs:** It goes from top to bottom. Functions run when they are called${isPy ? ' (like `main()` at the bottom)' : ''}.
-3. **Inputs and outputs:** Check values passed in, values returned, and anything printed or saved.
-4. **Important parts:** Look at any if/else checks, loops, and error handling.
-5. **Things to watch for:** Empty or unexpected inputs can cause problems.
+1. Reads the file from top to bottom.
+${fnMatches.length ? `2. Defines \`${fnMatches[0]}\` (saved, runs only when called).` : '2. Runs each line in order.'}
+${pyMain ? `3. Runs \`${fnMatches[0] || 'main'}()\` only when you start this file directly.` : (fnMatches.length ? `3. Calls \`${fnMatches[0]}()\` to do the work.` : (hasPrint ? '3. Shows the result/output.' : '3. Produces the result.'))}
+${pyMain && hasPrint ? '4. Prints the message to the screen.' : ''}
 
 \`\`\`${language}
 ${preview}
-\`\`\`
-
-If you want, select a specific part and I’ll explain it in more detail.${refsNote}`;
+\`\`\`${refsNote}`;
   } else if (explicitAction === 'review' || explicitAction === 'refactor' || (wantsRefactor && !wantsBeginner && !wantsExplain && !wantsDocs && !wantsTests)) {
     const codeToShow = content ? `# Improved version of ${fileName}\n${baseCode}\n` : baseCode;
     const isReview = action === 'review' || /\breview\b/.test(userQuery);
@@ -452,7 +543,7 @@ ${preview}
 
 Tell me what you need (e.g. "document this", "explain this", "find bugs", "refactor this").${refsNote}`;
     } else {
-      response = `**Request:** ${prompt || 'How can I help?'}\n\nI can help with coding questions, concepts, debugging, and code generation.\n\n- **General prompt:** ask directly (e.g. “what is a loop in Python?”, “show an example of recursion in JS”).\n- **File-specific help:** click **+** to attach the currently open file (or select/paste code), then ask to explain/refactor/debug/analyze it.\n\nTell me the language/topic and what you need, and I’ll answer.${refsNote}`;
+      response = `**Request:** ${prompt || 'How can I help?'}\n\nI can help with coding questions, concepts, debugging, and code generation.\n\n- **General prompt:** ask directly (e.g. â€œwhat is a loop in Python?â€, â€œshow an example of recursion in JSâ€).\n- **File-specific help:** click **+** to attach the currently open file (or select/paste code), then ask to explain/refactor/debug/analyze it.\n\nTell me the language/topic and what you need, and Iâ€™ll answer.${refsNote}`;
     }
   }
 
@@ -575,13 +666,32 @@ async function* parseSseDataStream(stream) {
   }
 }
 
-async function* callOpenAiApiStream({ prompt, conversation = [], apiKey, baseUrl }) {
-  const model = DEFAULT_CONFIG.openaiModel;
+function isOpenAiModelUnavailableError(err) {
+  const status = getStatusCode(err);
+  if (status !== 404 && status !== 400) return false;
+  const msg = String(err?.response?.data?.error?.message || err?.response?.data?.error?.code || err?.message || '').toLowerCase();
+  return msg.includes('model') || msg.includes('not found') || msg.includes('does not exist') || msg.includes('unavailable') || msg.includes('unsupported');
+}
+
+function shouldFallbackToNextOpenAiModel(err) {
+  const status = getStatusCode(err);
+  const msg = String(err?.response?.data?.error?.message || err?.message || '').toLowerCase();
+  if (status === 429) return true;
+  if (status >= 500) return true;
+  if (status === 408) return true;
+  if (!status) return true; // network/timeout/connection errors
+  if (isOpenAiModelUnavailableError(err)) return true;
+  if (status === 400 && (msg.includes('rate') || msg.includes('limit') || msg.includes('quota') || msg.includes('capacity') || msg.includes('overload'))) return true;
+  return false; // 401/403 auth, other 4xx: same key/request likely fails across models
+}
+
+async function* callOpenAiApiStream({ prompt, conversation = [], apiKey, baseUrl, model }) {
+  const selectedModel = model || DEFAULT_CONFIG.openaiModel;
   const endpoint = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
   const messages = buildOpenAiMessages({ prompt, conversation });
   const response = await axios.post(
     endpoint,
-    { model, messages, temperature: 0.3, max_tokens: 2048, stream: true },
+    { model: selectedModel, messages, temperature: 0.3, max_tokens: 2048, stream: true },
     {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       timeout: DEFAULT_CONFIG.requestTimeoutMs,
@@ -595,6 +705,31 @@ async function* callOpenAiApiStream({ prompt, conversation = [], apiKey, baseUrl
     const delta = json?.choices?.[0]?.delta?.content;
     if (typeof delta === 'string' && delta) yield delta;
   }
+}
+
+async function* callOpenAiApiStreamWithFallback({ prompt, conversation = [], apiKey, baseUrl }) {
+  const models = getOpenAiModelCandidates();
+  let lastErr = null;
+  let lastNonFallbackErr = null;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      for await (const delta of callOpenAiApiStream({ prompt, conversation, apiKey, baseUrl, model })) {
+        yield { model, delta };
+      }
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (shouldFallbackToNextOpenAiModel(err)) {
+        console.warn(`[CodeTrail AI] openai model "${model}" failed (${getStatusCode(err) || 'network'}): ${String(err?.response?.data?.error?.message || err?.message || 'request failed').replace(/\s+/g, ' ').slice(0, 140)}. Trying next fallback model.`);
+        if (i < models.length - 1) continue;
+        throw lastNonFallbackErr || err;
+      }
+      lastNonFallbackErr = err;
+      throw err;
+    }
+  }
+  throw lastNonFallbackErr || lastErr || new Error('OpenAI-compatible stream request failed.');
 }
 
 async function* callGeminiApiStream({ prompt, conversation = [], apiKey, model }) {
@@ -704,11 +839,15 @@ exports.streamAIResponse = async function* ({
 
   if (openAiKey && !providerUnavailable(PROVIDERS.OPENAI)) {
     try {
-      yield { type: 'meta', provider: PROVIDERS.OPENAI, model: DEFAULT_CONFIG.openaiModel, ...baseMeta };
-      for await (const delta of callOpenAiApiStream({ prompt: fullPrompt, conversation, apiKey: openAiKey, baseUrl: customBaseUrl })) {
-        yield { type: 'delta', delta };
+      let metaSent = false;
+      for await (const chunk of callOpenAiApiStreamWithFallback({ prompt: fullPrompt, conversation, apiKey: openAiKey, baseUrl: customBaseUrl })) {
+        if (!metaSent) {
+          yield { type: 'meta', provider: PROVIDERS.OPENAI, model: chunk.model || DEFAULT_CONFIG.openaiModel, ...baseMeta };
+          metaSent = true;
+        }
+        if (chunk.delta) yield { type: 'delta', delta: chunk.delta };
       }
-      return;
+      if (metaSent) return;
     } catch (err) {
       markProviderFailure(PROVIDERS.OPENAI, err);
       logProviderFailure(PROVIDERS.OPENAI, err, 'stream');
@@ -725,15 +864,15 @@ exports.streamAIResponse = async function* ({
 /**
  * Call OpenAI / OpenAI-Compatible API
  */
-async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl }) {
-  const model = DEFAULT_CONFIG.openaiModel;
+async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl, model }) {
+  const selectedModel = model || DEFAULT_CONFIG.openaiModel;
   const endpoint = `${(baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
   const messages = buildOpenAiMessages({ prompt, conversation });
 
   const response = await axios.post(
     endpoint,
     {
-      model,
+      model: selectedModel,
       messages,
       temperature: 0.3,
       max_tokens: 2048
@@ -753,6 +892,29 @@ async function callOpenAiApi({ prompt, conversation = [], apiKey, baseUrl }) {
   }
 
   return answer.trim();
+}
+
+async function callOpenAiApiWithFallback({ prompt, conversation = [], apiKey, baseUrl }) {
+  const models = getOpenAiModelCandidates();
+  let lastErr = null;
+  let lastNonFallbackErr = null;
+  for (let i = 0; i < models.length; i++) {
+    const model = models[i];
+    try {
+      const text = await callOpenAiApi({ prompt, conversation, apiKey, baseUrl, model });
+      return { text, model };
+    } catch (err) {
+      lastErr = err;
+      if (shouldFallbackToNextOpenAiModel(err)) {
+        console.warn(`[CodeTrail AI] openai model "${model}" failed (${getStatusCode(err) || 'network'}): ${String(err?.response?.data?.error?.message || err?.message || 'request failed').replace(/\s+/g, ' ').slice(0, 140)}. Trying next fallback model.`);
+        if (i < models.length - 1) continue;
+        throw lastNonFallbackErr || err;
+      }
+      lastNonFallbackErr = err;
+      throw err;
+    }
+  }
+  throw lastNonFallbackErr || lastErr || new Error('OpenAI-compatible request failed.');
 }
 
 /**
@@ -808,7 +970,7 @@ exports.generateAIResponse = async ({
   // 2. Attempt OpenAI or OpenAI-Compatible API if configured and not in cooldown/disabled
   if (openAiKey && !providerUnavailable(PROVIDERS.OPENAI)) {
     try {
-      const response = await callOpenAiApi({
+      const result = await callOpenAiApiWithFallback({
         prompt: fullPrompt,
         conversation,
         apiKey: openAiKey,
@@ -817,10 +979,10 @@ exports.generateAIResponse = async ({
       return {
         success: true,
         provider: PROVIDERS.OPENAI,
-        model: DEFAULT_CONFIG.openaiModel,
-        response,
-        message: response,
-        content: response,
+        model: result.model || DEFAULT_CONFIG.openaiModel,
+        response: result.text,
+        message: result.text,
+        content: result.text,
         references: workspaceContext?.references || [],
         workspaceContextSummary: contextSummary
       };
@@ -883,6 +1045,7 @@ exports.getAIStatus = () => {
       openai: {
         configured: openAiKey,
         model: DEFAULT_CONFIG.openaiModel,
+        models: DEFAULT_CONFIG.openaiModels,
         customBaseUrl,
         available: openAiKey && !openAiBlockedReason,
         cooldownUntil: providerState.openai.cooldownUntil > now ? new Date(providerState.openai.cooldownUntil).toISOString() : null,

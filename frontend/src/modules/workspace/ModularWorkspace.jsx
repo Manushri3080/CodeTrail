@@ -1330,12 +1330,12 @@ export const ModularWorkspace = ({
       {
         id: Date.now() + 5,
         type: "success",
-        text: `[3/3] ✨ Successfully scaffolded ${template.name}! Active file set to ${primary}.`,
+        text: `[3/3] âœ¨ Successfully scaffolded ${template.name}! Active file set to ${primary}.`,
       },
     ]);
 
     showToast(
-      `⚡ Initialized ${template.name} Project in Workspace!`,
+      `âš¡ Initialized ${template.name} Project in Workspace!`,
       "success",
     );
 
@@ -1392,27 +1392,27 @@ export const ModularWorkspace = ({
         {
           id: Date.now() + 3,
           type: "info",
-          text: "  • scaffold <react|fastapi|django|express|python|java> - Initialize framework template",
+          text: "  â€¢ scaffold <react|fastapi|django|express|python|java> - Initialize framework template",
         },
         {
           id: Date.now() + 4,
           type: "info",
-          text: "  • ls / dir - List workspace files",
+          text: "  â€¢ ls / dir - List workspace files",
         },
         {
           id: Date.now() + 5,
           type: "info",
-          text: "  • cat <filename> - Display file contents",
+          text: "  â€¢ cat <filename> - Display file contents",
         },
         {
           id: Date.now() + 6,
           type: "info",
-          text: "  • run / execute - Execute active file code",
+          text: "  â€¢ run / execute - Execute active file code",
         },
         {
           id: Date.now() + 7,
           type: "info",
-          text: "  • clear - Clear terminal screen",
+          text: "  â€¢ clear - Clear terminal screen",
         },
       ];
     } else if (lower === "ls" || lower === "dir") {
@@ -1420,8 +1420,8 @@ export const ModularWorkspace = ({
         id: Date.now() + i + 1,
         type: f.isFolder ? "info" : "output",
         text: f.isFolder
-          ? `📁 ${f.path}/`
-          : `📄 ${f.path} (${getLanguageInfo(f.name).name})`,
+          ? `ðŸ“ ${f.path}/`
+          : `ðŸ“„ ${f.path} (${getLanguageInfo(f.name).name})`,
       }));
     } else if (lower.startsWith("cat ")) {
       const targetName = cmd.slice(4).trim();
@@ -1625,7 +1625,7 @@ export const ModularWorkspace = ({
           i === fileIndex ? { ...f, content, version: nextVer } : f,
         );
       } else {
-        // File not yet in currentWorkspace.files — add it
+        // File not yet in currentWorkspace.files â€” add it
         const activeFileObj = customFilesRef.current?.find(
           (f) => f.id === activeFile,
         );
@@ -1794,7 +1794,7 @@ export const ModularWorkspace = ({
     );
   };
 
-  // ── Toast Notification System ──────────────────────────────────────────────
+  // â”€â”€ Toast Notification System â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
 
@@ -1806,7 +1806,7 @@ export const ModularWorkspace = ({
     }, duration);
   };
 
-  // ── VS Code Style File Explorer State & Tree Handlers ──────────────────────
+  // â”€â”€ VS Code Style File Explorer State & Tree Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [expandedFolders, setExpandedFolders] = useState(() => ({}));
   const [selectedItem, setSelectedItem] = useState(null); // ID of active/selected tree item
   const [targetFolderId, setTargetFolderId] = useState(null); // Parent ID for inline creation
@@ -1935,7 +1935,7 @@ export const ModularWorkspace = ({
       },
     );
 
-    showToast(`📄 Created ${cleanName}`, "success");
+    showToast(`ðŸ“„ Created ${cleanName}`, "success");
     triggerAutoSave();
     recordHistoryLog(
       "file",
@@ -2001,7 +2001,7 @@ export const ModularWorkspace = ({
       },
     );
 
-    showToast(`📁 Created folder ${cleanName}`, "success");
+    showToast(`ðŸ“ Created folder ${cleanName}`, "success");
     triggerAutoSave();
     recordHistoryLog(
       "file",
@@ -2127,14 +2127,14 @@ export const ModularWorkspace = ({
       // Intercept Folder Rename Action (CT-164 & CT-167)
       interceptTelemetry(
         TELEMETRY_ACTION_TYPES.FILE_SWITCH,
-        `Renamed folder ${itemToRename.name} → ${cleanName}`,
+        `Renamed folder ${itemToRename.name} â†’ ${cleanName}`,
         {
           fileId: newPath,
         },
       );
 
       showToast(
-        `📁 Renamed folder ${itemToRename.name} → ${cleanName}`,
+        `ðŸ“ Renamed folder ${itemToRename.name} â†’ ${cleanName}`,
         "success",
       );
     } else {
@@ -2181,13 +2181,13 @@ export const ModularWorkspace = ({
       // Intercept File Rename Action (CT-164 & CT-167)
       interceptTelemetry(
         TELEMETRY_ACTION_TYPES.FILE_SWITCH,
-        `Renamed ${itemToRename.name} → ${cleanName}`,
+        `Renamed ${itemToRename.name} â†’ ${cleanName}`,
         {
           fileId: newPath,
         },
       );
 
-      showToast(`✏️ Renamed ${itemToRename.name} → ${cleanName}`, "success");
+      showToast(`âœï¸ Renamed ${itemToRename.name} â†’ ${cleanName}`, "success");
     }
 
     setCustomFiles(updatedFiles);
@@ -2272,7 +2272,7 @@ export const ModularWorkspace = ({
       },
     );
 
-    showToast(`🗑 Deleted "${itemToDelete.name}"`, "warning");
+    showToast(`ðŸ—‘ Deleted "${itemToDelete.name}"`, "warning");
     triggerAutoSave();
     recordHistoryLog(
       "file",
@@ -2348,7 +2348,7 @@ export const ModularWorkspace = ({
     // Intercept File Duplication Action (CT-164 & CT-167)
     interceptTelemetry(
       TELEMETRY_ACTION_TYPES.FILE_CREATE,
-      `Duplicated "${fileItem.name}" → "${newName}"`,
+      `Duplicated "${fileItem.name}" â†’ "${newName}"`,
       {
         fileId: newPath,
         linesAdded: existingContent.split("\n").length,
@@ -2356,7 +2356,7 @@ export const ModularWorkspace = ({
       },
     );
 
-    showToast(`📋 Duplicated ${fileItem.name} → ${newName}`, "success");
+    showToast(`ðŸ“‹ Duplicated ${fileItem.name} â†’ ${newName}`, "success");
     triggerAutoSave();
   };
 
@@ -2513,7 +2513,7 @@ export const ModularWorkspace = ({
     }
 
     showToast(
-      `🚚 Moved "${itemToMove.name}" to ${targetFolder ? targetFolder.name : "root"}`,
+      `ðŸšš Moved "${itemToMove.name}" to ${targetFolder ? targetFolder.name : "root"}`,
       "success",
     );
     triggerAutoSave();
@@ -2681,7 +2681,7 @@ export const ModularWorkspace = ({
     // Folders can't be run
     const activeFileObj = customFiles.find((f) => f.id === activeFile);
     if (activeFileObj?.isFolder) {
-      showToast("📁 Cannot run a folder — select a file first.", "warning");
+      showToast("ðŸ“ Cannot run a folder â€” select a file first.", "warning");
       return;
     }
 
@@ -2701,7 +2701,7 @@ export const ModularWorkspace = ({
     const language = getMonacoLanguage(activeFile);
 
     if (!codeToRun || codeToRun.trim() === "") {
-      showToast(`📄 ${activeFile} is empty — nothing to run.`, "warning");
+      showToast(`ðŸ“„ ${activeFile} is empty â€” nothing to run.`, "warning");
       return;
     }
 
@@ -2804,17 +2804,17 @@ export const ModularWorkspace = ({
 
       if (status === "success") {
         const preview = stdout
-          ? ` → ${stdout.substring(0, 80)}${stdout.length > 80 ? "…" : ""}`
+          ? ` â†’ ${stdout.substring(0, 80)}${stdout.length > 80 ? "â€¦" : ""}`
           : "";
         showToast(
-          `✅ ${activeFile} ran successfully (exit 0)${preview}`,
+          `âœ… ${activeFile} ran successfully (exit 0)${preview}`,
           "success",
           4000,
         );
       } else if (status === "compile_error") {
-        showToast(`⚠️ ${activeFile} compilation failed`, "warning", 6000);
+        showToast(`âš ï¸ ${activeFile} compilation failed`, "warning", 6000);
       } else if (status === "timeout") {
-        showToast(`⏱️ ${activeFile} execution timed out`, "warning", 6000);
+        showToast(`â±ï¸ ${activeFile} execution timed out`, "warning", 6000);
       } else {
         const errPreview = stderr
           ? stderr.split("\n")[0].substring(0, 100)
@@ -2822,7 +2822,7 @@ export const ModularWorkspace = ({
             ? stdout.split("\n")[0].substring(0, 100)
             : `Exit code ${exitCode}`;
         showToast(
-          `⚠️ ${activeFile} failed (exit ${exitCode}): ${errPreview}`,
+          `âš ï¸ ${activeFile} failed (exit ${exitCode}): ${errPreview}`,
           "error",
           6000,
         );
@@ -2831,7 +2831,7 @@ export const ModularWorkspace = ({
       recordHistoryLog(
         "execution",
         `Code Executed: ${activeFile}`,
-        `Ran ${activeFile} (${language}) — status: ${status}, exit code ${exitCode}.`,
+        `Ran ${activeFile} (${language}) â€” status: ${status}, exit code ${exitCode}.`,
       );
     } catch (err) {
       console.error("Execution Failed:", err);
@@ -2890,7 +2890,7 @@ export const ModularWorkspace = ({
       };
       setExecutionHistoryList((prev) => [errHistoryLog, ...prev]);
 
-      showToast(`✗ ${errMsg}`, "error", 7000);
+      showToast(`âœ— ${errMsg}`, "error", 7000);
       recordHistoryLog(
         "execution",
         `Execution Error: ${activeFile}`,
@@ -4097,6 +4097,66 @@ export const ModularWorkspace = ({
     if (onBackToHome) onBackToHome();
   };
 
+
+  const handleAssistantCreateOrUpdateFile = ({ name, content, mode } = {}) => {
+    if (!name) return;
+    if (!canEditFiles) {
+      showToast("You don't have permission to create or edit files.", "error", 3500);
+      return;
+    }
+    const cleanName = String(name).trim().replace(/\\/g, "/").replace(/^\/+/, "");
+    if (!cleanName) return;
+    const existing = customFilesRef.current.find((f) => (f.path || f.id || f.name) === cleanName || f.name === cleanName.split("/").pop() && (f.path || f.id) === cleanName);
+    const resolvedPath = existing ? (existing.path || existing.id || cleanName) : cleanName;
+    const fileContentText = String(content ?? "");
+    if (existing) {
+      setFilesContent((prev) => {
+        const next = { ...prev, [resolvedPath]: fileContentText, [existing.name || resolvedPath]: fileContentText };
+        filesContentRef.current = next;
+        return next;
+      });
+      setActiveFile(resolvedPath);
+      activeFileRef.current = resolvedPath;
+      showToast(`Updated ${existing.name || resolvedPath} (with permission).`, "success", 3000);
+      try { interceptTelemetry && interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_EDIT, `AI updated file "${existing.name || resolvedPath}"`, { fileId: resolvedPath }); } catch {}
+    } else {
+      const parts = cleanName.split("/").filter(Boolean);
+      let updatedFiles = [...customFilesRef.current];
+      let parentId = null;
+      let currentPath = "";
+      for (let i = 0; i < parts.length - 1; i++) {
+        currentPath = currentPath ? `${currentPath}/${parts[i]}` : parts[i];
+        if (!updatedFiles.some((f) => (f.path || f.id) === currentPath)) {
+          const folderObj = normalizeFileItem({ id: currentPath, name: parts[i], path: currentPath, parentId, isFolder: true, iconColor: "text-purple-400" });
+          updatedFiles.push(folderObj);
+        }
+        parentId = currentPath;
+        setExpandedFolders((prev) => ({ ...prev, [currentPath]: true }));
+      }
+      const iconColor = getLanguageInfo ? getLanguageInfo(cleanName).color : "text-gray-400";
+      const newFileObj = normalizeFileItem({ id: cleanName, name: parts[parts.length - 1], path: cleanName, parentId, isFolder: false, iconColor });
+      updatedFiles = [...updatedFiles, newFileObj];
+      setCustomFiles(updatedFiles);
+      customFilesRef.current = updatedFiles;
+      setFilesContent((prev) => {
+        const next = { ...prev, [cleanName]: fileContentText, [newFileObj.name]: fileContentText };
+        filesContentRef.current = next;
+        return next;
+      });
+      setActiveFile(cleanName);
+      activeFileRef.current = cleanName;
+      if (socketRef.current) {
+        try {
+          socketRef.current.emit("file_created", { workspaceId: wsId, file: newFileObj });
+          socketRef.current.emit("files_updated", { workspaceId: wsId, files: updatedFiles });
+        } catch {}
+      }
+      try { interceptTelemetry && interceptTelemetry(TELEMETRY_ACTION_TYPES.FILE_CREATE, `AI created file "${newFileObj.name}"`, { fileId: cleanName }); } catch {}
+      showToast(`Created ${newFileObj.name} (with permission).`, "success", 3000);
+    }
+    setAutoSaveStatus("Unsaved changes...");
+    triggerAutoSave && triggerAutoSave();
+  };
   const handleInsertAssistantCode = (code) => {
     handleApplyAssistantCode(
       typeof code === "string"
@@ -4641,7 +4701,7 @@ export const ModularWorkspace = ({
                     type="button"
                     onClick={() => {
                       syncWorkspaceState();
-                      showToast("🔄 Resynced explorer", "info");
+                      showToast("ðŸ”„ Resynced explorer", "info");
                     }}
                     className="hover:text-emerald-300 transition-all p-1.5 rounded-lg hover:bg-white/10"
                     title="Refresh Explorer"
@@ -5308,7 +5368,7 @@ export const ModularWorkspace = ({
                       type="button"
                       onClick={() => {
                         syncWorkspaceState();
-                        showToast("🔄 Explorer refreshed", "info");
+                        showToast("ðŸ”„ Explorer refreshed", "info");
                         setContextMenu({
                           visible: false,
                           x: 0,
@@ -5903,7 +5963,7 @@ export const ModularWorkspace = ({
                   // Context menu action: Explain with CodeTrail AI
                   editor.addAction({
                     id: "codetrail-ai-explain",
-                    label: "✨ CodeTrail AI: Explain Code",
+                    label: "âœ¨ CodeTrail AI: Explain Code",
                     keybindings: [
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyE,
                     ],
@@ -5927,7 +5987,7 @@ export const ModularWorkspace = ({
                   // Context menu action: Suggest Improvements / Fix
                   editor.addAction({
                     id: "codetrail-ai-suggest",
-                    label: "✨ CodeTrail AI: Suggest Improvements & Fixes",
+                    label: "âœ¨ CodeTrail AI: Suggest Improvements & Fixes",
                     keybindings: [
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyS,
                     ],
@@ -5951,7 +6011,7 @@ export const ModularWorkspace = ({
                   // Context menu action: Generate Test Cases (Meet Sheth - Test Case Integration)
                   editor.addAction({
                     id: "codetrail-ai-generate-tests",
-                    label: "🧪 CodeTrail AI: Generate Test Cases",
+                    label: "ðŸ§ª CodeTrail AI: Generate Test Cases",
                     keybindings: [
                       monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyT,
                     ],
@@ -6155,7 +6215,7 @@ export const ModularWorkspace = ({
                           <span>Success (Exit 0)</span>
                           {executionResult.executionTimeMs !== null && (
                             <span className="text-xs text-emerald-400/80 font-normal">
-                              • {executionResult.executionTimeMs}ms
+                              â€¢ {executionResult.executionTimeMs}ms
                             </span>
                           )}
                         </div>
@@ -6218,7 +6278,7 @@ export const ModularWorkspace = ({
                                 );
                               } catch (e) {}
                             }
-                            showToast("🗑️ Execution history cleared", "info");
+                            showToast("ðŸ—‘ï¸ Execution history cleared", "info");
                           }}
                           className="text-gray-300 hover:text-red-400 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 p-3 transition-all cursor-pointer"
                           title="Clear Execution History"
@@ -6286,7 +6346,7 @@ export const ModularWorkspace = ({
                                   Running {executionResult.filename}
                                 </span>
                                 <span className="text-gray-400 font-medium">
-                                  •{" "}
+                                  â€¢{" "}
                                   {
                                     getLanguageInfo(executionResult.filename)
                                       .name
@@ -6356,7 +6416,7 @@ export const ModularWorkspace = ({
                                 !executionResult.stdout &&
                                 !executionResult.stderr && (
                                   <div className="text-gray-500 italic p-6 rounded-2xl bg-white/[0.02] border border-white/5 my-4">
-                                    [Process exited with code 0 — no standard
+                                    [Process exited with code 0 â€” no standard
                                     output produced]
                                   </div>
                                 )}
@@ -6395,7 +6455,7 @@ export const ModularWorkspace = ({
                                   </span>
                                   {executionResult.executionTimeMs !== null && (
                                     <span className="text-gray-400 font-medium">
-                                      • in {executionResult.executionTimeMs}ms
+                                      â€¢ in {executionResult.executionTimeMs}ms
                                     </span>
                                   )}
                                 </div>
@@ -6679,7 +6739,7 @@ export const ModularWorkspace = ({
                                               onClick={() => {
                                                 setCustomInput(item.stdin);
                                                 showToast(
-                                                  "📋 Loaded stdin into input editor",
+                                                  "ðŸ“‹ Loaded stdin into input editor",
                                                   "info",
                                                 );
                                               }}
@@ -6810,7 +6870,7 @@ export const ModularWorkspace = ({
                                   telemetryData,
                                   telemetryVerification,
                                 );
-                                showToast(`📄 Exported ${fileName}`, "success");
+                                showToast(`ðŸ“„ Exported ${fileName}`, "success");
                               }}
                               className="rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 border border-purple-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer font-bold"
                               style={{ padding: "10px 18px" }}
@@ -6828,7 +6888,7 @@ export const ModularWorkspace = ({
                                   telemetryData,
                                   telemetryVerification,
                                 );
-                                showToast(`📋 Exported ${fileName}`, "success");
+                                showToast(`ðŸ“‹ Exported ${fileName}`, "success");
                               }}
                               className="rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-500/40 text-[11px] flex items-center gap-2 transition-colors cursor-pointer"
                               style={{ padding: "10px 18px" }}
@@ -7220,9 +7280,9 @@ export const ModularWorkspace = ({
                         {dossierSummary.sessionId ||
                           `#ws-${String(wsId).slice(-6)}`}
                       </span>
-                      <span className="text-gray-600">•</span>
+                      <span className="text-gray-600">â€¢</span>
                       <span className="text-cyan-400 font-bold whitespace-nowrap">
-                        Seq #{dossierSummary.currentSequence ?? "—"}
+                        Seq #{dossierSummary.currentSequence ?? "â€”"}
                       </span>
                     </div>
                   </div>
@@ -7530,7 +7590,7 @@ export const ModularWorkspace = ({
                                   )}
                                   {user.activeSeconds > 0 && (
                                     <span className="text-[10px] text-gray-500 font-mono">
-                                      ⏱{" "}
+                                      â±{" "}
                                       {formatActiveDuration(user.activeSeconds)}
                                     </span>
                                   )}
@@ -7826,9 +7886,15 @@ export const ModularWorkspace = ({
               selectedCode={selectedCode}
               onInsertCode={handleInsertAssistantCode}
               onApplyCode={handleApplyAssistantCode}
+              onCreateOrUpdateFile={handleAssistantCreateOrUpdateFile}
+              canEditFiles={canEditFiles}
               triggerAction={aiAssistantTrigger}
               workspaceId={currentWorkspace?._id || currentWorkspace?.id || workspaceId}
-              files={customFiles}
+              files={customFiles.map((f) => {
+                const key = f?.path || f?.id || f?.name;
+                const content = key ? (filesContent[key] ?? filesContent[f?.name] ?? filesContentRef.current?.[key] ?? filesContentRef.current?.[f?.name] ?? "") : "";
+                return { ...f, content: typeof content === "string" ? content : "" };
+              })}
               activeWorkspace={currentWorkspace}
             />
           </AssistantErrorBoundary>
@@ -7862,7 +7928,7 @@ export const ModularWorkspace = ({
         showToast={showToast}
       />
 
-      {/* ── Toast Notification Stack ──────────────────────────────────────── */}
+      {/* â”€â”€ Toast Notification Stack â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       <div
         aria-live="polite"
         className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-4 pointer-events-none"
@@ -7916,7 +7982,7 @@ export const ModularWorkspace = ({
                 }
                 className="text-current opacity-50 hover:opacity-100 transition-opacity ml-1 mt-0.5 cursor-pointer shrink-0"
               >
-                ×
+                Ã—
               </button>
             </div>
           );
