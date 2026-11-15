@@ -25,6 +25,7 @@ const {
   chatStream,
   explainCode,
   debugError,
+  analyzeError,
   reviewCode,
   generateTests,
   generateDocs,
@@ -46,6 +47,8 @@ router.get('/chat/stream', optionalAuth, aiStreamLimiter, chatStream);
 // Specialized AI Capability Endpoints
 router.post('/explain', optionalAuth, aiGeneralLimiter, explainCode);
 router.post('/debug', optionalAuth, aiGeneralLimiter, debugError);
+router.post('/error-analysis', optionalAuth, aiGeneralLimiter, analyzeError);
+router.post('/debug-error', optionalAuth, aiGeneralLimiter, analyzeError);
 router.post('/review', optionalAuth, aiGeneralLimiter, reviewCode);
 router.post('/tests', optionalAuth, aiGeneralLimiter, generateTests);
 router.post('/test-cases', optionalAuth, aiGeneralLimiter, generateTests);
