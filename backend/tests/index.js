@@ -47,6 +47,9 @@ require('./workspaceRegression.test');
   // Workspace Context & AI Knowledge Tests (Ruchita)
   await require('./workspaceContextAI.test');
 
+  // Execution Error Analysis & AI Debugging Integration Tests (Anistina Dsouza)
+  await require('./aiErrorAnalysis.test');
+
   console.log('✅ ALL TEST SUITES COMPLETED WITH 100% SUCCESS.\n');
 })().catch(err => {
   console.error('Test suite failed:', err);

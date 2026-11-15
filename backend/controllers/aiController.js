@@ -16,6 +16,7 @@
 
 const aiService = require('../services/aiService');
 const aiTestCaseService = require('../services/aiTestCaseService');
+const aiErrorAnalysisService = require('../services/aiErrorAnalysisService');
 
 /**
  * 1. Primary AI Chat Endpoint
@@ -194,30 +195,120 @@ exports.explainCode = async (req, res) => {
 };
 
 /**
- * 4. Debug Error Endpoint
+ * 4. Debug Error Endpoint (Integrated with Error Analysis Service)
  */
 exports.debugError = async (req, res) => {
   try {
-    const { error, code, context, message, workspaceId, files } = req.body;
-    const promptMessage = message || `Debug this error: ${error || 'Runtime or execution error'}`;
+    const {
+      error,
+      stderr,
+      compileOutput,
+      output,
+      code,
+      context,
+      message,
+      workspaceId,
+      language,
+      filename,
+      isCompileError,
+      isTimeout,
+      exitCode,
+      executionId,
+      executionResponse,
+      files
+    } = req.body || {};
 
-    const mergedContext = {
-      ...(typeof context === 'object' && context !== null ? context : {}),
-      content: code || context?.content || (error ? `Error Log:\n${error}` : '')
-    };
+    const resolvedCode = code || context?.content || '';
+    const resolvedLang = language || context?.language || '';
+    const resolvedFilename = filename || context?.fileName || 'main';
 
-    const result = await aiService.generateAIResponse({
-      message: promptMessage,
-      context: mergedContext,
-      actionType: 'debug',
-      user: req.user || null,
+    const result = await aiErrorAnalysisService.analyzeExecutionError({
+      executionResponse,
+      executionId,
+      error,
+      stderr,
+      compileOutput,
+      output,
+      code: resolvedCode,
+      language: resolvedLang,
+      filename: resolvedFilename,
+      isCompileError,
+      isTimeout,
+      exitCode,
+      userMessage: message,
       workspaceId: workspaceId || null,
-      files: Array.isArray(files) ? files : null
+      user: req.user || null
+    });
+
+    // Ensure backward compatibility with AssistantPanel.jsx & aiAssistant.test.js
+    const formattedText = result.markdown || result.analysis?.explanation || 'No error analysis available.';
+    result.response = formattedText;
+    result.message = formattedText;
+    result.content = formattedText;
+
+    return res.json(result);
+  } catch (err) {
+    console.error('Debug error controller exception:', err);
+    return res.status(500).json({ success: false, message: 'Debug error failed', error: err.message });
+  }
+};
+
+/**
+ * 4b. Dedicated Error Analysis API (Anistina Dsouza)
+ * POST /api/ai/error-analysis
+ */
+exports.analyzeError = async (req, res) => {
+  try {
+    const {
+      executionId,
+      executionResponse,
+      error,
+      stderr,
+      compileOutput,
+      output,
+      code,
+      language,
+      filename,
+      isCompileError,
+      isTimeout,
+      exitCode,
+      message,
+      workspaceId
+    } = req.body || {};
+
+    if (!executionId && !executionResponse && !error && !stderr && !compileOutput && !output && exitCode === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Execution error details, output, or executionId is required for analysis.'
+      });
+    }
+
+    const result = await aiErrorAnalysisService.analyzeExecutionError({
+      executionId,
+      executionResponse,
+      error,
+      stderr,
+      compileOutput,
+      output,
+      code,
+      language,
+      filename,
+      isCompileError,
+      isTimeout,
+      exitCode,
+      userMessage: message,
+      workspaceId: workspaceId || null,
+      user: req.user || null
     });
 
     return res.json(result);
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Debug error failed', error: err.message });
+    console.error('Analyze error controller exception:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to analyze execution error',
+      error: err.message
+    });
   }
 };
 

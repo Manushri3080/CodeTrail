@@ -391,13 +391,13 @@ function generateLocalHeuristicResponse({ message, context, actionType, workspac
       why = ['Spaces/tabs are not lined up correctly.'];
       fixSteps = ['Use the same indentation inside blocks (usually 4 spaces in Python).'];
     }
-    response = `### Problem
+    response = `### Problem:
 ${errText}
 
-### Why
+### Possible Causes:
 ${why.map(w => `- ${w}`).join('\n')}
 
-### Fix
+### Suggested Correction:
 ${fixSteps.map(w => `- ${w}`).join('\n')}
 
 \`\`\`${isPy ? 'python' : language || 'text'}
@@ -431,7 +431,13 @@ Tell me the function name and expected behavior for runnable, specific tests.${r
     } else {
       const target = fnMatches[0] || (isPy ? 'main' : 'module');
       const preview = linesArr.slice(0, 120).map((l, i) => `${i + 1}: ${l}`).join('\n') || '(no attached code)';
-      response = `### Documentation: \`${fileName || 'attached code'}\`
+      response = `### AI-GENERATED DOCUMENTATION: \`${fileName || 'attached code'}\`
+
+/**
+ * @description Analyzes and executes operations for ${target}.
+${params ? ` * @param ${params}` : ' * @param {*} input'}
+ * @returns {*} Result of the execution.
+ */
 
 **What this code does**
 - **Purpose:** Explain what \`${fileName || 'this file'}\` is for.
