@@ -1,0 +1,451 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage[hidelinks]{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{parskip}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{CodeTrail User Manual}
+\lhead{Version 1.0}
+\cfoot{\thepage}
+
+\title{\textbf{CodeTrail User Manual}}
+\author{CodeTrail Team}
+\date{2026-11-16}
+
+\begin{document}
+
+\maketitle
+
+\begin{center}
+\textbf{Product:} CodeTrail — Collaborative Coding Platform \\
+\textbf{Document:} User Manual \\
+\textbf{Version:} 1.0 \\
+\textbf{Date:} 2026-11-16
+\end{center}
+
+\tableofcontents
+\newpage
+
+% ==========================================
+\section{Introduction}
+
+CodeTrail is a collaborative coding platform that combines a modular workspace, real-time collaboration, sandboxed code execution, and contribution telemetry/audit features in one web application.
+
+\textbf{Key capabilities}
+\begin{itemize}
+  \item \textbf{Authentication:} Email/password and Google-based sign-in (as configured in your deployment).
+  \item \textbf{Home Dashboard:} Personalized overview of recent activity, workspaces, metrics, and goals.
+  \item \textbf{Workspaces:} Create, join, search, filter, star, and manage collaborative coding rooms.
+  \item \textbf{Modular Workspace:} Browser-based editor with file management, collaboration, and execution.
+  \item \textbf{Code Execution:} Run code in an isolated sandbox and view stdout, stderr, compilation errors, exit codes, and execution time.
+  \item \textbf{Telemetry \& Integrity Audit:} Activity tracking with proof-of-work/chain verification views.
+  \item \textbf{Analytics:} Contribution and session insights (where available).
+\end{itemize}
+
+% ==========================================
+\section{System Requirements \& Access}
+
+\begin{itemize}
+  \item \textbf{Supported browsers:} Latest versions of Google Chrome, Microsoft Edge, or Mozilla Firefox (recommended: Chromium-based browser).
+  \item \textbf{Internet connection:} Required for authentication, collaboration, execution, and data sync.
+  \item \textbf{Screen size:} Desktop/laptop recommended for the full workspace/editor experience; responsive layouts are provided where supported.
+  \item \textbf{Access URL:} Use the CodeTrail URL provided by your deployment/administrator.
+\end{itemize}
+
+\begin{quote}
+\textbf{Note:} Some features (execution, AI assistance, email, OAuth) depend on backend services and environment configuration. If a service is unavailable, the UI may show an offline/error state.
+\end{quote}
+
+% ==========================================
+\section{Getting Started}
+
+\subsection{Landing Page}
+When not logged in, CodeTrail shows the public landing page with product overview, feature highlights, and options to \textbf{Log In} or \textbf{Sign Up}.
+
+\subsection{Sign Up}
+\begin{enumerate}
+  \item From the landing/login screen, choose \textbf{Sign Up} (or switch to the sign-up form).
+  \item Enter the required details (e.g., name, email, password) as prompted.
+  \item Submit the form to create your account.
+  \item After successful registration, sign in to access your dashboard.
+\end{enumerate}
+
+\begin{quote}
+Field requirements and validation messages are shown inline if input is invalid.
+\end{quote}
+
+\subsection{Log In}
+\begin{enumerate}
+  \item Open CodeTrail and select \textbf{Log In}.
+  \item Enter your registered email/username and password (or use Google sign-in if enabled).
+  \item On success, you are redirected to the \textbf{Home Dashboard}.
+\end{enumerate}
+
+\textbf{Session behavior}
+\begin{itemize}
+  \item Your session token is stored locally to keep you signed in.
+  \item If your session expires or becomes invalid, you may see a session/authentication error and be prompted to sign in again.
+\end{itemize}
+
+\subsection{Forgot Password \& Reset}
+\begin{enumerate}
+  \item On the login screen, select \textbf{Forgot Password}.
+  \item Enter your registered email address and submit.
+  \item If email service is configured, follow the reset link sent to your inbox.
+  \item Set a new password on the reset page and log in again.
+\end{enumerate}
+
+\begin{quote}
+If you do not receive an email, check spam/junk folders or contact your administrator (email delivery depends on deployment configuration).
+\end{quote}
+
+\subsection{Log Out}
+Use the \textbf{Logout/Profile} controls available in the application (e.g., sidebar/profile menu depending on view). Logging out clears the active session and returns you to the public/landing experience.
+
+% ==========================================
+\section{Home Dashboard}
+
+The Home Dashboard is your central hub after login. The browser tab title reflects your context (e.g., user and/or active workspace name).
+
+\subsection{Top Banner (Recent/Active Workspace)}
+\begin{itemize}
+  \item Shows your most recent/active workspace (title, language, last edited time, description).
+  \item \textbf{Jump Back In:} Opens the selected workspace in the Modular Workspace.
+  \item If no recent workspace is available, the banner prompts you to create a workspace.
+\end{itemize}
+
+\subsection{Metrics Overview}
+Dashboard cards summarize key counts (examples):
+\begin{itemize}
+  \item \textbf{Workspaces} (total)
+  \item \textbf{Collaborators} (unique across your workspaces)
+  \item \textbf{Project Files} (aggregated)
+  \item \textbf{Total Lines Synced / Activity} (based on recorded telemetry/history)
+\end{itemize}
+
+\begin{quote}
+Metrics reflect available data from your account/workspaces and may show loading or empty states.
+\end{quote}
+
+\subsection{Sidebar Navigation}
+The collapsible/hover-expand sidebar provides quick access to:
+\begin{itemize}
+  \item \textbf{Dashboard:} Return to top/home view.
+  \item \textbf{Workspaces:} Open the Workspaces Directory.
+  \item \textbf{Starred:} Open Workspaces Directory with the \textbf{Starred} filter applied.
+  \item \textbf{Shared with me:} Filter/navigate to shared workspaces.
+  \item \textbf{Archived:} Filter/navigate to archived workspaces.
+  \item \textbf{Telemetry/Activity:} Jump to activity/timeline views (e.g., runs filter) where available.
+  \item \textbf{Profile/Settings:} Open your profile/settings area.
+  \item \textbf{Personal Goals:} Quick goal tracking widget (see 4.6).
+\end{itemize}
+
+Badges/counts on sidebar items update dynamically based on your data.
+
+\subsection{Personal Timeline}
+The \textbf{Personal Timeline} displays recent activity/events (workspace updates, code runs, saves/edits, joins/sessions, tasks/goals, etc.) in chronological context.
+
+\textbf{Controls}
+\begin{itemize}
+  \item \textbf{Search:} Filter events by description, file name, workspace, and related fields (debounced search).
+  \item \textbf{Category filters:} e.g., All, Workspace, Runs/Code Execution, Tasks.
+  \item \textbf{Workspace filter:} Limit events to a specific workspace.
+  \item \textbf{Date range:} e.g., All Time, This Week, Today.
+  \item \textbf{Reset/Clear filters:} Restore default view.
+\end{itemize}
+
+\textbf{Viewing behavior}
+\begin{itemize}
+  \item Shows \textbf{recent activity first} with a manageable initial set.
+  \item Use \textbf{Show more} to load additional events; \textbf{Show less} collapses back to recent items.
+  \item The header indicates total/visible event counts.
+\end{itemize}
+
+\textbf{Interaction}
+\begin{itemize}
+  \item Click/tap a timeline item to inspect it and (when applicable) jump to the related workspace.
+\end{itemize}
+
+\subsection{Recent Workspaces Panel}
+\begin{itemize}
+  \item Displays your recent workspaces with quick actions (e.g., open, copy room/invite code, view details).
+  \item Filter pills (All/Active/Starred/Shared/Archived) help narrow the list.
+  \item \textbf{New Workspace} and \textbf{Join} actions are available from this panel.
+\end{itemize}
+
+\subsection{Personal Goals}
+\begin{itemize}
+  \item Add, complete, or remove personal goals from the sidebar widget.
+  \item Progress indicator updates based on completed goals.
+  \item Goals are stored locally per user profile/session context in the browser.
+\end{itemize}
+
+% ==========================================
+\section{Workspaces Directory}
+
+The Workspaces Directory is the full management view for your workspaces.
+
+\subsection{Open the Directory}
+\begin{itemize}
+  \item Click \textbf{Workspaces} in the sidebar or \textbf{View All} from the dashboard.
+  \item Clicking \textbf{Starred} in the sidebar opens the directory with the \textbf{Starred} filter pre-selected.
+\end{itemize}
+
+\subsection{Search and Filters}
+\begin{itemize}
+  \item \textbf{Search:} Find workspaces by name, description, or room/invite code.
+  \item \textbf{Category tabs/filters:} \textbf{All}, \textbf{Starred}, \textbf{Shared}, \textbf{Archived} (and other available categories).
+  \item \textbf{Language filter:} Narrow by programming language (if available).
+  \item \textbf{View options:} Grid/list view (where supported).
+\end{itemize}
+
+\subsection{Create a Workspace}
+\begin{enumerate}
+  \item Click \textbf{New Workspace} / \textbf{Create Workspace}.
+  \item Provide required details (e.g., title, language, description/visibility/settings as available).
+  \item Confirm to create. The workspace appears in your list and can be launched immediately.
+\end{enumerate}
+
+\subsection{Join a Workspace via Code}
+\begin{enumerate}
+  \item Click \textbf{Join via Code} / \textbf{Join}.
+  \item Enter the workspace room/invite code shared by a collaborator.
+  \item Submit to join (permissions depend on workspace settings and your role).
+\end{enumerate}
+
+\subsection{Star/Unstar a Workspace}
+\begin{itemize}
+  \item Click the \textbf{Star} icon on a workspace card/row to mark it as favorite.
+  \item Starred state is saved for your account (persisted) and reflected across views (Home, Directory, sidebar counts).
+  \item Use the \textbf{Starred} filter/tab to view only starred workspaces.
+\end{itemize}
+
+\subsection{Launch, Manage, and View Workspace Details}
+\begin{itemize}
+  \item \textbf{Launch IDE:} Open the workspace in the Modular Workspace.
+  \item \textbf{Copy room/invite code:} Share access with collaborators.
+  \item \textbf{Settings/management:} Open workspace settings (rename/configure/archive/permissions as available and permitted by your role).
+  \item Workspace cards typically show language, privacy/status, file/member counts, and last activity indicators.
+\end{itemize}
+
+% ==========================================
+\section{Modular Workspace (Code Editor)}
+
+The Modular Workspace is the collaborative coding environment.
+
+\subsection{Workspace Layout}
+Common areas include:
+\begin{itemize}
+  \item \textbf{Editor:} Main code editing area (syntax highlighting, tabs/files).
+  \item \textbf{File explorer/sidebar:} Navigate and manage project files/folders.
+  \item \textbf{Top/bottom toolbars \& panels:} Run controls, status indicators, output/console, telemetry/audit tabs.
+  \item \textbf{Collaboration/session info:} Room/workspace identifiers and participant context.
+\end{itemize}
+
+\begin{quote}
+The browser tab displays the workspace name and user context when a workspace is open.
+\end{quote}
+
+\subsection{Files and Folders}
+\begin{itemize}
+  \item Open files from the explorer to edit.
+  \item Create, rename, or delete files/folders (subject to permissions).
+  \item File changes may auto-save or sync based on workspace/editor behavior and settings.
+\end{itemize}
+
+\subsection{Editing Code}
+\begin{itemize}
+  \item Use the editor for standard code editing (typing, selection, copy/paste).
+  \item Language-aware behavior (highlighting/formatting cues) depends on file type/language.
+  \item Unsaved/synced state indicators may appear based on configuration.
+\end{itemize}
+
+\subsection{Real-Time Collaboration}
+\begin{itemize}
+  \item Multiple users can collaborate in the same workspace session (when supported/enabled).
+  \item Presence, edits, and activity may sync in real time via live connections.
+  \item Connection/sync status indicators (e.g., live socket sync) may be shown in relevant panels.
+\end{itemize}
+
+\subsection{Running Code \& Execution Output}
+\begin{enumerate}
+  \item Open/select the file or code you want to run.
+  \item Click \textbf{Run} (or the execution control provided in the workspace).
+  \item The system sends code to the execution service and displays results in the output/console area.
+\end{enumerate}
+
+\textbf{Execution lifecycle states}
+\begin{itemize}
+  \item \textbf{Idle:} Ready before execution.
+  \item \textbf{Running:} Execution in progress.
+  \item \textbf{Success:} Completed with exit code \texttt{0}.
+  \item \textbf{Error:} Runtime failure (non-zero exit code / stderr).
+  \item \textbf{Compile Error:} Compilation failed (for compiled languages).
+  \item \textbf{Timeout:} Execution exceeded allowed time limit.
+\end{itemize}
+
+\textbf{Result details}
+\begin{itemize}
+  \item \textbf{stdout:} Standard program output (formatted/monospace).
+  \item \textbf{stderr/runtime errors:} Displayed separately (e.g., ``Runtime Error'').
+  \item \textbf{Compilation errors:} Compiler diagnostics shown separately (e.g., ``Compilation Error'').
+  \item \textbf{Exit code \& duration:} Reported when available (e.g., \texttt{Exit 0 • 24ms}).
+  \item \textbf{Empty output:} Successful runs with no stdout show a clear ``no standard output produced'' notice.
+\end{itemize}
+
+\subsection{Output/Console Panel}
+\begin{itemize}
+  \item View execution results, logs, and status messages.
+  \item Resize or toggle/minimize the panel (where supported) to optimize editor space.
+  \item Some workspaces may include stdin/input support for programs that read input.
+\end{itemize}
+
+\subsection{Telemetry \& Audit Panel}
+\begin{itemize}
+  \item Displays contribution/activity metrics and integrity/audit information for the workspace/session.
+  \item May include verification status, block/event summaries, and export/inspect actions depending on permissions and available data.
+\end{itemize}
+
+\subsection{AI Assistant (if enabled)}
+If AI features are configured for your deployment:
+\begin{itemize}
+  \item Open the \textbf{AI Assistant} panel from the workspace.
+  \item Use quick actions or chat to request explanations, refactoring, documentation, debugging help, tests, or code generation.
+  \item Provide context (active file, selection, or attached files) as required by the assistant UI.
+  \item Review suggested changes carefully; apply previews/diffs only after confirmation.
+\end{itemize}
+
+\begin{quote}
+AI availability, models, and response quality depend on server configuration and provider status. When unavailable, the system may fall back to limited/local responses or show an error.
+\end{quote}
+
+% ==========================================
+\section{Contribution Telemetry \& Proof-of-Work Audit}
+
+The \textbf{Contribution Telemetry \& Integrity Auditor} provides visibility into recorded workspace activity and integrity verification.
+
+\textbf{Typical elements}
+\begin{itemize}
+  \item \textbf{Status badges:} Audit/verification state and live sync indicators.
+  \item \textbf{Summary metrics:} Contributors, lines synced, blocks/events, session/workspace identifiers.
+  \item \textbf{Verification status:} Cryptographic/chain verification result (e.g., verified or discrepancy/tamper warning) when data is available.
+  \item \textbf{Contributor table:} Responsibility/role, lines, participation, and verification/hash details.
+  \item \textbf{Actions (as available):} Refresh/audit chain, inspect ledger, simulate/restore (demo/test flows), export reports.
+\end{itemize}
+
+\begin{quote}
+Displayed data depends on workspace selection, permissions, and recorded telemetry.
+\end{quote}
+
+% ==========================================
+\section{Contribution Analytics}
+
+Analytics views provide higher-level insights into collaboration and contributions, such as:
+\begin{itemize}
+  \item Session/activity summaries and timelines
+  \item Contributor participation and category breakdowns
+  \item Execution/collaboration statistics
+\end{itemize}
+
+Use filters and workspace selectors (where provided) to focus on specific periods or contributors.
+
+% ==========================================
+\section{Profile \& Settings}
+
+From the \textbf{Profile/Settings} area you can typically:
+\begin{itemize}
+  \item View and update profile information (as supported)
+  \item Manage account/session preferences
+  \item Access application-level settings exposed by your deployment
+\end{itemize}
+
+Available options depend on your role and enabled features.
+
+% ==========================================
+\section{Troubleshooting \& FAQs}
+
+\subsection{I cannot log in / I get ``Session expired''}
+\begin{itemize}
+  \item Sign in again to refresh your session.
+  \item Ensure cookies/local storage are enabled in your browser.
+  \item If the issue persists, the backend authentication service or configuration may need attention.
+\end{itemize}
+
+\subsection{Workspaces do not load / ``Database Offline'' or connection error}
+\begin{itemize}
+  \item This indicates the app cannot reach required backend data services.
+  \item Check your internet connection and retry.
+  \item If running a local/dev environment, verify backend server and database are running and configured correctly.
+\end{itemize}
+
+\subsection{Code execution fails or never completes}
+\begin{itemize}
+  \item Confirm the execution service (sandbox/runtime) is available.
+  \item Check for compile/runtime errors, timeouts, or unsupported language/runtime in your environment.
+  \item Retry after service availability is restored.
+\end{itemize}
+
+\subsection{I don't see my starred workspace in Starred filter}
+\begin{itemize}
+  \item Ensure you starred the workspace while signed in (starring is account-specific and persisted).
+  \item Refresh the directory; use \textbf{All} to confirm the workspace exists, then star it again if needed.
+\end{itemize}
+
+\subsection{Starred sidebar opens directory but filter looks wrong}
+\begin{itemize}
+  \item Use the \textbf{Starred} tab/filter in the Workspaces Directory to confirm.
+  \item Refresh the page to reload latest workspace data.
+\end{itemize}
+
+\subsection{AI assistant is unavailable or gives generic/local responses}
+\begin{itemize}
+  \item AI features require valid provider configuration/credentials on the backend.
+  \item If providers are unavailable or rate-limited, responses may fall back or fail; try again later or contact your administrator.
+\end{itemize}
+
+\subsection{Real-time collaboration/sync not updating}
+\begin{itemize}
+  \item Check network stability and live connection indicators.
+  \item Refresh the workspace; if issues persist, verify backend/socket service availability.
+\end{itemize}
+
+% ==========================================
+\section{Tips for Best Experience}
+\begin{itemize}
+  \item Keep your browser updated for best editor/performance support.
+  \item Use descriptive workspace names and keep room/invite codes private when needed.
+  \item Star frequently used workspaces for quick access.
+  \item Save and run code regularly; review execution output (stdout/stderr/exit code) to diagnose issues.
+  \item Use timeline filters and search to quickly locate recent work.
+  \item For collaborative sessions, coordinate roles/permissions to avoid accidental edits.
+\end{itemize}
+
+% ==========================================
+\section{Glossary}
+\begin{description}
+  \item[Workspace:] A collaborative coding environment/project room in CodeTrail.
+  \item[Room/Invite Code:] A code used to join a workspace.
+  \item[Starred Workspace:] A workspace marked as favorite for quick filtering/access.
+  \item[stdout:] Standard output produced by a program.
+  \item[stderr:] Error output produced during program execution.
+  \item[Exit Code:] Numeric status returned by a process (\texttt{0} typically indicates success).
+  \item[Timeout:] Execution stopped after exceeding the allowed runtime limit.
+  \item[Telemetry:] Recorded activity/events used for contribution tracking and insights.
+  \item[Proof-of-Work / Integrity Audit:] Verification view for recorded activity chain integrity (as implemented).
+  \item[Session:] A period of user/workspace activity; may be tracked in timeline/history.
+\end{description}
+
+\begin{center}
+\textit{End of CodeTrail User Manual}
+\end{center}
+
+\end{document}
