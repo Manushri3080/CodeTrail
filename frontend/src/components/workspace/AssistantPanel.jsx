@@ -1040,28 +1040,26 @@ Insert/copy this into the editor and run it. Ask for loops, functions, lists/arr
             </div>
           </div>
         ))}
-        {messages.length === 1 && (
-          <div className="rounded-2xl border border-[#262C42] bg-[#0E101D] p-4 sm:p-5 space-y-3.5 shadow-lg my-3">
-            <div className="flex items-center gap-2 text-[13.5px] font-semibold text-white">
-              <Sparkles size={16} className="text-fuchsia-400 shrink-0" />
-              <span className="leading-relaxed break-words">Quick AI Actions for {activeFile || "Editor"}:</span>
-            </div>
-            <div className="space-y-2.5">
-              {QUICK_ACTIONS.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  onClick={() => sendMessage(null, action.prompt, action.actionType)}
-                  disabled={isLoading}
-                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl bg-[#1D2235] hover:bg-[#252C45] border border-[#2B324D] hover:border-purple-500/50 text-white text-[13.5px] font-semibold text-left transition-all cursor-pointer shadow-sm group"
-                >
-                  <span className="shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform">{action.icon}</span>
-                  <span className="font-semibold whitespace-normal break-words">{action.label}</span>
-                </button>
-              ))}
-            </div>
+        <div className="rounded-2xl border border-[#262C42] bg-[#0E101D] p-4 sm:p-5 space-y-3.5 shadow-lg my-3">
+          <div className="flex items-center gap-2 text-[13.5px] font-semibold text-white">
+            <Sparkles size={16} className="text-fuchsia-400 shrink-0" />
+            <span className="leading-relaxed break-words">Quick AI Actions{activeFile ? ` for ${activeFile}` : ""}</span>
           </div>
-        )}
+          <div className="space-y-2.5">
+            {QUICK_ACTIONS.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                onClick={() => sendMessage(null, action.prompt, action.actionType)}
+                disabled={isLoading}
+                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl bg-[#1D2235] hover:bg-[#252C45] border border-[#2B324D] hover:border-purple-500/50 text-white text-[13.5px] font-semibold text-left transition-all cursor-pointer shadow-sm group"
+              >
+                <span className="shrink-0 flex items-center justify-center group-hover:scale-110 transition-transform">{action.icon}</span>
+                <span className="font-semibold whitespace-normal break-words">{action.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
         {isLoading && (
           <div className="ai-assistant-message assistant">
             <span className="ai-assistant-message-icon">

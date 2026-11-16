@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+﻿import React, { useState, useEffect, useCallback } from "react";
 import axios from "axios";
 import {
   ShieldCheck,
@@ -361,27 +361,27 @@ export const ContributionDossier = ({
     <section id="contribution-dossier" className="ct-dossier-section">
       <div className="ct-container">
         {/* Section Header */}
-        <div className="ct-section-header">
-          <div className="inline-flex items-center gap-3 mb-6 flex-wrap">
-            <span className="ct-demo-badge flex items-center gap-2">
+        <div className="ct-section-header ct-dossier-section-header">
+          <div className="ct-dossier-badges">
+            <span className="ct-demo-badge ct-dossier-badge ct-dossier-badge-audit">
               <ShieldCheck size={12} className="text-purple-400" />
-              PROOF-OF-WORK AUDIT (CT-166)
+              PROOF-OF-WORK AUDIT
             </span>
             {isLiveConnected && (
-              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                LIVE SOCKET SYNC (CT-167)
+              <span className="ct-demo-badge ct-dossier-badge ct-dossier-badge-live">
+                <span className="ct-live-dot"></span>
+                LIVE SOCKET SYNC
               </span>
             )}
             {simulationActive && (
-              <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-400 border border-rose-500/30 animate-pulse">
+              <span className="ct-demo-badge ct-dossier-badge ct-dossier-badge-warn">
                 <Bug size={11} />
                 ATTACK SIMULATION ACTIVE
               </span>
             )}
           </div>
-          <h2 className="ct-dossier-title mb-4">
-            Contribution Telemetry & Integrity Auditor
+          <h2 className="ct-dossier-title">
+            Contribution Telemetry &amp; Integrity Auditor
           </h2>
           <p className="ct-section-subtitle">
             Automated activity telemetry providing high-precision ISO-8601
@@ -391,54 +391,58 @@ export const ContributionDossier = ({
         </div>
 
         {/* Dossier Card Container */}
-        <div className="ct-dossier-card">
+        <div className="ct-dossier-card" style={{ maxWidth: '1440px', margin: '0 auto 24px' }}>
           {/* Top Control Bar */}
-          <div className="ct-dossier-topbar gap-4 px-6 py-4">
-            <div className="ct-ide-dots">
-              <span className="ct-dot red"></span>
-              <span className="ct-dot yellow"></span>
-              <span className="ct-dot green"></span>
+          <div className="ct-dossier-topbar gap-4 px-5 py-3">
+            <div className="ct-dossier-topbar-row">
+              <div className="ct-ide-dots">
+                <span className="ct-dot red"></span>
+                <span className="ct-dot yellow"></span>
+                <span className="ct-dot green"></span>
+              </div>
+
+              <div className="ct-dossier-meta-pills flex items-center flex-wrap gap-3">
+                {token && workspaces.length > 1 && (
+                  <div className="relative inline-block text-left">
+                    <select
+                      value={
+                        selectedWorkspace?._id || selectedWorkspace?.id || ""
+                      }
+                      onChange={(e) => {
+                        const found = workspaces.find(
+                          (w) => (w._id || w.id) === e.target.value,
+                        );
+                        if (found) setSelectedWorkspace(found);
+                      }}
+                      className="bg-[#1A1B26] text-gray-200 border border-purple-500/30 rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-purple-400"
+                    >
+                      {workspaces.map((w) => (
+                        <option key={w._id || w.id} value={w._id || w.id}>
+                          {w.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
+                  <Users size={12} className="text-purple-400" />
+                  <span>{contributors.length} Contributors</span>
+                </span>
+
+                <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
+                  <Activity size={12} className="text-emerald-400" />
+                  <span>{totalLines}</span>
+                </span>
+
+                <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
+                  <Layers size={12} className="text-sky-400" />
+                  <span>{totalBlocks} Blocks</span>
+                </span>
+              </div>
             </div>
 
-            <div className="ct-dossier-meta-pills flex items-center flex-wrap gap-3">
-              {token && workspaces.length > 1 && (
-                <div className="relative inline-block text-left">
-                  <select
-                    value={
-                      selectedWorkspace?._id || selectedWorkspace?.id || ""
-                    }
-                    onChange={(e) => {
-                      const found = workspaces.find(
-                        (w) => (w._id || w.id) === e.target.value,
-                      );
-                      if (found) setSelectedWorkspace(found);
-                    }}
-                    className="bg-[#1A1B26] text-gray-200 border border-purple-500/30 rounded-md px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-purple-400"
-                  >
-                    {workspaces.map((w) => (
-                      <option key={w._id || w.id} value={w._id || w.id}>
-                        {w.title}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
-                <Users size={12} className="text-purple-400" />
-                <span>{contributors.length} Contributors</span>
-              </span>
-
-              <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
-                <Activity size={12} className="text-emerald-400" />
-                <span>{totalLines}</span>
-              </span>
-
-              <span className="ct-meta-pill flex items-center gap-2 px-3 py-1.5">
-                <Layers size={12} className="text-sky-400" />
-                <span>{totalBlocks} Blocks</span>
-              </span>
-
+            <div className="ct-dossier-meta-pills ct-dossier-topbar-actions flex items-center flex-wrap gap-1">
               {/* Integrity Audit Trigger Button */}
               <button
                 onClick={() => fetchTelemetry(true)}
@@ -448,10 +452,10 @@ export const ContributionDossier = ({
                     ? "Connect a workspace to run an audit"
                     : "Perform Real-time Cryptographic Chain Integrity Audit"
                 }
-                className="px-3 py-1.5 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-mono flex items-center gap-2 transition-all cursor-pointer"
+                className="px-2 py-1 rounded-md bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-xs font-mono flex items-center gap-1 transition-all cursor-pointer"
               >
                 <RefreshCw
-                  size={11}
+                  size={10}
                   className={verifying ? "animate-spin text-purple-400" : ""}
                 />
                 <span className="hidden sm:inline">Audit Chain</span>
@@ -461,14 +465,14 @@ export const ContributionDossier = ({
               <button
                 onClick={() => setShowSimulationModal(true)}
                 disabled={demoMode}
-                className="px-3 py-1.5 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-mono flex items-center gap-2 transition-all cursor-pointer"
+                className="px-2 py-1 rounded-md bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 text-xs font-mono flex items-center gap-1 transition-all cursor-pointer"
                 title={
                   demoMode
                     ? "Connect a workspace to run a simulation"
                     : "Test Tamper Detection Engine (Simulation)"
                 }
               >
-                <Bug size={11} className="text-rose-400" />
+                <Bug size={10} className="text-rose-400" />
                 <span className="hidden sm:inline">Simulate Tamper</span>
               </button>
             </div>
@@ -553,7 +557,7 @@ export const ContributionDossier = ({
               {/* Export Report Dropdown */}
               <div className="relative">
                 <button
-                  className="ct-btn-download flex items-center gap-2 px-4 py-2"
+                  className="ct-btn-download flex items-center gap-1 px-2.5 py-1"
                   onClick={() => setShowExportMenu(!showExportMenu)}
                   disabled={demoMode}
                   title={
@@ -562,9 +566,9 @@ export const ContributionDossier = ({
                       : "Export audit report"
                   }
                 >
-                  <Download size={14} />
-                  <span>Export Report</span>
-                  <ChevronDown size={13} />
+                  <Download size={12} />
+                  <span className="hidden sm:inline">Export Report</span>
+                  <ChevronDown size={11} />
                 </button>
 
                 {showExportMenu && (
@@ -603,100 +607,107 @@ export const ContributionDossier = ({
               </div>
             </div>
           </div>
+        </div>
 
-          {/* CRITICAL TAMPER WARNING FORENSIC BANNER (CT-166) */}
-          {!isChainVerified && (
-            <div className="mx-6 my-4 p-5 rounded-xl bg-gradient-to-r from-rose-950/80 via-red-950/60 to-rose-900/40 border border-rose-500/50 text-rose-200 text-xs font-mono shadow-xl animate-fadeIn">
-              <div className="flex items-start justify-between gap-5">
-                <div className="flex items-start gap-4">
-                  <div className="p-2.5 rounded-lg bg-rose-500/20 border border-rose-500/40 shrink-0 text-rose-400">
-                    <AlertTriangle size={18} />
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center flex-wrap gap-3 font-bold text-sm text-rose-300">
-                      <span>CRYPTOGRAPHIC INTEGRITY COMPROMISED</span>
-                      <span className="px-2.5 py-1 rounded text-[10px] bg-rose-500/30 text-rose-200 uppercase font-sans">
-                        {tamperDiag?.tamperType || "TAMPER_DETECTED"}
-                      </span>
-                    </div>
-                    <p className="text-gray-300 text-[11px] leading-relaxed">
-                      {tamperDiag?.details ||
-                        verification?.message ||
-                        "A hash mismatch or broken chain pointer was detected in historical activity blocks."}
-                    </p>
-
-                    {tamperDiag && (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3 pt-4 border-t border-rose-500/20 text-[10px] leading-relaxed">
-                        <div>
-                          <span className="text-rose-400 font-semibold">
-                            Compromised Block:
-                          </span>{" "}
-                          #{tamperDiag.blockSequence} ({tamperDiag.action})
-                        </div>
-                        <div>
-                          <span className="text-rose-400 font-semibold">
-                            Affected Contributor:
-                          </span>{" "}
-                          {tamperDiag.affectedUser}
-                        </div>
-                        <div>
-                          <span className="text-rose-400 font-semibold">
-                            Integrity Ratio:
-                          </span>{" "}
-                          {verification?.integrityRatio ?? 0}% Valid
-                        </div>
-                      </div>
-                    )}
-                  </div>
+        {/* CRITICAL TAMPER WARNING FORENSIC BANNER (CT-166) */}
+        {!isChainVerified && (
+          <div className="mx-6 my-4 p-5 rounded-xl bg-gradient-to-r from-rose-950/80 via-red-950/60 to-rose-900/40 border border-rose-500/50 text-rose-200 text-xs font-mono shadow-xl animate-fadeIn">
+            <div className="flex items-start justify-between gap-5">
+              <div className="flex items-start gap-4">
+                <div className="p-2.5 rounded-lg bg-rose-500/20 border border-rose-500/40 shrink-0 text-rose-400">
+                  <AlertTriangle size={18} />
                 </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center flex-wrap gap-3 font-bold text-sm text-rose-300">
+                    <span>CRYPTOGRAPHIC INTEGRITY COMPROMISED</span>
+                    <span className="px-2.5 py-1 rounded text-[10px] bg-rose-500/30 text-rose-200 uppercase font-sans">
+                      {tamperDiag?.tamperType || "TAMPER_DETECTED"}
+                    </span>
+                  </div>
+                  <p className="text-gray-300 text-[11px] leading-relaxed">
+                    {tamperDiag?.details ||
+                      verification?.message ||
+                      "A hash mismatch or broken chain pointer was detected in historical activity blocks."}
+                  </p>
 
-                <button
-                  onClick={handleRestoreChain}
-                  className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 border border-rose-500/40 text-xs transition-colors shrink-0 flex items-center gap-2 cursor-pointer"
-                >
-                  <RotateCcw size={12} />
-                  <span>Restore</span>
-                </button>
+                  {tamperDiag && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-3 pt-4 border-t border-rose-500/20 text-[10px] leading-relaxed">
+                      <div>
+                        <span className="text-rose-400 font-semibold">
+                          Compromised Block:
+                        </span>{" "}
+                        #{tamperDiag.blockSequence} ({tamperDiag.action})
+                      </div>
+                      <div>
+                        <span className="text-rose-400 font-semibold">
+                          Affected Contributor:
+                        </span>{" "}
+                        {tamperDiag.affectedUser}
+                      </div>
+                      <div>
+                        <span className="text-rose-400 font-semibold">
+                          Integrity Ratio:
+                        </span>{" "}
+                        {verification?.integrityRatio ?? 0}% Valid
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
 
-          {/* VERIFIED SUMMARY STRIP (When 100% Verified) */}
-          {isChainVerified && (
-            <div className="ct-dossier-summary-strip mx-6 my-4 px-5 py-3 rounded-lg bg-emerald-950/20 border border-emerald-500/20 text-[11px] font-mono text-emerald-300/90 flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-3">
-                <Check size={12} className="text-emerald-400 shrink-0" />
-                <span>
-                  Genesis anchor verified • Monotonic sequential ordering •
-                  SHA-256 signatures intact
+              <button
+                onClick={handleRestoreChain}
+                className="px-4 py-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/40 text-rose-200 border border-rose-500/40 text-xs transition-colors shrink-0 flex items-center gap-2 cursor-pointer"
+              >
+                <RotateCcw size={12} />
+                <span>Restore</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* VERIFIED SUMMARY STRIP (When 100% Verified) */}
+        {isChainVerified && (
+          <div className="ct-dossier-summary-strip">
+            <div className="ct-dossier-summary-main">
+              <Check size={13} className="text-emerald-400 shrink-0" />
+              <span>
+                Genesis anchor verified • Monotonic sequential ordering •
+                SHA-256 signatures intact
+              </span>
+            </div>
+            {verification?.chainFingerprint && (
+              <div
+                className="ct-dossier-fingerprint"
+                title={verification.chainFingerprint}
+              >
+                <span className="ct-dossier-fingerprint-label">
+                  Fingerprint
+                </span>
+                <span className="ct-dossier-fingerprint-value">
+                  {verification.chainFingerprint.slice(0, 10)}...
+                  {verification.chainFingerprint.slice(-6)}
                 </span>
               </div>
-              {verification?.chainFingerprint && (
-                <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                  <span>Fingerprint:</span>
-                  <span className="text-purple-300 font-bold">
-                    {verification.chainFingerprint.slice(0, 10)}...
-                    {verification.chainFingerprint.slice(-6)}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
-          {/* Export Toast Notification */}
-          {exportMessage && (
-            <div className="bg-purple-950/80 border-b border-purple-500/30 px-6 py-3 text-xs font-mono text-purple-200 flex items-center justify-between gap-4">
-              <span className="flex items-center gap-3">
-                <Check size={13} className="text-purple-400" />
-                {exportMessage}
-              </span>
-              <span className="text-[11px] text-purple-400 font-bold">
-                SHA-256 Digitally Signed
-              </span>
-            </div>
-          )}
+        {/* Export Toast Notification */}
+        {exportMessage && (
+          <div className="bg-purple-950/80 border-b border-purple-500/30 px-6 py-3 text-xs font-mono text-purple-200 flex items-center justify-between gap-4">
+            <span className="flex items-center gap-3">
+              <Check size={13} className="text-purple-400" />
+              {exportMessage}
+            </span>
+            <span className="text-[11px] text-purple-400 font-bold">
+              SHA-256 Digitally Signed
+            </span>
+          </div>
+        )}
 
-          {/* Team Contribution Table */}
+        {/* Team Contribution Table */}
+        <div className="ct-dossier-table-wrap">
           <div className="ct-dossier-table">
             <div className="ct-table-head">
               <span>CONTRIBUTOR</span>
@@ -911,11 +922,11 @@ export const ContributionDossier = ({
             </div>
           )}
         </div>
-      </div>
+        </div>
 
-      {/* ───────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {/* MODAL 1: Tamper Simulation Tool (CT-166 QA & Verification) */}
-      {/* ───────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showSimulationModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-[#111322] border border-rose-500/40 rounded-2xl max-w-lg w-full p-8 shadow-2xl relative font-sans">
@@ -935,7 +946,7 @@ export const ContributionDossier = ({
                   Tamper Detection Simulator
                 </h3>
                 <p className="text-xs text-gray-400 leading-relaxed">
-                  Test CT-166 Chain Integrity Validator by injecting a
+                  Test Chain Integrity Validator by injecting a
                   controlled attack vector.
                 </p>
               </div>
@@ -1023,9 +1034,9 @@ export const ContributionDossier = ({
         </div>
       )}
 
-      {/* ───────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {/* MODAL 2: Block-by-Block Cryptographic Proof Ledger (CT-166) */}
-      {/* ───────────────────────────────────────────────────────────── */}
+      {/* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
       {showLedgerModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
           <div className="bg-[#0D0F1B] border border-purple-500/40 rounded-2xl max-w-3xl w-full p-8 shadow-2xl relative max-h-[85vh] flex flex-col font-sans">

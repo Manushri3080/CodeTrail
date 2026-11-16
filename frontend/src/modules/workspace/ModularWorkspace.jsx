@@ -7500,7 +7500,7 @@ export const ModularWorkspace = ({
                         style={{ padding: "3px 10px", gap: "6px" }}
                       >
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        CT-167
+                        LIVE
                       </span>
                       {telemetryVerification && (
                         <span
@@ -8134,7 +8134,7 @@ export const ModularWorkspace = ({
               onCreateOrUpdateFile={handleAssistantCreateOrUpdateFile}
               canEditFiles={canEditFiles}
               triggerAction={aiAssistantTrigger}
-              workspaceId={currentWorkspace?._id || currentWorkspace?.id || workspaceId}
+              workspaceId={currentWorkspace?._id || currentWorkspace?.id || wsId}
               files={customFiles.map((f) => {
                 const key = f?.path || f?.id || f?.name;
                 const content = key ? (filesContent[key] ?? filesContent[f?.name] ?? filesContentRef.current?.[key] ?? filesContentRef.current?.[f?.name] ?? "") : "";

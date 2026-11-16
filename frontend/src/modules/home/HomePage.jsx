@@ -122,6 +122,7 @@ export const HomePage = ({
   const [userActivities, setUserActivities] = useState([]);
   const [selectedTimelineEvent, setSelectedTimelineEvent] = useState(null);
   const [copiedCodeId, setCopiedCodeId] = useState(null);
+  const [timelineVisibleCount, setTimelineVisibleCount] = useState(12);
 
   // Fetch workspaces & cross-workspace user history strictly from database
   const fetchDashboardData = React.useCallback(async () => {
@@ -202,7 +203,7 @@ export const HomePage = ({
           setHistoryStats({ totalLinesChanged: 0, totalActivities: 0, loading: false });
           return;
         }
-        console.warn('CT-233 user history API fallback to embedded workspace logs:', e.message);
+        console.warn('User history API fallback to embedded workspace logs:', e.message);
         // keep dbOffline state as set by workspaces fetch unless this indicates connectivity issue
       }
 
@@ -348,12 +349,7 @@ export const HomePage = ({
       const saved = localStorage.getItem(goalsKey);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return [
-      { id: 1, text: 'Create workspace', completed: true },
-      { id: 2, text: 'Invite team member via code', completed: false },
-      { id: 3, text: 'Run remote code execution', completed: false },
-      { id: 4, text: 'Check developer telemetry', completed: false },
-    ];
+    return [];
   });
 
   useEffect(() => {
@@ -363,23 +359,24 @@ export const HomePage = ({
   }, [goals, goalsKey]);
 
   const toggleGoal = (id) => {
-    setGoals(prev => prev.map(g => g.id === id ? { ...g, completed: !g.completed } : g));
+    setGoals(prev => (prev || []).map(g => g.id === id ? { ...g, completed: !g.completed } : g));
   };
 
   const addGoal = () => {
     const text = prompt('Enter new goal:');
     if (text && text.trim()) {
-      setGoals(prev => [...prev, { id: Date.now(), text: text.trim(), completed: false }]);
+      setGoals(prev => [...(prev || []), { id: Date.now(), text: text.trim(), completed: false }]);
     }
   };
 
   const deleteGoal = (e, id) => {
     e.stopPropagation();
-    setGoals(prev => prev.filter(g => g.id !== id));
+    setGoals(prev => (prev || []).filter(g => g.id !== id));
   };
 
-  const completedGoalsCount = goals.filter(g => g.completed).length;
-  const goalsPercent = goals.length > 0 ? Math.round((completedGoalsCount / goals.length) * 100) : 0;
+  const safeGoals = Array.isArray(goals) ? goals : [];
+  const completedGoalsCount = safeGoals.filter(g => g.completed).length;
+  const goalsPercent = safeGoals.length > 0 ? Math.round((completedGoalsCount / safeGoals.length) * 100) : 0;
 
   const handleCopyCode = (e, code, wsId) => {
     e.stopPropagation();
@@ -587,67 +584,75 @@ export const HomePage = ({
     setHistoryDateRangeFilter('all');
   };
 
+  useEffect(() => {
+    setTimelineVisibleCount(12);
+  }, [timelineFilter, historySearchQuery, historyWorkspaceFilter, historyDateRangeFilter]);
+
   const now = Date.now();
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
   const startOfDayMs = startOfDay.getTime();
   const startOfWeekMs = now - 7 * 24 * 60 * 60 * 1000;
 
-  const filteredTimeline = generatedTimeline.filter(ev => {
-    // 1. Category Filter: 'all', 'workspace', 'code_execution', 'tasks'
-    if (timelineFilter !== 'all') {
-      if (timelineFilter === 'workspace' && ev.type !== 'workspace' && ev.category !== 'workspace') {
-        return false;
-      }
-      if ((timelineFilter === 'code_execution' || timelineFilter === 'runs') && ev.type !== 'runs' && ev.category !== 'code_execution') {
-        return false;
-      }
-      if (timelineFilter === 'tasks' && ev.type !== 'tasks' && ev.type !== 'task' && ev.category !== 'tasks') {
-        return false;
-      }
-    }
-
-    // 2. Workspace ID Filter
-    if (historyWorkspaceFilter !== 'all') {
-      const evWsId = String(ev.workspaceId || ev.workspace?.id || ev.workspace?._id || '');
-      if (evWsId !== String(historyWorkspaceFilter)) {
-        return false;
-      }
-    }
-
-    // 3. Date Range Filter: 'all', 'today', 'week'
-    if (historyDateRangeFilter !== 'all') {
-      const evTime = ev.timeMs || (ev.timestamp ? new Date(ev.timestamp).getTime() : 0);
-      if (evTime > 0) {
-        if (historyDateRangeFilter === 'today' && evTime < startOfDayMs) {
+  const filteredTimeline = generatedTimeline
+    .filter(ev => {
+      // 1. Category Filter: 'all', 'workspace', 'code_execution', 'tasks'
+      if (timelineFilter !== 'all') {
+        if (timelineFilter === 'workspace' && ev.type !== 'workspace' && ev.category !== 'workspace') {
           return false;
         }
-        if (historyDateRangeFilter === 'week' && evTime < startOfWeekMs) {
+        if ((timelineFilter === 'code_execution' || timelineFilter === 'runs') && ev.type !== 'runs' && ev.category !== 'code_execution') {
+          return false;
+        }
+        if (timelineFilter === 'tasks' && ev.type !== 'tasks' && ev.type !== 'task' && ev.category !== 'tasks') {
           return false;
         }
       }
-    }
 
-    // 4. Search Filter (debounced 300ms) across descriptions, file names, workspace titles, actor names
-    if (historySearchQuery && historySearchQuery.trim()) {
-      const q = historySearchQuery.trim().toLowerCase();
-      const descMatch = (ev.desc || ev.details || '').toLowerCase().includes(q);
-      const titleMatch = (ev.title || '').toLowerCase().includes(q);
-      const fileMatch = (ev.fileName || '').toLowerCase().includes(q);
-      const wsTitleMatch = (ev.workspaceTitle || ev.workspace?.title || '').toLowerCase().includes(q);
-      const tagMatch = (ev.tag || '').toLowerCase().includes(q);
-      const actorMatch = (ev.actor?.name || '').toLowerCase().includes(q);
-
-      if (!descMatch && !titleMatch && !fileMatch && !wsTitleMatch && !tagMatch && !actorMatch) {
-        return false;
+      // 2. Workspace ID Filter
+      if (historyWorkspaceFilter !== 'all') {
+        const evWsId = String(ev.workspaceId || ev.workspace?.id || ev.workspace?._id || '');
+        if (evWsId !== String(historyWorkspaceFilter)) {
+          return false;
+        }
       }
-    }
 
-    return true;
-  });
+      // 3. Date Range Filter: 'all', 'today', 'week'
+      if (historyDateRangeFilter !== 'all') {
+        const evTime = ev.timeMs || (ev.timestamp ? new Date(ev.timestamp).getTime() : 0);
+        if (evTime > 0) {
+          if (historyDateRangeFilter === 'today' && evTime < startOfDayMs) {
+            return false;
+          }
+          if (historyDateRangeFilter === 'week' && evTime < startOfWeekMs) {
+            return false;
+          }
+        }
+      }
+
+      // 4. Search Filter (debounced 300ms) across descriptions, file names, workspace titles, actor names
+      if (historySearchQuery && historySearchQuery.trim()) {
+        const q = historySearchQuery.trim().toLowerCase();
+        const descMatch = (ev.desc || ev.details || '').toLowerCase().includes(q);
+        const titleMatch = (ev.title || '').toLowerCase().includes(q);
+        const fileMatch = (ev.fileName || '').toLowerCase().includes(q);
+        const wsTitleMatch = (ev.workspaceTitle || ev.workspace?.title || '').toLowerCase().includes(q);
+        const tagMatch = (ev.tag || '').toLowerCase().includes(q);
+        const actorMatch = (ev.actor?.name || '').toLowerCase().includes(q);
+
+        if (!descMatch && !titleMatch && !fileMatch && !wsTitleMatch && !tagMatch && !actorMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    .sort((a, b) => (b.timeMs || 0) - (a.timeMs || 0));
+
+  const visibleTimeline = filteredTimeline.slice(0, timelineVisibleCount);
 
   const filteredWorkspaces = workspaces.filter(ws => {
-    if (workspaceFilter === 'starred') return ws.starred || ws.brandColor === 'purple' || ws.brandColor === 'cyan';
+    if (workspaceFilter === 'starred') return ws.starred === true;
     if (workspaceFilter === 'shared') return (ws.members && ws.members.length > 1) || ws.brandColor === 'emerald' || ws.brandColor === 'amber';
     if (workspaceFilter === 'active') return ws.status === 'active' || !ws.status;
     if (workspaceFilter === 'archived') return ws.status === 'archived' || ws.status === 'inactive';
@@ -685,7 +690,11 @@ export const HomePage = ({
   const totalWorkspacesCount = workspaces.length;
   const totalFilesCount = workspaces.reduce((acc, ws) => acc + (ws.filesCount || (ws.files ? ws.files.length : 1)), 0);
 
-  // Deduplicate collaborators across workspaces (using Set of member user IDs or names)
+  // Derived sidebar counts
+  const starredCount = React.useMemo(() => workspaces.filter(ws => ws.starred === true).length, [workspaces]);
+  const sharedCount = React.useMemo(() => workspaces.filter(ws => (ws.members && ws.members.length > 1) || ws.brandColor === 'emerald' || ws.brandColor === 'amber').length, [workspaces]);
+  const archivedCount = React.useMemo(() => workspaces.filter(ws => ws.status === 'archived' || ws.status === 'inactive').length, [workspaces]);
+  const runEventCount = React.useMemo(() => generatedTimeline.filter(ev => ev.type === 'runs' || ev.category === 'code_execution').length, [generatedTimeline]);
   const uniqueCollaboratorsCount = React.useMemo(() => {
     const collaboratorSet = new Set();
     workspaces.forEach(ws => {
@@ -757,10 +766,11 @@ export const HomePage = ({
                 if (el) el.scrollIntoView({ behavior: 'smooth' });
               }
             }}
-            title="All Workspaces Directory"
+            title={`Workspaces (${totalWorkspacesCount})`}
           >
             <FolderGit2 size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Workspaces</span>
+            {totalWorkspacesCount > 0 && <span className="ct-sidebar-badge">{totalWorkspacesCount}</span>}
           </button>
 
           <button 
@@ -768,13 +778,18 @@ export const HomePage = ({
             onClick={() => {
               setActiveSidebarTab('starred');
               setWorkspaceFilter('starred');
+              if (onNavigateToAllWorkspaces) {
+                onNavigateToAllWorkspaces('starred');
+                return;
+              }
               const el = document.getElementById('workspaces-section');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
             }}
-            title="Starred"
+            title={`Starred (${starredCount})`}
           >
             <Star size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Starred</span>
+            {starredCount > 0 && <span className="ct-sidebar-badge">{starredCount}</span>}
           </button>
 
           <button 
@@ -785,10 +800,11 @@ export const HomePage = ({
               const el = document.getElementById('workspaces-section');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
             }}
-            title="Shared with me"
+            title={`Shared with me (${sharedCount})`}
           >
             <Users size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Shared with me</span>
+            {sharedCount > 0 && <span className="ct-sidebar-badge">{sharedCount}</span>}
           </button>
 
           <button 
@@ -799,23 +815,26 @@ export const HomePage = ({
               const el = document.getElementById('workspaces-section');
               if (el) el.scrollIntoView({ behavior: 'smooth' });
             }}
-            title="Archived"
+            title={`Archived (${archivedCount})`}
           >
             <Archive size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Archived</span>
+            {archivedCount > 0 && <span className="ct-sidebar-badge">{archivedCount}</span>}
           </button>
-          <button className="ct-sidebar-btn" title="Code Editor" onClick={onJumpToWorkspace}>
-            <Code2 size={18} className="ct-sidebar-icon" />
-            <span className="ct-sidebar-label">Code Editor</span>
-          </button>
-          <button className="ct-sidebar-btn" title="Pull Requests">
-            <GitBranch size={18} className="ct-sidebar-icon" />
-            <span className="ct-sidebar-label">Pull Requests</span>
-            <span className="ct-sidebar-badge">3</span>
-          </button>
-          <button className="ct-sidebar-btn" title="Telemetry">
+
+          <button
+            className="ct-sidebar-btn"
+            title="Activity & telemetry"
+            onClick={() => {
+              setActiveSidebarTab('dashboard');
+              setTimelineFilter('code_execution');
+              const el = document.querySelector('.ct-timeline-panel');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }}
+          >
             <BarChart3 size={18} className="ct-sidebar-icon" />
             <span className="ct-sidebar-label">Telemetry</span>
+            {runEventCount > 0 && <span className="ct-sidebar-badge">{runEventCount}</span>}
           </button>
         </div>
 
@@ -831,7 +850,7 @@ export const HomePage = ({
             <div className="flex items-center justify-between text-[11px] text-gray-400 mb-1">
               <span>Progress</span>
               <span className="font-mono text-purple-300 font-medium">
-                {completedGoalsCount}/{goals.length} ({goalsPercent}%)
+                {completedGoalsCount}/{safeGoals.length} ({goalsPercent}%)
               </span>
             </div>
             <div className="w-full bg-white/10 rounded-full h-1.5 overflow-hidden">
@@ -843,28 +862,32 @@ export const HomePage = ({
           </div>
 
           <div className="ct-goals-list">
-            {goals.map(g => (
-              <div 
-                key={g.id} 
-                className={`ct-goal-item ${g.completed ? 'completed' : ''} group flex items-center justify-between cursor-pointer`}
-                onClick={() => toggleGoal(g.id)}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`ct-goal-checkbox ${g.completed ? 'checked' : ''}`}>
-                    {g.completed && <Check size={10} />}
-                  </div>
-                  <span className="ct-goal-text truncate">{g.text}</span>
-                </div>
-                <button
-                  type="button"
-                  className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-rose-400 rounded transition-opacity ml-1 shrink-0"
-                  onClick={(e) => deleteGoal(e, g.id)}
-                  title="Remove goal"
+            {safeGoals.length === 0 ? (
+              <div className="text-[11px] text-gray-500 px-1 py-1">No goals yet. Add one to track progress.</div>
+            ) : (
+              safeGoals.map(g => (
+                <div 
+                  key={g.id} 
+                  className={`ct-goal-item ${g.completed ? 'completed' : ''} group flex items-center justify-between cursor-pointer`}
+                  onClick={() => toggleGoal(g.id)}
                 >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`ct-goal-checkbox ${g.completed ? 'checked' : ''}`}>
+                      {g.completed && <Check size={10} />}
+                    </div>
+                    <span className="ct-goal-text truncate">{g.text}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-rose-400 rounded transition-opacity ml-1 shrink-0"
+                    onClick={(e) => deleteGoal(e, g.id)}
+                    title="Remove goal"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
           <button className="ct-btn-add-goal" onClick={addGoal}>
             + Add Goal
@@ -917,7 +940,7 @@ export const HomePage = ({
         <div className="ct-recent-banner">
           <div className="ct-banner-content">
             <div className="ct-banner-time">
-              <Clock size={13} className="text-purple-400" />
+              <Clock size={14} className="text-purple-400" />
               <span>
                 {recentWorkspace 
                   ? `Last edited ${formatRelativeTime(recentWorkspace.updatedAt || recentWorkspace.lastActiveAt)}` 
@@ -926,9 +949,10 @@ export const HomePage = ({
             </div>
             <h2 className="ct-banner-title">
               {recentWorkspace ? (
-                <>
-                  {recentWorkspace.title} - <span className={`ct-lang-badge px-2 py-0.5 rounded text-xs font-mono font-medium border inline-block ml-1 align-middle ${getLanguageBadgeClass(recentWorkspace.language)}`}>{formatLanguageName(recentWorkspace.language)}</span>
-                </>
+                <span className="ct-banner-title-row">
+                  <span className="ct-banner-title-text">{recentWorkspace.title}</span>
+                  <span className={`ct-lang-badge ct-banner-lang-badge ${getLanguageBadgeClass(recentWorkspace.language)}`}>{formatLanguageName(recentWorkspace.language)}</span>
+                </span>
               ) : (
                 <>Get Started with <span>CodeTrail Workspaces</span></>
               )}
@@ -941,7 +965,7 @@ export const HomePage = ({
           </div>
 
           <button className="ct-btn-banner-action" onClick={handleBannerAction}>
-            {recentWorkspace ? <Play size={14} className="fill-current" /> : <Plus size={14} />}
+            {recentWorkspace ? <Play size={15} className="fill-current" /> : <Plus size={15} />}
             <span>{recentWorkspace ? 'Jump Back In' : 'Create Workspace'}</span>
           </button>
         </div>
@@ -1004,7 +1028,9 @@ export const HomePage = ({
               </div>
               
               <span className="text-xs font-mono text-gray-400">
-                {filteredTimeline.length} {filteredTimeline.length === 1 ? 'event' : 'events'}
+                {filteredTimeline.length > timelineVisibleCount
+                  ? `Showing ${Math.min(timelineVisibleCount, filteredTimeline.length)} of ${filteredTimeline.length} events`
+                  : `${filteredTimeline.length} ${filteredTimeline.length === 1 ? 'event' : 'events'}`}
               </span>
             </div>
 
@@ -1083,8 +1109,9 @@ export const HomePage = ({
                 </button>
               </div>
             ) : (
-              <div className="ct-timeline-events alternating" role="feed" aria-label="Activity timeline">
-                {filteredTimeline.map((event, idx) => {
+              <>
+                <div className="ct-timeline-events alternating" role="feed" aria-label="Activity timeline">
+                  {visibleTimeline.map((event, idx) => {
                   const EventIcon = event.icon || Activity;
                   const sideClass = idx % 2 === 0 ? 'right' : 'left';
                   const isSelected = selectedTimelineEvent?.id === event.id;
@@ -1142,8 +1169,31 @@ export const HomePage = ({
                       </div>
                     </div>
                   );
-                })}
-              </div>
+                  })}
+                </div>
+                {(filteredTimeline.length > timelineVisibleCount || timelineVisibleCount > 12) && (
+                  <div className="ct-timeline-load-more">
+                    {filteredTimeline.length > timelineVisibleCount && (
+                      <button
+                        type="button"
+                        className="ct-btn-secondary-sm"
+                        onClick={() => setTimelineVisibleCount((prev) => prev + 12)}
+                      >
+                        Show more ({filteredTimeline.length - timelineVisibleCount} more)
+                      </button>
+                    )}
+                    {timelineVisibleCount > 12 && (
+                      <button
+                        type="button"
+                        className="ct-btn-secondary-sm"
+                        onClick={() => setTimelineVisibleCount(12)}
+                      >
+                        Show less
+                      </button>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -1351,7 +1401,10 @@ export const HomePage = ({
         <button 
           className="ct-bottom-dock-btn" 
           title="Workspaces"
-          onClick={onJumpToWorkspace}
+          onClick={() => {
+            if (onNavigateToAllWorkspaces) onNavigateToAllWorkspaces();
+            else if (recentWorkspace && onJumpToWorkspace) onJumpToWorkspace(recentWorkspace);
+          }}
         >
           <FolderGit2 size={20} />
           <span>Workspaces</span>
@@ -1359,22 +1412,19 @@ export const HomePage = ({
 
         <button 
           className="ct-bottom-dock-btn" 
-          title="Code Editor"
-          onClick={onJumpToWorkspace}
+          title="Activity & Telemetry"
+          onClick={() => {
+            setActiveSidebarTab('dashboard');
+            setTimelineFilter('code_execution');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            setTimeout(() => {
+              const el = document.querySelector('.ct-timeline-panel');
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }, 50);
+          }}
         >
-          <Code2 size={20} />
-          <span>Editor</span>
-        </button>
-
-        <button 
-          className="ct-bottom-dock-btn" 
-          title="Pull Requests"
-        >
-          <div className="ct-dock-icon-wrap">
-            <GitBranch size={20} />
-            <span className="ct-dock-badge">3</span>
-          </div>
-          <span>PRs</span>
+          <BarChart3 size={20} />
+          <span>Telemetry</span>
         </button>
       </nav>
 

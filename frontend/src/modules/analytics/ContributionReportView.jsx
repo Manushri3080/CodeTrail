@@ -357,123 +357,114 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
       `}</style>
 
       {/* ── Top Toolbar & Control Banner (no-print) ─────────────────────────── */}
-      <div className="no-print rounded-xl border border-white/10 bg-[#0F1020] p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
-            <FileText size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white">Generate Contribution Report</h2>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                CT-199
-              </span>
+      <div className="no-print rounded-xl border border-white/10 bg-[#0F1020] p-5 flex flex-col gap-4">
+        {/* Header row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
+              <FileText size={20} />
             </div>
-            <p className="text-xs text-gray-400">
-              Audit-ready report layout incorporating session metrics, activity summaries, and forensic integrity.
-            </p>
+            <div>
+              <h2 className="text-base font-bold text-white">Generate Contribution Report</h2>
+              <p className="text-xs text-gray-400">
+                Audit-ready report layout incorporating session metrics, activity summaries, and forensic integrity.
+              </p>
+            </div>
+          </div>
+
+          {/* Primary actions */}
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={!report || exportingPdf}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+                pdfExportSuccess
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                  : pdfExportError
+                    ? 'bg-red-500/20 border border-red-500/40 text-red-300'
+                    : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-sm'
+              }`}
+            >
+              {exportingPdf ? (
+                <RefreshCw size={14} className="animate-spin" />
+              ) : pdfExportSuccess ? (
+                <Check size={14} className="text-emerald-400" />
+              ) : (
+                <Download size={14} />
+              )}
+              <span>
+                {exportingPdf
+                  ? 'Generating PDF...'
+                  : pdfExportSuccess
+                    ? 'PDF Exported!'
+                    : pdfExportError
+                      ? 'Export Failed'
+                      : 'Export PDF'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={!report}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-xs font-medium transition-all"
+            >
+              <Printer size={14} />
+              <span>Print / PDF</span>
+            </button>
           </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center flex-wrap gap-2">
-          {/* Filter options toggle */}
+        {/* Secondary actions row */}
+        <div className="flex items-center flex-wrap gap-2 pt-3 border-t border-white/5">
           <button
             type="button"
             onClick={() => setShowOptions(!showOptions)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
-            <Filter size={14} />
+            <Filter size={13} />
             <span>Options</span>
-            {showOptions ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {showOptions ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
 
-          {/* Regenerate report */}
           <button
             type="button"
             onClick={fetchReport}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             <span>Regenerate</span>
           </button>
 
-          {/* Validate Report (CT-199) */}
           <button
             type="button"
             onClick={handleRunValidation}
             disabled={validating || !report}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition-all"
           >
-            <ShieldCheck size={14} className={validating ? 'animate-spin' : ''} />
+            <ShieldCheck size={13} className={validating ? 'animate-spin' : ''} />
             <span>Validate Report</span>
           </button>
 
-          {/* Copy Markdown */}
           <button
             type="button"
             onClick={handleCopyMarkdown}
             disabled={!report}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
-            {copiedMd ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+            {copiedMd ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
             <span>{copiedMd ? 'Copied!' : 'Copy Markdown'}</span>
           </button>
 
-          {/* Print / Save PDF Layout */}
-          <button
-            type="button"
-            onClick={handlePrint}
-            disabled={!report}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 text-xs font-medium transition-all"
-          >
-            <Printer size={14} />
-            <span>Print / PDF View</span>
-          </button>
-
-          {/* CT-200: Export PDF Functionality (Meet Sheth) */}
-          <button
-            type="button"
-            id="export-pdf-report-btn"
-            onClick={handleExportPdf}
-            disabled={!report || exportingPdf}
-            title="Export full contribution report as professional PDF document"
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
-              pdfExportSuccess
-                ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                : pdfExportError
-                  ? 'bg-red-500/20 border border-red-500/40 text-red-300'
-                  : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-sm'
-            }`}
-          >
-            {exportingPdf ? (
-              <RefreshCw size={14} className="animate-spin" />
-            ) : pdfExportSuccess ? (
-              <Check size={14} className="text-emerald-400" />
-            ) : (
-              <Download size={14} />
-            )}
-            <span>
-              {exportingPdf
-                ? 'Generating PDF...'
-                : pdfExportSuccess
-                  ? 'PDF Exported!'
-                  : pdfExportError
-                    ? 'Export Failed'
-                    : 'Export PDF'}
-            </span>
-          </button>
-
-          {/* Download HTML report */}
           <button
             type="button"
             onClick={handleDownloadHtml}
             disabled={!report}
-            title="Download standalone HTML report"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs font-medium transition-all"
           >
-            <Download size={14} />
+            <Download size={13} />
             <span>Download HTML</span>
           </button>
         </div>
@@ -538,7 +529,7 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-widest text-purple-400 font-mono font-bold">
-                  CodeTrail Audit Report · CT-199
+                  CodeTrail Audit Report
                 </span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span className="text-xs font-mono text-emerald-400 font-medium">
@@ -831,7 +822,7 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
 
           {/* Report Footer */}
           <div className="pt-4 border-t border-white/10 flex flex-col md:flex-row items-center justify-between text-xs text-gray-500 font-mono gap-2">
-            <div>CodeTrail Module 6 Analytics & Reporting Engine · CT-199</div>
+            <div>CodeTrail Module 6 Analytics & Reporting Engine</div>
             <div>Verification Status: <strong className="text-emerald-400">PASSED</strong></div>
           </div>
         </div>
@@ -848,7 +839,7 @@ ${contribs.map(c => `- **${c.userName}** (${c.userRole}): **${c.contributionShar
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white">Report Content Validation Certificate</h3>
-                  <p className="text-xs text-gray-400">CT-199 Mathematical & Schema Integrity Check</p>
+                  <p className="text-xs text-gray-400">Mathematical & Schema Integrity Check</p>
                 </div>
               </div>
 

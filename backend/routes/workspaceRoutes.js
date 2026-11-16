@@ -10,6 +10,7 @@ const {
   updateWorkspace,
   joinWorkspaceByCode,
   deleteWorkspace,
+  toggleWorkspaceStar,
   updateWorkspaceSession,
   getWorkspaceHistory,
   addWorkspaceHistoryLog,
@@ -35,6 +36,7 @@ router.get('/discover', authMiddleware, discoverPublicWorkspaces);
 router.get('/user/history', authMiddleware, getUserCrossWorkspaceHistory);
 router.get('/:id', optionalAuth, getWorkspaceById);
 router.patch('/:id', authMiddleware, updateWorkspace);
+router.patch('/:id/star', authMiddleware, toggleWorkspaceStar);
 router.patch('/:id/session', authMiddleware, updateWorkspaceSession);
 
 // Member management & permissions endpoints

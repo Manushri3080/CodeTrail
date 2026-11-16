@@ -91,9 +91,13 @@ app.post('/api/execute', optionalAuth, executeCode);
 
 // Middleware to verify database connectivity for API endpoints
 const checkDbConnection = (req, res, next) => {
+  // Allow AI and execution endpoints to operate with heuristic/local fallbacks or external sandboxes when DB is offline.
+  if (req.path.startsWith('/ai') || req.path === '/execute') {
+    if (mongoose.connection.readyState !== 1) req.dbOffline = true;
+    return next();
+  }
   // Allow in development when DB is offline to avoid blocking local UI
   if (process.env.NODE_ENV !== 'production' && mongoose.connection.readyState !== 1) {
-    // Attach flag for controllers if needed
     req.dbOffline = true;
     return next();
   }
