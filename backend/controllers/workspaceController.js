@@ -135,6 +135,9 @@ const formatWorkspaceSummary = (workspace, userId) => {
     return Boolean(memberId && targetUserId && memberId === targetUserId);
   });
 
+  const starredBy = Array.isArray(workspace.starredBy) ? workspace.starredBy : [];
+  const isStarred = Boolean(targetUserId && starredBy.some(id => String(id?._id || id) === targetUserId));
+
   return {
     id: workspace._id,
     _id: workspace._id,
@@ -151,6 +154,7 @@ const formatWorkspaceSummary = (workspace, userId) => {
     inviteCode: workspace.inviteCode,
     roomCode: workspace.inviteCode,
     settings: workspace.settings,
+    starred: isStarred,
     updatedAt: workspace.updatedAt,
     members: (workspace.members || []).map(member => ({
       id: member.user ? (member.user._id || member.user) : null,
@@ -198,6 +202,57 @@ const getWorkspaceRole = (workspace, userId) => {
 const hasWorkspaceRole = (workspace, userId, roles) => {
   const role = getWorkspaceRole(workspace, userId);
   return role && roles.includes(role);
+};
+
+/**
+ * Toggle star/favorite for the authenticated user on a workspace.
+ * PATCH /api/workspaces/:id/star
+ */
+exports.toggleWorkspaceStar = async (req, res) => {
+  try {
+    const userId = req.user ? (req.user._id || req.user.id) : null;
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required.' });
+    }
+
+    const workspace = await Workspace.findById(req.params.id);
+    if (!workspace) {
+      return res.status(404).json({ message: 'Workspace not found.' });
+    }
+
+    const targetUserId = String(userId);
+    const isMember = requireWorkspaceOwner(workspace, userId) ||
+      (workspace.members || []).some(m => String(m.user?._id || m.user) === targetUserId);
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not authorized to star this workspace.' });
+    }
+
+    if (!Array.isArray(workspace.starredBy)) {
+      workspace.starredBy = [];
+    }
+
+    const alreadyStarred = workspace.starredBy.some(id => String(id?._id || id) === targetUserId);
+    if (alreadyStarred) {
+      workspace.starredBy = workspace.starredBy.filter(id => String(id?._id || id) !== targetUserId);
+    } else {
+      workspace.starredBy.push(userId);
+    }
+
+    await workspace.save();
+
+    const populatedWorkspace = await Workspace.findById(workspace._id)
+      .populate('owner', 'name email avatar')
+      .populate('members.user', 'name email avatar');
+
+    return res.json({
+      message: alreadyStarred ? 'Workspace unstarred.' : 'Workspace starred.',
+      starred: !alreadyStarred,
+      workspace: formatWorkspaceSummary(populatedWorkspace, userId)
+    });
+  } catch (err) {
+    console.error('Toggle Workspace Star Error:', err);
+    return res.status(500).json({ message: 'Failed to toggle workspace star', error: err.message });
+  }
 };
 
 /**

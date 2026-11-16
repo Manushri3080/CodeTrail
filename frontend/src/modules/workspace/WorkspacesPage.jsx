@@ -48,15 +48,20 @@ const resolveIcon = (iconName) => {
 export const WorkspacesPage = ({ 
   currentUser, 
   onJumpToWorkspace, 
-  onBackToHome 
+  onBackToHome,
+  initialCategory = 'all'
 }) => {
   const [workspaces, setWorkspaces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'starred' | 'shared' | 'archived'
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory || 'all'); // 'all' | 'starred' | 'shared' | 'archived'
   const [languageFilter, setLanguageFilter] = useState('all');
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+
+  useEffect(() => {
+    setCategoryFilter(initialCategory || 'all');
+  }, [initialCategory]);
   
   // Modals state
   const [isWorkspaceModalOpen, setIsWorkspaceModalOpen] = useState(false);
@@ -138,14 +143,35 @@ export const WorkspacesPage = ({
     setIsSettingsModalOpen(true);
   };
 
-  const handleToggleStar = (e, wsId) => {
+  const handleToggleStar = async (e, wsId) => {
     e.stopPropagation();
+    const token = localStorage.getItem('ct-auth-token');
+    if (!token) return;
+
+    const previous = workspaces;
     setWorkspaces(prev => prev.map(w => {
       if (w.id === wsId || w._id === wsId) {
         return { ...w, starred: !w.starred };
       }
       return w;
     }));
+
+    try {
+      const res = await axios.patch(`${API_BASE}/workspaces/${wsId}/star`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const updated = res.data?.workspace;
+      if (updated) {
+        const updatedId = String(updated.id || updated._id || wsId);
+        setWorkspaces(prev => prev.map(w =>
+          String(w.id || w._id) === updatedId ? { ...w, ...updated } : w
+        ));
+      }
+    } catch (err) {
+      console.error('Toggle star failed:', err);
+      setWorkspaces(previous);
+      setDbError(err.response?.data?.message || 'Failed to update starred workspace.');
+    }
   };
 
   const filteredWorkspaces = workspaces.filter(ws => {
@@ -165,7 +191,7 @@ export const WorkspacesPage = ({
 
     // Category tab filter
     if (categoryFilter === 'starred') {
-      return ws.starred || ws.brandColor === 'purple' || ws.brandColor === 'cyan';
+      return ws.starred === true;
     }
     if (categoryFilter === 'shared') {
       return (ws.members && ws.members.length > 1) || ws.brandColor === 'emerald' || ws.brandColor === 'amber';

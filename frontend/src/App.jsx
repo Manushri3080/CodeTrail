@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, X } from 'lucide-react';
 import Navbar from './components/layout/Navbar';
@@ -33,6 +33,13 @@ function App({ defaultTab }) {
     return 'modules-grid';
   });
 
+  const [workspacesDirectoryFilter, setWorkspacesDirectoryFilter] = useState('all');
+
+  const navigateToWorkspacesDirectory = (filter = 'all') => {
+    setWorkspacesDirectoryFilter(filter || 'all');
+    setActiveTab('workspaces-directory');
+  };
+
   const setActiveTab = (tab) => {
     setActiveTabState(tab);
     try {
@@ -53,6 +60,21 @@ function App({ defaultTab }) {
   const [terminalInput, setTerminalInput] = useState('');
   const [terminalLogs, setTerminalLogs] = useState(INITIAL_TERMINAL_LOGS);
   const [logoutMessage, setLogoutMessage] = useState('');
+
+  useEffect(() => {
+    const appName = 'CodeTrail';
+    const userName = currentUser?.name || currentUser?.username || currentUser?.email;
+    const workspaceName = activeWorkspace?.title || activeWorkspace?.name;
+    const inWorkspace = isLoggedIn && activeTab === 'modular-workspace' && workspaceName;
+
+    if (inWorkspace) {
+      document.title = userName ? `${workspaceName} - ${userName} - ${appName}` : `${workspaceName} - ${appName}`;
+    } else if (isLoggedIn && userName) {
+      document.title = `${userName} - ${appName}`;
+    } else {
+      document.title = appName;
+    }
+  }, [isLoggedIn, currentUser, activeTab, activeWorkspace]);
 
   const handleJumpToWorkspace = (workspace = null) => {
     if (workspace) {
@@ -141,12 +163,14 @@ function App({ defaultTab }) {
             <ModularWorkspace 
               activeWorkspace={activeWorkspace} 
               onBackToHome={() => setActiveTab('home')} 
-              onNavigateToWorkspaces={() => setActiveTab('workspaces-directory')}
+              onNavigateToWorkspaces={() => navigateToWorkspacesDirectory('all')}
             />
           </div>
         ) : activeTab === 'workspaces-directory' ? (
           <WorkspacesPage
+            key={workspacesDirectoryFilter}
             currentUser={currentUser}
+            initialCategory={workspacesDirectoryFilter}
             onJumpToWorkspace={handleJumpToWorkspace}
             onBackToHome={() => setActiveTab('home')}
           />
@@ -168,7 +192,7 @@ function App({ defaultTab }) {
             currentUser={currentUser}
             onJumpToWorkspace={handleJumpToWorkspace}
             onOpenProfile={() => setActiveTab('profile')}
-            onNavigateToAllWorkspaces={() => setActiveTab('workspaces-directory')}
+            onNavigateToAllWorkspaces={(filter = 'all') => navigateToWorkspacesDirectory(filter)}
             onAuthError={() => {
               handleLogout();
               setLogoutMessage('Session expired. Please sign in again.');

@@ -1,0 +1,175 @@
+﻿\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{parskip}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+\setlength{\parskip}{0.6em}
+\setlist[itemize]{itemsep=0.35em, topsep=0.4em, parsep=0.15em}
+\setlist[enumerate]{itemsep=0.35em, topsep=0.4em, parsep=0.15em}
+\renewcommand{\arraystretch}{1.3}
+
+\title{CodeTrail --- Deployment Notes\\\large Hosting, Public URLs, CI/CD, and Security Configuration}
+\author{CodeTrail Team}
+\date{November 16, 2026}
+
+\begin{document}
+\maketitle
+
+\section*{Deliverable Summary}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Live URL (Frontend, Vercel):} \url{https://code-trail-five.vercel.app/}
+  \item \textbf{Live URL (Backend API, Render):} \url{https://codetrail-3nvr.onrender.com}
+  \item \textbf{Deployment notes:} This document describes hosting architecture, public endpoints, CI/CD flow, and baseline security configuration as implemented in the repository.
+\end{itemize}
+
+\vspace{0.5em}
+
+\section{Hosting Details}
+
+\subsection{Architecture Overview}
+CodeTrail is deployed as a split web application:
+
+\vspace{0.2em}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Frontend:} React + Vite single-page application (SPA), served as static assets.
+  \item \textbf{Backend:} Node.js/Express API server with Socket.IO for real-time collaboration/presence.
+  \item \textbf{Database:} MongoDB (Atlas in production, configurable via \texttt{MONGODB\_URI}; local fallback supported in development).
+  \item \textbf{Code execution sandbox:} Piston API (local or remote endpoint configured via \texttt{PISTON\_API\_URL}/\texttt{PISTON\_LOCAL\_URL}); execution results are returned to the workspace output console.
+  \item \textbf{AI services:} Configurable cloud providers (e.g. Gemini or OpenAI-compatible gateway) with heuristic/local fallback behavior in service logic when providers are unavailable.
+\end{itemize}
+
+\vspace{0.4em}
+\subsection{Frontend Hosting (Vercel)}
+Configured via \texttt{vercel.json} at repository root:
+\begin{longtable}{@{}>{\bfseries}p{0.32\linewidth}p{0.62\linewidth}@{}}
+\toprule
+Setting & Value \\
+\midrule
+Platform & Vercel \\
+Framework & Vite \\
+Install command & \texttt{npm --prefix frontend install} \\
+Build command & \texttt{npm --prefix frontend run build} \\
+Output directory & \texttt{frontend/dist} \\
+SPA rewrite & \texttt{/(.*)} $\rightarrow$ \texttt{/index.html} (client-side routing support) \\
+API target (build/runtime) & \texttt{VITE\_API\_URL} (set in Vercel environment; frontend uses \texttt{\$\{VITE\_API\_URL\}/api} and derives backend/socket base URL) \\
+Production fallback (code) & \url{https://codetrail-3nvr.onrender.com} when \texttt{VITE\_API\_URL} is not set and not in dev mode (\texttt{frontend/src/config/api.js}) \\
+\bottomrule
+\end{longtable}
+
+\vspace{0.6em}
+\subsection{Backend Hosting (Render)}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Platform:} Render Web Service (production backend referenced by frontend configuration and CORS allowances).
+  \item \textbf{Runtime:} Node.js + Express (\texttt{backend/index.js}); listens on \texttt{PORT} (default 5000) bound to \texttt{0.0.0.0}.
+  \item \textbf{Health endpoints:} \texttt{GET /} returns online/status JSON; \texttt{GET /health} returns healthy status.
+  \item \textbf{Real-time:} Socket.IO server initialized with CORS; workspace session/presence socket handlers registered.
+  \item \textbf{Database connectivity:} Attempts primary \texttt{MONGODB\_URI} with fallback to local MongoDB in non-misconfigured cases; starts with DB-offline warning if unavailable. \texttt{checkDbConnection} gates most \texttt{/api} routes (503 when DB offline), with allowances for \texttt{/api/ai} and \texttt{/api/execute} paths and development behavior as implemented.
+  \item \textbf{Execution:} \texttt{POST /api/execute} proxies to configured Piston service (local/remote fallback logic in controller) with payload validation and result normalization.
+\end{itemize}
+
+\subsection{Database (MongoDB)}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Provider:} MongoDB Atlas (recommended/typical production) or any reachable MongoDB instance.
+  \item \textbf{Configuration:} \texttt{MONGODB\_URI} in backend environment; Mongoose ODM; command buffering disabled to fail fast when offline.
+  \item \textbf{Data domains:} users/auth, workspaces/files/members/settings, sessions/presence, executions/history, activities/logs, analytics/reporting-related records as defined by models/controllers.
+\end{itemize}
+
+\subsection{External/Supporting Services}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Google OAuth (optional):} \texttt{GOOGLE\_CLIENT\_ID} for token verification in production flows.
+  \item \textbf{Email (password reset):} SMTP/Nodemailer configuration via environment (\texttt{EMAIL\_*} variables) for reset-link delivery.
+  \item \textbf{Piston:} Sandboxed multi-language code execution endpoint (\texttt{PISTON\_API\_URL}, optional local URL).
+  \item \textbf{AI providers:} \texttt{GEMINI\_*} or OpenAI-compatible settings (\texttt{OPENAI\_API\_KEY}, \texttt{OPENAI\_MODEL}, \texttt{AI\_API\_BASE\_URL}, fallbacks) as applicable.
+\end{itemize}
+
+\section{Public URL with Working App}
+
+\begin{longtable}{@{}>{\bfseries}p{0.30\linewidth}p{0.64\linewidth}@{}}
+\toprule
+Endpoint & URL / Notes \\
+\midrule
+Frontend (Public App) & \url{https://code-trail-five.vercel.app/} \newline {\small Ensure \texttt{VITE\_API\_URL} is set at build time to the backend URL.} \\
+\addlinespace
+Backend API (Public) & \url{https://codetrail-3nvr.onrender.com} \\
+\addlinespace
+Backend health check & \url{https://codetrail-3nvr.onrender.com/health} \newline {\small Root status: \url{https://codetrail-3nvr.onrender.com/}} \\
+\addlinespace
+API base (from frontend) & \texttt{<VITE\_API\_URL>/api} \newline {\small Production default: \url{https://codetrail-3nvr.onrender.com/api}} \\
+\addlinespace
+AI status (diagnostic) & \texttt{GET <backend>/api/ai/status} \newline {\small Subject to rate limiting and provider availability.} \\
+\bottomrule
+\end{longtable}
+
+\vspace{0.5em}
+\noindent\textbf{Verification note:} Confirm the frontend Vercel URL loads, authenticates, connects to the backend API/Socket.IO, and performs core flows (login, workspace open, execute, AI) in the deployed environment.
+
+\section{CI/CD Details}
+
+\subsection{Current Deployment Model (Git-Integrated Platform Deploys)}
+Based on repository inspection (no \texttt{.github/workflows} CI/CD pipelines found in the project; \texttt{vercel.json} present):
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Frontend (Vercel):} Continuous deployment via Vercel Git integration. Push/merge to the connected branch triggers install, build (\texttt{npm --prefix frontend run build}), and deployment of \texttt{frontend/dist}. Preview deployments are typically created for pull requests/branches (per Vercel project settings).
+  \item \textbf{Backend (Render):} Continuous deployment via Render Git integration. Push/merge to the connected branch triggers service build/start using configured Render build/start commands and environment variables.
+  \item \textbf{Environment promotion:} Secrets and runtime configuration (DB URI, JWT secret, OAuth, email, AI keys, Piston URLs, client URL, \texttt{VITE\_API\_URL}) are managed in platform dashboards (Vercel/Render), not committed to source.
+  \item \textbf{Database migrations:} Schema evolution handled by application/model changes and Mongoose; no dedicated migration pipeline identified in-repo.
+\end{itemize}
+
+\subsection{Recommended CI Checks (if formalized in GitHub Actions)}
+To strengthen CI/CD, add workflows for:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Backend:} \texttt{npm ci} (backend), \texttt{node --check} on critical services/controllers, and automated test suites (e.g. \texttt{node backend/tests/index.js} or targeted suites) with required services/mocks.
+  \item \textbf{Frontend:} \texttt{npm ci} (frontend), \texttt{npm run lint}, \texttt{npm run build}.
+  \item \textbf{Security/quality gates:} dependency audit, secret scanning, branch protection, required PR reviews, and protected production branch deploys.
+\end{enumerate}
+
+\section{Basic Security Configurations}
+
+\subsection{Authentication and Authorization}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{JWT-based auth:} Tokens issued on login/registration/OAuth flows (\texttt{jsonwebtoken}); verified in \texttt{backend/middleware/auth.js} via \texttt{Authorization: Bearer <token>} or \texttt{x-auth-token}.
+  \item \textbf{User resolution:} Valid token payload resolved to a DB user (password excluded) and attached as \texttt{req.user}; invalid/expired/missing user returns 401.
+  \item \textbf{Optional auth:} \texttt{optionalAuth} attaches user when token is valid, otherwise continues as unauthenticated for eligible endpoints.
+  \item \textbf{Protected routes:} Auth/profile, workspace mutations, sessions/activities/analytics where applicable, and role/permission checks enforced in controllers/routes for collaboration and settings operations.
+  \item \textbf{Password storage:} Passwords hashed with \texttt{bcryptjs}; reset tokens generated randomly, stored as SHA-256 hashes with expiry.
+\end{itemize}
+
+\subsection{Transport, CORS, and API Controls}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{CORS:} Configured for localhost dev origins, configured \texttt{CLIENT\_URL}, and hosted origins (e.g. \texttt{*.vercel.app}, \texttt{*.onrender.com}); credentials enabled.
+  \item \textbf{HTTPS:} Enforced by hosting providers in production (Vercel/Render TLS termination).
+  \item \textbf{Rate limiting (AI):} In-memory per-user/per-IP fixed-window limits for AI general, streaming, and status endpoints (\texttt{backend/middleware/rateLimiter.js}); 429 responses include retry metadata/headers.
+  \item \textbf{Payload limits:} JSON/urlencoded body limits set (e.g. 10\,MB in Express config); execution controller applies input/output safeguards as implemented.
+  \item \textbf{DB failure handling:} \texttt{checkDbConnection} returns 503 for DB-dependent routes when offline (with configured exceptions), reducing hanging requests.
+\end{itemize}
+
+\subsection{Secrets and Configuration Management}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Environment variables:} Secrets/keys stored in platform env settings and local \texttt{.env} (not committed; \texttt{.env.example} provided).
+  \item \textbf{Key classes:} \texttt{MONGODB\_URI}, \texttt{JWT\_SECRET}, \texttt{CLIENT\_URL}, OAuth/email credentials, AI provider keys/models/base URLs, Piston URLs/keys, \texttt{VITE\_API\_URL}.
+  \item \textbf{Frontend exposure:} Only \texttt{VITE\_*} variables intended for client use should be exposed; provider secrets must remain backend-only.
+\end{itemize}
+
+\subsection{Operational Security Notes}
+\begin{itemize}[leftmargin=*]
+  \item Set strong, unique \texttt{JWT\_SECRET} per environment; rotate on compromise.
+  \item Restrict CORS and trusted origins to known production domains where possible.
+  \item Use least-privilege DB credentials and managed backups/monitoring in Atlas.
+  \item Validate/monitor Piston and AI provider availability, quotas, and abuse controls.
+  \item Periodically audit dependencies, access logs, and role/permission enforcement (including direct API/Socket access).
+\end{itemize}
+
+\vspace{1em}
+\hrule
+\vspace{0.6em}
+\noindent\textit{Document generated from repository configuration and source inspection (\texttt{vercel.json}, \texttt{backend/index.js}, \texttt{frontend/src/config/api.js}, auth/rate-limit middleware, README, and env examples). Update any environment-specific deployment settings if they differ before final submission.}
+
+\end{document}

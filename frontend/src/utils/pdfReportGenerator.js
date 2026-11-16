@@ -95,7 +95,7 @@ export function buildContributionReportPdfDocument(report, options = {}) {
     subject: `Contribution Audit & Analytics Report (Ref: ${report.reportId || 'N/A'})`,
     author: report.generatedBy?.userName || 'CodeTrail Analytics',
     keywords: `${report.reportHash || ''} CodeTrail Contribution Report Proof of Work Audit Analytics`,
-    creator: 'CodeTrail CT-200 PDF Export Engine'
+    creator: 'CodeTrail PDF Export Engine'
   });
 
   let currentY = 18;

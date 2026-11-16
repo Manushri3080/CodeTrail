@@ -137,6 +137,7 @@ const ACTION_ICONS = {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 const ContributionAnalytics = ({ activeWorkspace = null, currentUser = null }) => {
+  const token = localStorage.getItem('ct-auth-token');
   const [workspaces, setWorkspaces]               = useState([]);
   const [selectedWs, setSelectedWs]               = useState(activeWorkspace);
   const [contributions, setContributions]         = useState(null);
@@ -147,9 +148,19 @@ const ContributionAnalytics = ({ activeWorkspace = null, currentUser = null }) =
   const [loading, setLoading]                     = useState(false);
   const [error, setError]                         = useState(null);
   const [expandedUser, setExpandedUser]           = useState(null);
-  const [activeTab, setActiveTab]                 = useState('leaderboard'); // leaderboard | coding | participation
+const [activeTab, setActiveTab] = useState(() => {
+    try {
+      return localStorage.getItem('ct-analytics-active-tab') || 'leaderboard';
+    } catch {
+      return 'leaderboard';
+    }
+  }); // leaderboard | session | report | coding | participation
 
-  const token = localStorage.getItem('ct-auth-token');
+useEffect(() => {
+    try {
+      localStorage.setItem('ct-analytics-active-tab', activeTab);
+    } catch {}
+  }, [activeTab]);
 
   // Load workspaces
   useEffect(() => {
@@ -228,7 +239,7 @@ const ContributionAnalytics = ({ activeWorkspace = null, currentUser = null }) =
   const TABS = [
     { id: 'leaderboard',   label: 'Leaderboard',         icon: Award },
     { id: 'session',       label: 'Session Analytics',   icon: Layers },
-    { id: 'report',        label: 'Contribution Report', icon: FileText, badge: 'CT-199' },
+    { id: 'report',        label: 'Contribution Report', icon: FileText },
     { id: 'coding',        label: 'Coding Activity',     icon: Code2 },
     { id: 'participation', label: 'Participation',       icon: Clock }
   ];
@@ -268,7 +279,7 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
    - Contribution Score: ${p.contributionScore || 0}
    - Status: ${p.status} | Activity: ${p.hasRecordedActivity ? 'Active contributor' : 'Observer (no events)'}`).join('\n\n')}
 
-## 🛡️ CT-201 Analytics Validation Report
+## 🛡️ Analytics Validation Report
 - **Overall Status:** ${val.validationPassed ? '100% CRYPTOGRAPHICALLY VALIDATED' : 'VALIDATION WARNING'}
 - **Summary:** ${val.summary || 'All checks passed'}
 - **Session Duration Check:** ${val.checks?.sessionDuration?.message || 'Valid'}
@@ -296,7 +307,7 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
           </div>
           <div className="flex flex-col gap-1">
             <h1 className="text-base font-bold text-white leading-tight">Contribution Analytics</h1>
-            <p className="text-[11px] text-gray-400 font-mono">{wsTitle} · CT-197</p>
+            <p className="text-[11px] text-gray-400 font-mono">{wsTitle}</p>
           </div>
 
           {/* Validation badge */}
@@ -633,7 +644,7 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
                 Session Analytics & Participant Breakdown
               </h2>
               <p className="text-xs text-gray-400">
-                Detailed real-time telemetry, participant activity counts, category distributions, and validation metrics (CT-198 & CT-201).
+                Detailed real-time telemetry, participant activity counts, category distributions, and validation metrics.
               </p>
             </div>
 
@@ -1005,7 +1016,7 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
                 <div className="flex items-center gap-3">
                   <ShieldCheck size={18} className={sessionAnalytics.validation.validationPassed ? 'text-emerald-400' : 'text-amber-400'} />
                   <div>
-                    <h3 className="text-sm font-bold text-white">CT-201 Session Analytics Validation Report</h3>
+                    <h3 className="text-sm font-bold text-white">Session Analytics Validation Report</h3>
                     <p className="text-xs text-gray-400">{sessionAnalytics.validation.summary}</p>
                   </div>
                 </div>
@@ -1259,13 +1270,6 @@ ${parts.map((p, idx) => `${idx + 1}. **${p.userName}** (${p.role}) — ${p.total
         </div>
       )}
 
-      {/* ── Footer note ─────────────────────────────────────────────────────── */}
-      <div className="px-8 pb-10 mt-4">
-        <p className="text-[10px] text-gray-600 font-mono text-center leading-relaxed">
-          CT-197 / CT-198 / CT-201 · Session & Contribution Analytics Module · Forensic Proof-of-Work Chains
-          {contributions?.generatedAt && ` · Generated ${new Date(contributions.generatedAt).toLocaleString()}`}
-        </p>
-      </div>
     </div>
   );
 };

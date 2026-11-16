@@ -81,6 +81,10 @@ const WorkspaceSchema = new mongoose.Schema({
     enum: ['active', 'archived'],
     default: 'active'
   },
+  starredBy: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }],
   settings: {
     isPublic: { type: Boolean, default: false },
     allowAnonymousExecution: { type: Boolean, default: false },
