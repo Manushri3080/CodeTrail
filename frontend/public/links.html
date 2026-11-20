@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CodeTrail - Project Resources</title>
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -12,36 +13,79 @@
             text-align: center;
             padding: 40px 15px;
         }
+
         .container {
-            max-width: 400px;
+            max-width: 420px;
             margin: auto;
             background: white;
             padding: 30px;
             border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         }
+
+        h1 {
+            color: #004d80;
+        }
+
         a {
             display: block;
-            margin: 18px 0;
+            margin: 15px 0;
             padding: 15px;
             background: #004d80;
             color: white;
             text-decoration: none;
             border-radius: 8px;
+            transition: 0.3s;
+        }
+
+        a:hover {
+            background: #0066a6;
+        }
+
+        .section {
+            margin-top: 25px;
+            font-weight: bold;
+            color: #334155;
         }
     </style>
 </head>
+
 <body>
     <div class="container">
+
         <h1>CodeTrail</h1>
         <p>Real-Time Collaborative Development Platform</p>
 
-        <a href="https://github.com/Manushri3080/CodeTrail">
+        <div class="section">Project Links</div>
+
+        <a href="https://github.com/Manushri3080/CodeTrail"
+           target="_blank">
             GitHub Repository - Source Code
         </a>
 
-        <a href="https://code-trail-five.vercel.app/">
+        <a href="https://code-trail-five.vercel.app/"
+           target="_blank">
             Live Demo - Open Application
         </a>
+
+        <div class="section">Project Diagrams & Results</div>
+
+        <a href="./usecase-diagram.png" target="_blank">
+            Use Case Diagram
+        </a>
+
+        <a href="./class-diagram.png" target="_blank">
+            Class Diagram
+        </a>
+        
+        <a href="./architecture-diagram.png" target="_blank">
+            Architecture Diagram
+        </a>
+        
+        <a href="./results-chart.png" target="_blank">
+            Project Results Chart
+        </a>
+
     </div>
 </body>
 </html>
